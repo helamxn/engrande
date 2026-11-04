@@ -15,7 +15,7 @@ import { dirty } from '../render';
 import { C, posterGeo, S, st } from '../state';
 import { fitView } from '../view';
 import { renderPdfPage } from '../io/pdf';
-import { scheduleSave } from '../io/persist';
+import { canvasRevision, scheduleSave } from '../io/persist';
 import { ICON } from './icons';
 import { layerMenu, openMenu } from './menu';
 import type { Geo, Layer, LayoutSettings, Orient, Paper } from '../types';
@@ -111,6 +111,39 @@ function numField(id: string, apply: (l: Layer, v: number) => void) {
 }
 
 /* ---------- lista de imágenes ---------- */
+/**
+ * Miniaturas reutilizadas: cada imagen conserva su canvas de 88 × 88 y solo se vuelve a dibujar si cambió
+ * lo que muestra (lienzo, su contenido, el recorte, la proporción o los colores del tema).
+ * La lista se reconstruye muy a menudo (al soltar cada arrastre, al seleccionar…).
+ */
+const thumbs = new WeakMap<Layer, { c: HTMLCanvasElement; key: string }>();
+const canvasIds = new WeakMap<HTMLCanvasElement, number>();
+let nextCanvasId = 1;
+const canvasId = (c: HTMLCanvasElement) => {
+  let id = canvasIds.get(c);
+  if (!id) { id = nextCanvasId++; canvasIds.set(c, id); }
+  return id;
+};
+function thumbFor(l: Layer) {
+  const k = l.crop;
+  const key = [canvasId(l.img), canvasRevision(l.img), k.x0, k.y0, k.x1, k.y1, l.w, l.h, C.chk1, C.chk2].join('|');
+  let t = thumbs.get(l);
+  if (!t) {
+    const c = document.createElement('canvas');
+    c.width = c.height = 88;
+    t = { c, key: '' };
+    thumbs.set(l, t);
+  }
+  if (t.key !== key) {
+    const x = t.c.getContext('2d')!;
+    for (let i = 0; i < 8; i++) for (let j = 0; j < 8; j++) { x.fillStyle = (i + j) % 2 ? C.chk2! : C.chk1!; x.fillRect(i * 11, j * 11, 11, 11); }
+    const sw = (k.x1 - k.x0) * l.img.width, sh = (k.y1 - k.y0) * l.img.height, dw = visW(l), dh = visH(l), s = Math.min(84 / dw, 84 / dh);
+    x.drawImage(l.img, k.x0 * l.img.width, k.y0 * l.img.height, sw, sh, 44 - (dw * s) / 2, 44 - (dh * s) / 2, dw * s, dh * s);
+    t.key = key;
+  }
+  return t.c;
+}
+
 export function renderList() {
   const ol = document.querySelector('#layers');
   if (!ol || !C.chk1) return;
@@ -123,12 +156,7 @@ export function renderList() {
     b.type = 'button'; b.className = 'layer-main';
     b.addEventListener('click', () => select(l));
     b.addEventListener('contextmenu', (e) => { e.preventDefault(); select(l); openMenu(e.clientX, e.clientY, layerMenu(l)); });
-    // miniatura sobre fondo de cuadros
-    const tc = document.createElement('canvas'); tc.width = 88; tc.height = 88;
-    const x = tc.getContext('2d')!;
-    for (let i = 0; i < 8; i++) for (let j = 0; j < 8; j++) { x.fillStyle = (i + j) % 2 ? C.chk2! : C.chk1!; x.fillRect(i * 11, j * 11, 11, 11); }
-    const k = l.crop, sw = (k.x1 - k.x0) * l.img.width, sh = (k.y1 - k.y0) * l.img.height, dw = visW(l), dh = visH(l), s = Math.min(84 / dw, 84 / dh);
-    x.drawImage(l.img, k.x0 * l.img.width, k.y0 * l.img.height, sw, sh, 44 - (dw * s) / 2, 44 - (dh * s) / 2, dw * s, dh * s);
+    const tc = thumbFor(l);
     // el nombre del archivo es dato del usuario: siempre con textContent
     const nm = document.createElement('span'); nm.textContent = l.name;
     const sm = document.createElement('small');

@@ -204,17 +204,20 @@
   .menu {
     @apply fixed z-30 max-h-[calc(100vh-16px)] min-w-[240px] max-w-[calc(100vw-16px)] overflow-y-auto rounded-[10px] border border-line bg-panel p-[5px] shadow-menu;
     & button {
-      @apply flex w-full cursor-pointer items-center justify-between gap-5 rounded-md border-0 bg-transparent px-2.5 py-[7px] text-left text-[.88rem] text-fg;
+      @apply flex w-full cursor-pointer items-center gap-2.5 rounded-md border-0 bg-transparent px-2.5 py-[7px] text-left text-[.88rem] text-fg;
+      /* icono · texto (ocupa el resto) · atajo o flecha a la derecha */
+      & > span { @apply min-w-0 flex-1; }
       &:hover, &:focus-visible { @apply bg-accent-soft outline-none; }
       &:disabled { @apply cursor-default bg-transparent opacity-40; }
-      &.danger { @apply text-bad; }
+      &.danger { @apply text-bad; & .micon { @apply text-bad; } }
       /* opción cuyo submenú está abierto */
       &.open { @apply bg-accent-soft; }
       /* «Atrás» de los submenús en táctil */
       &.mback { @apply justify-start gap-1.5 font-bold; }
     }
     & .chev { @apply -mr-1 size-4 flex-none text-muted; }
-    & kbd { @apply font-mono text-[.74rem] text-muted; }
+    & .micon { @apply size-4 flex-none text-muted; }
+    & kbd { @apply pl-4 font-mono text-[.74rem] text-muted; }
     & hr { @apply mx-0.5 my-1 border-0 border-t border-line; }
     & .mhead { @apply px-2.5 pt-1.5 pb-0.5 text-[.7rem] font-bold uppercase tracking-[.07em] text-muted; }
   }

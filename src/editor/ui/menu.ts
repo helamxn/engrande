@@ -16,11 +16,12 @@ import { DELK, isTouch, MOD, SHIFT } from '../platform';
 import { st } from '../state';
 import { fitView, zoomCenter } from '../view';
 import { loadFiles } from '../io/load';
-import { ICON } from './icons';
+import { ICON, type IconName } from './icons';
 import type { Layer, Pt } from '../types';
 
-export interface ActionItem { label: string; kbd?: string; fn: () => void; disabled?: boolean; danger?: boolean }
-export interface SubmenuItem { label: string; submenu: MenuItem[]; disabled?: boolean }
+/** icon: solo en las opciones principales (primer nivel); los submenús van sin iconos. */
+export interface ActionItem { label: string; icon?: IconName; kbd?: string; fn: () => void; disabled?: boolean; danger?: boolean }
+export interface SubmenuItem { label: string; icon?: IconName; submenu: MenuItem[]; disabled?: boolean }
 export type MenuItem = '-' | { head: string } | ActionItem | SubmenuItem;
 const isSub = (it: ActionItem | SubmenuItem): it is SubmenuItem => 'submenu' in it;
 
@@ -50,22 +51,22 @@ export function layerMenu(l: Layer): MenuItem[] {
   const i = st.layers.indexOf(l), top = i === st.layers.length - 1, bottom = i === 0;
   const locked = l.hidden; // oculta: no se puede editar hasta mostrarla
   return [
-    { label: 'Recortar', kbd: isTouch() ? 'Doble toque' : 'Doble clic', fn: () => { select(l); enterCrop(); }, disabled: locked },
-    { label: 'Quitar fondo', fn: () => { select(l); autoBackground(); }, disabled: locked },
+    { label: 'Recortar', icon: 'crop', kbd: isTouch() ? 'Doble toque' : 'Doble clic', fn: () => { select(l); enterCrop(); }, disabled: locked },
+    { label: 'Quitar fondo', icon: 'bg', fn: () => { select(l); autoBackground(); }, disabled: locked },
     {
-      label: 'Borrar a mano', disabled: locked, submenu: [
+      label: 'Borrar a mano', icon: 'erase', disabled: locked, submenu: [
         { label: 'Borrador', kbd: 'E', fn: () => { select(l); setMode('erase'); } },
         { label: 'Varita', kbd: 'W', fn: () => { select(l); setMode('wand'); } },
       ],
     },
     '-',
-    { label: 'Copiar', kbd: MOD + 'C', fn: () => copyLayer(l) },
-    { label: 'Pegar', kbd: MOD + 'V', fn: () => void pasteAny(), disabled: !canPaste() },
-    { label: 'Duplicar', kbd: MOD + 'D', fn: () => duplicateLayer(l) },
-    { label: l.hidden ? 'Mostrar' : 'Ocultar', fn: () => toggleHidden(l) },
+    { label: 'Copiar', icon: 'copy', kbd: MOD + 'C', fn: () => copyLayer(l) },
+    { label: 'Pegar', icon: 'paste', kbd: MOD + 'V', fn: () => void pasteAny(), disabled: !canPaste() },
+    { label: 'Duplicar', icon: 'dup', kbd: MOD + 'D', fn: () => duplicateLayer(l) },
+    { label: l.hidden ? 'Mostrar' : 'Ocultar', icon: l.hidden ? 'eye' : 'eyeOff', fn: () => toggleHidden(l) },
     '-',
     ...(st.layers.length > 1 ? [{
-      label: 'Orden', submenu: [
+      label: 'Orden', icon: 'layers', submenu: [
         { label: 'Traer al frente', kbd: MOD + SHIFT + ']', fn: () => reorder(l, 'front'), disabled: top },
         { label: 'Traer adelante', kbd: MOD + ']', fn: () => reorder(l, 1), disabled: top },
         { label: 'Enviar atrás', kbd: MOD + '[', fn: () => reorder(l, -1), disabled: bottom },
@@ -73,7 +74,7 @@ export function layerMenu(l: Layer): MenuItem[] {
       ],
     } satisfies SubmenuItem] : []),
     {
-      label: 'Girar y voltear', submenu: [
+      label: 'Girar y voltear', icon: 'rot', submenu: [
         { label: 'Girar 90° a la derecha', kbd: 'R', fn: rotate90(1) },
         { label: 'Girar 90° a la izquierda', kbd: SHIFT + 'R', fn: rotate90(-1) },
         { label: 'Espejo horizontal', kbd: 'H', fn: flip('x') },
@@ -81,7 +82,7 @@ export function layerMenu(l: Layer): MenuItem[] {
       ],
     },
     {
-      label: 'Tamaño y posición', submenu: [
+      label: 'Tamaño y posición', icon: 'scaling', submenu: [
         { label: 'Ajustar al póster', fn: fitSel('contain') },
         { label: 'Llenar el póster', fn: fitSel('cover') },
         { label: 'Centrar', fn: centerSel },
@@ -89,19 +90,19 @@ export function layerMenu(l: Layer): MenuItem[] {
       ],
     },
     '-',
-    { label: 'Volver a la imagen original', fn: () => resetOriginal(l), disabled: locked },
-    { label: 'Quitar del póster', kbd: DELK, fn: () => removeLayer(l), danger: true },
+    { label: 'Volver a la imagen original', icon: 'history', fn: () => resetOriginal(l), disabled: locked },
+    { label: 'Quitar del póster', icon: 'del', kbd: DELK, fn: () => removeLayer(l), danger: true },
   ];
 }
 export function emptyMenu(): MenuItem[] {
   return [
-    { label: 'Pegar', kbd: MOD + 'V', fn: () => void pasteAny(), disabled: !canPaste() },
-    { label: 'Agregar imagen…', fn: () => $<HTMLInputElement>('#file').click() },
-    { label: 'Nuevo póster', fn: newPoster },
+    { label: 'Pegar', icon: 'paste', kbd: MOD + 'V', fn: () => void pasteAny(), disabled: !canPaste() },
+    { label: 'Agregar imagen…', icon: 'addImage', fn: () => $<HTMLInputElement>('#file').click() },
+    { label: 'Nuevo póster', icon: 'newPoster', fn: newPoster },
     '-',
-    { label: 'Ver todo el póster', kbd: MOD + '0', fn: fitView },
-    { label: 'Acercar', kbd: '+', fn: () => zoomCenter(1.4) },
-    { label: 'Alejar', kbd: '−', fn: () => zoomCenter(1 / 1.4) },
+    { label: 'Ver todo el póster', icon: 'fitAll', kbd: MOD + '0', fn: fitView },
+    { label: 'Acercar', icon: 'zoomInLens', kbd: '+', fn: () => zoomCenter(1.4) },
+    { label: 'Alejar', icon: 'zoomOutLens', kbd: '−', fn: () => zoomCenter(1 / 1.4) },
   ];
 }
 
@@ -126,7 +127,7 @@ export function closeMenu() {
 }
 
 /* ---------- construcción ---------- */
-const icon = (name: 'chevronRight' | 'chevronLeft', cls: string) => ICON[name].replace('class="', `class="${cls} `);
+const icon = (name: IconName, cls: string) => ICON[name].replace('class="', `class="${cls} `);
 
 function build(container: HTMLElement, items: MenuItem[], level: 0 | 1) {
   container.textContent = '';
@@ -142,6 +143,7 @@ function build(container: HTMLElement, items: MenuItem[], level: 0 | 1) {
     b.id = 'mi-' + nextId++;
     b.setAttribute('role', 'menuitem');
     b.disabled = !!it.disabled;
+    if (it.icon) b.insertAdjacentHTML('beforeend', ICON[it.icon].replace('class="', 'class="micon ')); // constante del código
     const s = document.createElement('span'); s.textContent = it.label; b.appendChild(s);
     if (isSub(it)) {
       subOf.set(b, it);

@@ -61,6 +61,8 @@ let stored = new Set<string>();
 
 /** Avisa de que el contenido de un lienzo cambió (para volver a guardarlo). */
 export function markCanvasChanged(c: HTMLCanvasElement) { canvasRev.set(c, (canvasRev.get(c) ?? 0) + 1); }
+/** Revisión del contenido de un lienzo (la usan también las miniaturas para saber si redibujar). */
+export const canvasRevision = (c: HTMLCanvasElement) => canvasRev.get(c) ?? 0;
 
 const toPng = (c: HTMLCanvasElement) =>
   new Promise<Blob>((res, rej) => c.toBlob((b) => (b ? res(b) : rej(new Error('No se pudo codificar la imagen'))), 'image/png'));
