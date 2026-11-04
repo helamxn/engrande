@@ -75,3 +75,23 @@ describe('releaseUnused (liberar lienzos y PDF del historial descartado)', () =>
     expect(shared.width).toBe(500);
   });
 });
+
+describe('instantáneas (takeSnap / restoreSnap)', () => {
+  it('deshacer recupera nombre, bloqueo, opacidad y la selección de varias', async () => {
+    const { takeSnap, restoreSnap } = await import('./history');
+    const { st } = await import('./state');
+    const mk = (name: string) => ({
+      name, cx: 0, cy: 0, w: 10, h: 10, rot: 0, flipX: false, flipY: false, crop: { x0: 0, y0: 0, x1: 1, y1: 1 },
+      img: canvas(1, 1), orig: canvas(1, 1), page: 1, fit: null, hidden: false, locked: false, opacity: 1,
+    });
+    const a = mk('a'), b = mk('b');
+    st.layers = [a, b] as never;
+    st.group = [a, b] as never;
+    const s = takeSnap();
+    a.name = 'otro'; a.locked = true; a.opacity = 0.4;
+    st.group = [];
+    restoreSnap(s);
+    expect([a.name, a.locked, a.opacity]).toEqual(['a', false, 1]);
+    expect(st.group).toEqual([a, b]);
+  });
+});

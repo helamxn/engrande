@@ -39,7 +39,7 @@ export function initKeyboard() {
     }
     if (mod || e.altKey) return;
     if ((e.key === 'Delete' || e.key === 'Backspace') && any) { e.preventDefault(); removeSelected(); return; }
-    if (any && e.key.startsWith('Arrow') && S.mode === 'move') {
+    if (any && !sel?.locked && e.key.startsWith('Arrow') && S.mode === 'move') {
       e.preventDefault();
       // la misma selección (una imagen o el grupo) cuenta como una serie
       const key = sel ?? st.group[0], now = performance.now();

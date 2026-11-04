@@ -1,7 +1,7 @@
 ---
 import Icon from './Icon.astro';
 /** Panel lateral con tres pestañas: Hojas, Imágenes y Exportar. En escritorio flota a la derecha y se puede plegar. */
-const pane = 'flex min-h-0 flex-col gap-[18px] overflow-x-hidden overflow-y-auto p-4';
+const pane = 'flex min-h-0 flex-1 flex-col gap-[18px] overflow-x-hidden overflow-y-auto overscroll-contain p-4';
 const field = 'flex flex-col gap-2';
 const tabs = [
   { id: 'sheets', label: 'Hojas' },
@@ -10,11 +10,30 @@ const tabs = [
 ];
 ---
 
+<!--
+  Escritorio: tarjeta flotante a la derecha (plegable). Móvil: panel inferior deslizable con tres alturas
+  (solo pestañas, media pantalla, completa); la altura la pone layout.ts.
+-->
 <aside
   id="panel"
-  class="island flex min-h-0 min-w-0 flex-col rounded-xl border border-line bg-panel desk:fixed desk:top-3 desk:right-3 desk:bottom-3 desk:z-20 desk:w-[360px] desk:overflow-hidden desk:panel-off:hidden"
+  class="island fixed inset-x-0 bottom-0 z-20 flex h-[96px] min-h-0 min-w-0 flex-col overflow-hidden rounded-t-2xl rounded-b-none border-x-0 border-b-0 pb-[env(safe-area-inset-bottom)] desk:top-3 desk:right-3 desk:bottom-3 desk:left-auto desk:h-auto desk:w-[360px] desk:rounded-xl desk:border desk:pb-0 desk:panel-off:hidden"
 >
-  <div class="flex flex-none items-center border-b border-line px-1">
+  <!-- móvil: asa para arrastrar o tocar (cambia la altura) y la lectura del póster -->
+  <button
+    type="button"
+    id="sheetHandle"
+    class="flex h-5 w-full flex-none cursor-grab touch-none items-center justify-center border-0 bg-transparent desk:hidden"
+    aria-controls="panel"
+    aria-expanded="false"
+    aria-label="Mostrar más o menos opciones"
+  >
+    <span class="h-1 w-10 rounded-full bg-line"></span>
+  </button>
+  <div
+    id="readoutSheet"
+    class="flex flex-none touch-none flex-wrap gap-x-3 gap-y-0.5 px-4 pb-1 font-mono text-[.76rem] text-muted tabular-nums desk:hidden [&_b]:font-medium [&_b]:text-fg"
+  ></div>
+  <div id="sheetTabs" class="flex flex-none items-center border-b border-line px-1">
     <div class="flex min-w-0 flex-1" role="tablist" aria-label="Panel de opciones">
       {tabs.map((t, i) => (
         <button
@@ -103,30 +122,39 @@ const tabs = [
   <!-- Imágenes -->
   <div class={pane} role="tabpanel" id="pane-image" aria-labelledby="tab-image" data-pane="image" hidden>
     <p class="sel-note" id="selNote">Toca una imagen en el lienzo o en la lista para ver su tamaño y posición.</p>
+    <!-- aviso con la imagen bloqueada: sus medidas no se pueden cambiar hasta desbloquearla -->
+    <p class="sel-note !block" id="lockNote" hidden>Imagen bloqueada: no se puede mover ni editar. Desbloquéala con el candado de la lista.</p>
     <div class:list={[field, 'needs-sel']}>
+      <label class="pf"><span>Nombre</span><span class="unit"><input id="pName" type="text" maxlength="80" autocomplete="off" spellcheck="false" class="!font-ui" /></span></label>
+    </div>
+    <div class:list={[field, 'needs-sel', 'edit-sel']}>
       <div class="lbl">Tamaño visible</div>
       <div class="grid grid-cols-[1fr_auto_1fr] items-end gap-2">
-        <label class="pf"><span>Ancho</span><span class="unit"><input id="pW" type="number" step="0.1" min="0.3" inputmode="decimal" /><em>cm</em></span></label>
+        <label class="pf"><span>Ancho</span><span class="unit"><input id="pW" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" /><em>cm</em></span></label>
         <button type="button" class="lock" id="pLock" aria-pressed="true" title="Mantener proporción" aria-label="Mantener proporción">
           <Icon name="lock" />
         </button>
-        <label class="pf"><span>Alto</span><span class="unit"><input id="pH" type="number" step="0.1" min="0.3" inputmode="decimal" /><em>cm</em></span></label>
+        <label class="pf"><span>Alto</span><span class="unit"><input id="pH" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" /><em>cm</em></span></label>
       </div>
       <button type="button" class="btn" id="unstretch" hidden>Quitar deformación</button>
     </div>
-    <div class:list={[field, 'needs-sel']}>
+    <div class:list={[field, 'needs-sel', 'edit-sel']}>
       <div class="lbl">Posición y giro</div>
       <div class="grid grid-cols-2 items-end gap-2">
-        <label class="pf"><span>Desde la izquierda</span><span class="unit"><input id="pX" type="number" step="0.1" inputmode="decimal" /><em>cm</em></span></label>
-        <label class="pf"><span>Desde arriba</span><span class="unit"><input id="pY" type="number" step="0.1" inputmode="decimal" /><em>cm</em></span></label>
-        <label class="pf"><span>Rotación</span><span class="unit"><input id="pR" type="number" step="1" min="-180" max="180" inputmode="decimal" /><em>°</em></span></label>
+        <label class="pf"><span>Desde la izquierda</span><span class="unit"><input id="pX" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" /><em>cm</em></span></label>
+        <label class="pf"><span>Desde arriba</span><span class="unit"><input id="pY" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" /><em>cm</em></span></label>
+        <label class="pf"><span>Rotación</span><span class="unit"><input id="pR" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" /><em>°</em></span></label>
         <label class="pf" id="pdfField" hidden><span>Página del PDF <b id="pdfPages"></b></span><span class="unit"><input id="pdfPage" type="number" min="1" value="1" /></span></label>
       </div>
       <div class="flex flex-wrap gap-2 [&>.btn]:flex-auto">
-        <button type="button" class="btn" id="fitContain">Ajustar</button>
-        <button type="button" class="btn" id="fitCover">Llenar</button>
-        <button type="button" class="btn" id="center">Centrar</button>
+        <button type="button" class="btn" id="fitContain" title="Ajustar: la imagen entera cabe en el póster"><Icon name="fitContain" />Ajustar</button>
+        <button type="button" class="btn" id="fitCover" title="Llenar: cubre todo el póster (lo que sobra queda fuera)"><Icon name="fitCover" />Llenar</button>
+        <button type="button" class="btn" id="center" title="Centrar en el póster"><Icon name="center" />Centrar</button>
       </div>
+    </div>
+    <div class:list={[field, 'needs-sel', 'edit-sel']}>
+      <label class="lbl" for="pOpacity">Opacidad <output id="pOpacityOut">100 %</output></label>
+      <input id="pOpacity" type="range" min="5" max="100" step="1" value="100" />
     </div>
     <div class="h-px flex-none bg-line"></div>
     <div class={field}>

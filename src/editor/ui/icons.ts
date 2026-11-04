@@ -25,7 +25,9 @@ import crop from 'lucide-static/icons/crop.svg?raw';
 import download from 'lucide-static/icons/download.svg?raw';
 import ellipsis from 'lucide-static/icons/ellipsis.svg?raw';
 import eraser from 'lucide-static/icons/eraser.svg?raw';
+import expand from 'lucide-static/icons/expand.svg?raw';
 import eye from 'lucide-static/icons/eye.svg?raw';
+import focus from 'lucide-static/icons/focus.svg?raw';
 import eyeOff from 'lucide-static/icons/eye-off.svg?raw';
 import filePlus from 'lucide-static/icons/file-plus.svg?raw';
 import flip from 'lucide-static/icons/flip-horizontal-2.svg?raw';
@@ -45,6 +47,8 @@ import printer from 'lucide-static/icons/printer.svg?raw';
 import redo from 'lucide-static/icons/redo-2.svg?raw';
 import rotateCw from 'lucide-static/icons/rotate-cw.svg?raw';
 import scaling from 'lucide-static/icons/scaling.svg?raw';
+import shrink from 'lucide-static/icons/shrink.svg?raw';
+import pencilLine from 'lucide-static/icons/pen-line.svg?raw';
 import sparkles from 'lucide-static/icons/sparkles.svg?raw';
 import trash from 'lucide-static/icons/trash-2.svg?raw';
 import undo from 'lucide-static/icons/undo-2.svg?raw';
@@ -70,6 +74,8 @@ const RAW = {
   // menú contextual (flechas de submenú e iconos de las opciones principales)
   chevronRight, chevronLeft, copy, paste: clipboardPaste, layers, scaling, history, fitAll: maximize, zoomInLens, zoomOutLens,
   // varias imágenes: alinear, repartir y seleccionar
+  // tamaño y posición en el panel, renombrar
+  fitContain: shrink, fitCover: expand, center: focus, rename: pencilLine,
   alignLeft, alignHCenter, alignRight, alignTop, alignVCenter, alignBottom, distributeH, distributeV, selectBox,
 } as const;
 

@@ -2,16 +2,17 @@
 import Icon from './Icon.astro';
 /**
  * Mesa de trabajo: historial, zoom, lienzo con las hojas y lectura del tamaño y la calidad.
- * En escritorio el lienzo ocupa toda la ventana (es el fondo de la app) y la barra de herramientas y la lectura
- * flotan abajo a la izquierda como «islas». En móvil, barra, lienzo y lectura van uno debajo de otro.
+ * El lienzo ocupa toda la ventana (es el fondo de la app) y lo demás flota encima como «islas»:
+ * en escritorio, herramientas y lectura abajo a la izquierda; en móvil, las herramientas bajo la cabecera
+ * y la lectura dentro del panel inferior.
  */
 const icon = 'size-[17px]';
 ---
 
 <section
-  class="flex min-w-0 flex-col gap-2 desk:pointer-events-none desk:fixed desk:bottom-3 desk:left-3 desk:z-10 desk:max-w-[calc(100vw-var(--pr)-24px)] desk:flex-row desk:items-end"
+  class="pointer-events-none fixed top-[68px] left-2 z-10 flex items-end gap-2 desk:top-auto desk:bottom-3 desk:left-3 desk:max-w-[calc(100vw-var(--pr)-24px)]"
 >
-  <div id="tools" class="island flex flex-wrap items-center gap-2 desk:pointer-events-auto desk:relative desk:z-[1] desk:flex-nowrap desk:gap-0 desk:p-1">
+  <div id="tools" class="island pointer-events-auto relative z-[1] flex items-center p-1">
     <!-- zoom: − porcentaje + (el porcentaje encaja el póster entero al pulsarlo) -->
     <div class="tgroup" role="group" aria-label="Zoom">
       <button type="button" id="zoomOut" title="Alejar (−)" aria-label="Alejar">
@@ -24,7 +25,7 @@ const icon = 'size-[17px]';
         <Icon name="zoomIn" class={icon} />
       </button>
     </div>
-    <span class="mx-0.5 hidden h-6 w-px bg-line desk:block" aria-hidden="true"></span>
+    <span class="mx-0.5 h-6 w-px bg-line" aria-hidden="true"></span>
     <div class="tgroup" role="group" aria-label="Historial">
       <button type="button" id="undo" title="Deshacer (Ctrl+Z)" aria-label="Deshacer" disabled>
         <Icon name="undo" class={icon} />
@@ -33,13 +34,11 @@ const icon = 'size-[17px]';
         <Icon name="redo" class={icon} />
       </button>
     </div>
-    <span class="flex-1 desk:hidden"></span>
-    <span class="hidden text-[.8rem] text-muted xs:inline desk:hidden" id="tip">Clic derecho sobre el lienzo para más opciones</span>
   </div>
 
   <div
     id="stage"
-    class="relative h-[clamp(340px,56svh,680px)] overflow-hidden rounded-[10px] border border-line bg-desk desk:pointer-events-auto desk:fixed desk:inset-0 desk:h-auto desk:rounded-none desk:border-0"
+    class="pointer-events-auto fixed inset-0 overflow-hidden bg-desk"
   >
     <canvas
       id="cv"
@@ -55,25 +54,32 @@ const icon = 'size-[17px]';
         El contenedor no captura el puntero: con el aviso ligero se puede seguir usando el lienzo (zoom, menú).
       -->
       <div id="empty" class="absolute inset-0 grid place-items-center overflow-y-auto p-4">
-        <div id="emptyFull" class="pointer-events-auto flex w-full max-w-[400px] flex-col items-center gap-3 rounded-2xl border-2 border-dashed border-line bg-panel/90 px-5 py-6 text-center">
+        <!--
+          guía: cabecera centrada (icono, título, cómo empezar, botón) y debajo los pasos en filas
+          [número | título · descripción], que se leen de arriba abajo y no se parten en columnas estrechas
+        -->
+        <div
+          id="emptyFull"
+          class="pointer-events-auto flex w-full max-w-[440px] flex-col items-center gap-4 rounded-2xl bg-panel/95 shadow-pop px-6 pt-7 pb-6 text-center"
+        >
           <Icon name="addImage" class="size-9 text-accent" />
           <div>
-            <h2 class="m-0 text-[1.1rem] font-bold">Empieza con una imagen o un PDF</h2>
-            <p class="mt-1 mb-0 text-[.86rem] text-muted">Arrástralo aquí, pégalo con Ctrl+V (⌘V en Mac) o elígelo.</p>
+            <h2 class="m-0 text-[1.15rem] font-bold">Empieza con una imagen o un PDF</h2>
+            <p class="mt-1 mb-0 text-[.88rem] text-balance text-muted">Arrástralo aquí, pégalo con Ctrl+V (⌘V en Mac) o elígelo.</p>
           </div>
           <button type="button" class="btn btn-primary" data-addfile>
             <Icon name="addImage" />
             Elegir imagen
           </button>
-          <ol class="m-0 mt-1 grid w-full list-none gap-2 p-0 text-left text-[.84rem] text-muted xs:grid-cols-3 xs:gap-3">
+          <ol class="m-0 mt-1 grid w-full list-none gap-3 border-t border-line p-0 pt-4 text-left text-[.86rem]">
             {[
               ['Elige la imagen', 'Foto, dibujo o PDF.'],
               ['Ajusta el tamaño', 'Hojas, papel y margen en el panel.'],
               ['Descarga e imprime', 'El PDF por hojas, al 100 %.'],
             ].map(([t, d], i) => (
-              <li class="flex gap-2 xs:flex-col xs:gap-1">
-                <span class="grid size-6 flex-none place-items-center rounded-full bg-accent-soft text-[.78rem] font-bold text-accent">{i + 1}</span>
-                <span><b class="block text-fg">{t}</b>{d}</span>
+              <li class="grid grid-cols-[auto_1fr] items-start gap-x-3">
+                <span class="grid size-6 place-items-center rounded-full bg-accent-soft text-[.78rem] font-bold text-accent">{i + 1}</span>
+                <span class="pt-0.5"><b class="font-semibold text-fg">{t}</b><span class="text-muted"> · {d}</span></span>
               </li>
             ))}
           </ol>
@@ -96,7 +102,7 @@ const icon = 'size-[17px]';
     <div id="ctxbar" class="ctxbar" role="toolbar" aria-label="Herramientas de la imagen" hidden></div>
     <div
       id="drop"
-      class="pointer-events-none absolute inset-0 grid place-items-center rounded-[10px] border-2 desk:rounded-none border-dashed border-accent bg-accent/20 font-bold text-accent"
+      class="pointer-events-none absolute inset-0 grid place-items-center border-2 border-dashed border-accent bg-accent/20 font-bold text-accent"
       hidden
     >
       Suelta las imágenes aquí
@@ -105,6 +111,6 @@ const icon = 'size-[17px]';
 
   <div
     id="readout"
-    class="island flex flex-wrap gap-x-4 gap-y-1.5 font-mono desk:pointer-events-auto desk:relative desk:z-[1] desk:min-h-[46px] desk:content-center desk:items-center desk:px-3.5 desk:py-1.5 text-[.8rem] text-muted tabular-nums [&_b]:font-medium [&_b]:text-fg"
+    class="island pointer-events-auto relative z-[1] hidden min-h-[46px] flex-wrap content-center items-center gap-x-4 gap-y-1.5 px-3.5 py-1.5 font-mono text-[.8rem] text-muted tabular-nums desk:flex [&_b]:font-medium [&_b]:text-fg"
   ></div>
 </section>

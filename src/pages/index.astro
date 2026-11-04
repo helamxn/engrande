@@ -34,7 +34,7 @@ import Layout from '../layouts/Layout.astro';
     <div id="shortcutsBody" class="grid max-h-[calc(85vh-60px)] gap-5 overflow-y-auto p-5 sm:grid-cols-2"></div>
   </dialog>
   <div
-    class="fixed bottom-[calc(18px+env(safe-area-inset-bottom))] left-1/2 z-40 w-max max-w-[calc(100%-32px)] -translate-x-1/2 rounded-full bg-fg px-4 py-[9px] text-center text-[.88rem] text-page shadow-[0_6px_20px_rgba(0,0,0,.2)]"
+    class="fixed bottom-[calc(18px+var(--sheet-h,0px)+env(safe-area-inset-bottom))] left-1/2 z-40 w-max max-w-[calc(100%-32px)] -translate-x-1/2 rounded-full bg-fg px-4 py-[9px] text-center text-[.88rem] text-page shadow-[0_6px_20px_rgba(0,0,0,.2)]"
     id="toast"
     role="status"
     aria-live="polite"

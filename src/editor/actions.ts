@@ -41,7 +41,7 @@ export function newLayer(img: HTMLCanvasElement, name: string, extra: Partial<La
   return {
     id: st.nextId++, name, img, orig: img, cx: g.W / 2, cy: g.H / 2, w: g.W, h: (g.W * img.height) / img.width,
     rot: 0, flipX: false, flipY: false, crop: { x0: 0, y0: 0, x1: 1, y1: 1 },
-    pdf: null, page: 1, pages: 1, src: null as Source | null, fit: null, hidden: false, ...extra,
+    pdf: null, page: 1, pages: 1, src: null as Source | null, fit: null, hidden: false, locked: false, opacity: 1, ...extra,
   };
 }
 /** Coloca una imagen nueva ajustada al póster. Si va desplazada (varias a la vez), queda como colocada a mano. */
@@ -74,6 +74,36 @@ export function toggleHidden(l: Layer) {
   toast(l.hidden ? `“${l.name}” oculta: no se imprimirá` : `“${l.name}” visible de nuevo`);
 }
 
+const LOCKED_MSG = 'La imagen está bloqueada. Desbloquéala con el candado de la lista.';
+
+/** Bloquea o desbloquea: bloqueada se ve y se imprime, pero en el lienzo no se puede tocar. */
+export function toggleLocked(l: Layer) {
+  if (st.sel === l && S.mode === 'crop') applyCrop();
+  if (st.sel === l && S.mode !== 'move') setMode('move');
+  snap();
+  l.locked = !l.locked;
+  if (l.locked && st.group.includes(l)) selectMany(st.group.filter((x) => x !== l));
+  afterChange(); renderBar();
+  toast(l.locked ? `“${l.name}” bloqueada: no se puede mover ni editar en el lienzo` : `“${l.name}” desbloqueada`);
+}
+/** Cambia el nombre (paso de deshacer). Devuelve false si no hay nada que cambiar. */
+export function renameLayer(l: Layer, name: string) {
+  const n = name.replace(/\s+/g, ' ').trim().slice(0, 80);
+  if (!n || n === l.name) return false;
+  snap(); l.name = n; afterChange();
+  return true;
+}
+/** Opacidad desde el deslizador: un arrastre seguido es un solo paso de deshacer. */
+let opacityEdit: { l: Layer | null; t: number } = { l: null, t: 0 };
+export function setOpacity(l: Layer, v: number) {
+  if (l.locked) { toast(LOCKED_MSG); return; }
+  const now = performance.now();
+  if (!(opacityEdit.l === l && now - opacityEdit.t < 1000)) snap();
+  opacityEdit = { l, t: now };
+  l.opacity = Math.min(1, Math.max(0.05, v));
+  dirty(); scheduleSave();
+}
+
 export function select(l: Layer | null) {
   if (S.mode === 'crop' && l !== st.sel) applyCrop();
   st.sel = l;
@@ -96,7 +126,7 @@ export const isSelected = (l: Layer) => st.sel === l || st.group.includes(l);
  */
 export function selectMany(ls: Layer[]) {
   const set = new Set(ls);
-  const g = st.layers.filter((l) => set.has(l) && !l.hidden);
+  const g = st.layers.filter((l) => set.has(l) && !l.hidden && !l.locked);
   if (g.length < 2) { select(g[0] ?? null); return; }
   if (S.mode === 'crop') applyCrop();
   if (S.mode !== 'move') setMode('move');
@@ -114,7 +144,10 @@ export const selectAll = () => selectMany(st.layers);
 
 /** Desplaza todas las seleccionadas (ya con su paso de deshacer tomado). */
 export function shiftSelected(dx: number, dy: number) {
-  for (const l of selected()) { l.cx += dx; l.cy += dy; markManual(l); }
+  for (const l of selected()) {
+    if (l.locked) continue;
+    l.cx += dx; l.cy += dy; markManual(l);
+  }
 }
 
 export function removeSelected() {
@@ -252,6 +285,7 @@ export function pasteLayer() {
 export const tx = (fn: (l: Layer) => void) => () => {
   const l = st.sel;
   if (!l) return;
+  if (l.locked) { toast(LOCKED_MSG); return; }
   snap(); fn(l); afterChange();
 };
 export const rotate90 = (dir: 1 | -1) => tx((l) => { rotateLayer(l, 90 * dir, cropCenter(l)); markManual(l); });
@@ -270,6 +304,7 @@ export function setMode(m: Mode) {
   if (m === 'crop') { enterCrop(); return; }
   if (m !== 'move' && !st.sel) { toast('Primero toca una imagen'); return; }
   if (m !== 'move' && st.sel?.hidden) { toast('La imagen está oculta. Muéstrala para editarla.'); return; }
+  if (m !== 'move' && st.sel?.locked) { toast(LOCKED_MSG); return; }
   S.mode = m;
   $('#cv').style.cursor = cursorFor(m);
   st.hoverL = null;
@@ -278,6 +313,7 @@ export function setMode(m: Mode) {
 export function enterCrop() {
   if (!st.sel || S.mode === 'crop') return;
   if (st.sel.hidden) { toast('La imagen está oculta. Muéstrala para recortarla.'); return; }
+  if (st.sel.locked) { toast(LOCKED_MSG); return; }
   S.cropRatio = null; S.cropRatioKey = 'null';
   cropSession = takeSnap();
   S.mode = 'crop';
@@ -390,6 +426,7 @@ let pixelBusy = false;
  * (el anterior queda en el historial). Si mientras tanto la imagen cambió, el resultado se descarta.
  */
 async function applyPixelJob(l: Layer, job: PixelJob, busyMsg: string): Promise<PixelResult | null> {
+  if (l.locked) { toast(LOCKED_MSG); return null; }
   if (pixelBusy) { toast('Espera a que termine el proceso anterior…'); return null; }
   pixelBusy = true;
   const src = l.img, rev = canvasRevision(src), cv = $('#cv');
@@ -447,6 +484,7 @@ export async function autoBackground() {
   else toast(r.removed ? 'Fondo quitado. Retoca con la Varita o el Borrador si hace falta.' : 'No se borró nada. Sube la tolerancia en la Varita.');
 }
 export function resetOriginal(l: Layer) {
+  if (l.locked) { toast(LOCKED_MSG); return; }
   beginPixelEdit(l);
   const c = l.img.getContext('2d')!;
   c.clearRect(0, 0, l.img.width, l.img.height); c.drawImage(l.orig, 0, 0);

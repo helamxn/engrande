@@ -1,10 +1,11 @@
 /** Panel lateral: pestañas, ajustes de hojas, propiedades de la imagen, lista de imágenes, exportación y lectura. */
 import {
-  afterChange, centerSel, duplicateLayer, fitSel, markManual, removeLayer, reorder, select, toggleHidden, toggleInSelection, unstretchSel,
+  afterChange, centerSel, fitSel, markManual, renameLayer, select, setOpacity, toggleHidden, toggleInSelection,
+  toggleLocked, unstretchSel,
 } from '../actions';
 import { MAX_COLS_ROWS, PRESETS } from '../constants';
 import { $, $$, toast } from '../dom';
-import { cm, fmt1 } from '../format';
+import { cm, fmt1, parseNum } from '../format';
 import {
   applyFit, bboxMM, cropCenter, isStretched, keepCenter, natRatio, normDeg, pppOf, qualityOf, relayout,
   rotateLayer, scaleLayer, visH, visW,
@@ -17,6 +18,7 @@ import { renderPdfPage } from '../io/pdf';
 import { canvasRevision, scheduleSave } from '../io/persist';
 import { getPref } from '../prefs';
 import { ICON } from './icons';
+import { isPanelOff, openSheet, togglePanel } from './layout';
 import { groupMenu, layerMenu, openMenu } from './menu';
 import type { Geo, Layer, LayoutSettings, Orient, Paper } from '../types';
 
@@ -28,6 +30,15 @@ function showTab(t: string) {
     b.tabIndex = on ? 0 : -1;
   }
   for (const p of $$('[role=tabpanel]')) p.hidden = p.dataset.pane !== t;
+}
+/** Renombrar: lleva al campo «Nombre» de la imagen seleccionada (abre la pestaña y, si estaba plegado, el panel). */
+export function focusName() {
+  if (!st.sel) return;
+  if (isPanelOff()) togglePanel(true);
+  openSheet('half');
+  showTab('image');
+  const el = $<HTMLInputElement>('#pName');
+  el.focus(); el.select();
 }
 
 /* ---------- distribución de hojas ---------- */
@@ -88,11 +99,16 @@ function setField(id: string, v: string | number) {
 export function syncSel() {
   const sel = st.sel;
   document.body.classList.toggle('no-sel', !sel);
+  document.body.classList.toggle('sel-locked', !!sel?.locked);
+  $('#lockNote').hidden = !sel?.locked;
   const n = st.group.length;
   $('#selNote').textContent = n > 1
     ? `${n} imágenes seleccionadas. Arrastra una para moverlas juntas; para alinearlas o repartirlas usa la barra ${dockMQ?.matches ? 'de abajo' : 'sobre el lienzo'}.`
     : 'Toca una imagen en el lienzo o en la lista para ver su tamaño y posición.';
   if (sel) {
+    setField('#pName', sel.name);
+    const op = Math.round(sel.opacity * 100);
+    setField('#pOpacity', op); $('#pOpacityOut').textContent = `${op} %`;
     const b = bboxMM(sel);
     setField('#pW', fmt1(visW(sel) / 10)); setField('#pH', fmt1(visH(sel) / 10));
     setField('#pX', fmt1(b.x0 / 10)); setField('#pY', fmt1(b.y0 / 10)); setField('#pR', Math.round(sel.rot));
@@ -102,17 +118,32 @@ export function syncSel() {
   }
   updateReadout(); updateHint();
 }
-function numField(id: string, apply: (l: Layer, v: number) => void) {
+/**
+ * Campo numérico de la imagen (texto con coma decimal, no type=number, que mostraría «14.3» según el navegador).
+ * Enter o salir del campo aplica; ↑ ↓ suman o restan step (con Shift, 10 veces más), como en Figma.
+ */
+function numField(id: string, apply: (l: Layer, v: number) => void, step = 0.1) {
   const el = $<HTMLInputElement>(id);
   const run = () => {
     const sel = st.sel;
     if (!sel) return;
-    const v = parseFloat(String(el.value).replace(',', '.'));
+    const v = parseNum(el.value);
     if (!Number.isFinite(v)) { syncSel(); return; }
+    if (sel.locked) { syncSel(); return; }
     snap(); apply(sel, v); afterChange();
   };
   el.addEventListener('change', run);
-  el.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); run(); el.select(); } });
+  el.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); run(); el.select(); return; }
+    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+      const v = parseNum(el.value);
+      if (!Number.isFinite(v)) return;
+      e.preventDefault();
+      const d = (e.key === 'ArrowUp' ? 1 : -1) * step * (e.shiftKey ? 10 : 1);
+      el.value = step < 1 ? fmt1(v + d) : String(Math.round(v + d));
+      run(); el.select();
+    }
+  });
 }
 
 /* ---------- lista de imágenes ---------- */
@@ -170,6 +201,8 @@ export function renderList() {
     b.setAttribute('aria-pressed', String(on));
     // Shift o Ctrl + clic en la lista también suma o quita de la selección
     b.addEventListener('click', (e) => { if ((e.shiftKey || e.ctrlKey || e.metaKey) && !l.hidden) toggleInSelection(l); else select(l); });
+    // doble clic en la lista: renombrar
+    b.addEventListener('dblclick', () => { select(l); focusName(); });
     b.addEventListener('contextmenu', (e) => {
       e.preventDefault();
       if (st.group.length > 1 && st.group.includes(l)) { openMenu(e.clientX, e.clientY, groupMenu()); return; }
@@ -179,22 +212,29 @@ export function renderList() {
     // el nombre del archivo es dato del usuario: siempre con textContent
     const nm = document.createElement('span'); nm.textContent = l.name;
     const sm = document.createElement('small');
-    sm.textContent = (l.hidden ? 'Oculta · ' : '') + `${cm(visW(l))} × ${cm(visH(l))} cm` + (l.pdf ? ` · PDF pág. ${l.page}` : '');
+    sm.textContent = (l.hidden ? 'Oculta · ' : '') + `${cm(visW(l))} × ${cm(visH(l))} cm`
+      + (l.opacity < 1 ? ` · ${Math.round(l.opacity * 100)} %` : '') + (l.pdf ? ` · PDF pág. ${l.page}` : '');
     nm.appendChild(sm);
     b.append(tc, nm); li.appendChild(b);
-    const i = st.layers.indexOf(l);
-    const acts: [keyof typeof ICON, string, () => void, boolean][] = [
+    // a la vista solo lo que se cambia a menudo (ver y bloquear); orden, duplicar y quitar van en el menú «Más»
+    const more = (e: MouseEvent) => {
+      const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+      if (st.group.length > 1 && st.group.includes(l)) { openMenu(r.left, r.bottom + 4, groupMenu()); return; }
+      select(l); openMenu(r.left, r.bottom + 4, layerMenu(l));
+    };
+    const acts: [keyof typeof ICON, string, (e: MouseEvent) => void, boolean][] = [
       // ojo abierto = visible, como en Figma o Photoshop; al pulsarlo se oculta
       [l.hidden ? 'eyeOff' : 'eye', l.hidden ? 'Mostrar' : 'Ocultar', () => toggleHidden(l), false],
-      ['up', 'Traer adelante', () => reorder(l, 1), i === n - 1],
-      ['down', 'Enviar atrás', () => reorder(l, -1), i === 0],
-      ['dup', 'Duplicar', () => duplicateLayer(l), false],
-      ['del', 'Quitar del póster', () => removeLayer(l), false],
+      // candado cerrado = bloqueada (no se toca en el lienzo, pero se imprime)
+      [l.locked ? 'lock' : 'lockOpen', l.locked ? 'Desbloquear' : 'Bloquear', () => toggleLocked(l), false],
+      ['more', 'Más opciones: orden, duplicar, quitar…', more, false],
     ];
     for (const [ic, t, fn, dis] of acts) {
       const a = document.createElement('button');
       a.type = 'button'; a.className = 'act'; a.title = t; a.setAttribute('aria-label', t);
       a.innerHTML = ICON[ic]; a.disabled = dis;
+      // bloqueada: el candado se resalta para que se distinga del abierto de un vistazo
+      if (ic === 'lock') { a.classList.add('text-accent'); a.setAttribute('aria-pressed', 'true'); }
       a.addEventListener('click', fn);
       li.appendChild(a);
     }
@@ -245,6 +285,8 @@ export function updateReadout() {
     pill.textContent = q === 'good' ? 'buena' : q === 'warn' ? 'aceptable' : 'baja';
     s.append(' ', pill);
   }
+  // móvil: la misma lectura, dentro del panel inferior
+  $('#readoutSheet').replaceChildren(...[...out.childNodes].map((c) => c.cloneNode(true)));
 }
 
 /* ---------- pista inferior ---------- */
@@ -269,8 +311,6 @@ export function updateHint() {
   hint.textContent = H[S.mode] ?? '';
   // con el póster vacío la pista sobra: la pantalla de inicio ya explica qué hacer
   hint.classList.toggle('invisible', !st.layers.length);
-  const tip = document.querySelector('#tip');
-  if (tip) tip.textContent = t ? 'Mantén pulsada una imagen para más opciones' : 'Clic derecho sobre el lienzo para más opciones';
 }
 
 
@@ -309,11 +349,25 @@ export function initPanel() {
   $<HTMLInputElement>('#overlap').addEventListener('input', (e) => editLayout('overlap', +(e.target as HTMLInputElement).value, true));
 
   // propiedades (escribir una medida = colocar a mano)
+  // nombre: se aplica al confirmar (Enter o al salir del campo); Esc deshace lo escrito
+  const name = $<HTMLInputElement>('#pName');
+  name.addEventListener('change', () => { if (st.sel && !renameLayer(st.sel, name.value)) name.value = st.sel.name; });
+  name.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); name.blur(); }
+    if (e.key === 'Escape' && st.sel) { name.value = st.sel.name; name.blur(); }
+  });
+  const opacity = $<HTMLInputElement>('#pOpacity');
+  opacity.addEventListener('input', () => {
+    if (!st.sel) return;
+    setOpacity(st.sel, +opacity.value / 100);
+    $('#pOpacityOut').textContent = `${opacity.value} %`;
+  });
+  opacity.addEventListener('change', () => renderList());
   numField('#pW', (l, v) => { const f = Math.max(3, v * 10) / visW(l); if (S.lock) scaleLayer(l, f, cropCenter(l)); else keepCenter(l, (x) => { x.w *= f; }); markManual(l); });
   numField('#pH', (l, v) => { const f = Math.max(3, v * 10) / visH(l); if (S.lock) scaleLayer(l, f, cropCenter(l)); else keepCenter(l, (x) => { x.h *= f; }); markManual(l); });
   numField('#pX', (l, v) => { l.cx += v * 10 - bboxMM(l).x0; markManual(l); });
   numField('#pY', (l, v) => { l.cy += v * 10 - bboxMM(l).y0; markManual(l); });
-  numField('#pR', (l, v) => { rotateLayer(l, normDeg(v) - l.rot, cropCenter(l)); markManual(l); });
+  numField('#pR', (l, v) => { rotateLayer(l, normDeg(v) - l.rot, cropCenter(l)); markManual(l); }, 1);
   $('#pLock').addEventListener('click', () => {
     S.lock = !S.lock;
     const b = $('#pLock');

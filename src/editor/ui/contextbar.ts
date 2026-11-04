@@ -1,7 +1,7 @@
 /** Barra de herramientas que flota junto a la imagen seleccionada (o acoplada abajo en móvil). */
 import {
   alignSelected, applyCrop, autoBackground, cancelCrop, distributeSelected, duplicateSelected, enterCrop, flip,
-  removeLayer, removeSelected, rotate90, setCropRatio, setMode,
+  removeLayer, removeSelected, rotate90, setCropRatio, setMode, toggleLocked,
 } from '../actions';
 import type { AlignEdge } from '../geometry';
 import { RATIOS } from '../constants';
@@ -52,6 +52,10 @@ export function renderBar() {
   let h = '';
   if (group) {
     h = groupBar();
+  } else if (st.sel?.locked) {
+    // bloqueada: nada se puede editar; solo desbloquear o el menú
+    h = `<span class="mini">${ICON.lock} Bloqueada</span>` + SEP + tb('lockOpen', 'Desbloquear', 'unlock')
+      + tb('more', 'Más', 'more', 'Más opciones (clic derecho)', '', true);
   } else if (S.mode === 'move') {
     h = tb('crop', 'Recortar', 'crop', 'Recortar (doble clic)') + tb('bg', 'Quitar fondo', 'autobg')
       + tb('erase', 'Borrador', 'erase', 'Borrador (E)') + tb('wand', 'Varita', 'wand', 'Varita (W)')
@@ -95,7 +99,9 @@ export function positionBar() {
   if (bar.classList.contains('dock') !== docked) { bar.classList.toggle('dock', docked); barSize = null; }
   bar.classList.toggle('ghost', isGesturing());
   $('#hint').hidden = docked;
-  if (docked) { bar.style.left = ''; bar.style.top = ''; return; }
+  // acoplada: encima del panel inferior (móvil), que puede estar más o menos abierto
+  if (docked) { bar.style.left = ''; bar.style.top = ''; bar.style.bottom = `${view.ins.b + 8}px`; return; }
+  bar.style.bottom = '';
   const pts = sel ? cropPts(sel) : st.group.flatMap(cropPts), xs = pts.map((p) => p.x), ys = pts.map((p) => p.y);
   const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
   barSize ??= { w: bar.offsetWidth, h: bar.offsetHeight };
@@ -129,6 +135,7 @@ export function initContextBar() {
       return;
     }
     switch (b.dataset.act) {
+      case 'unlock': toggleLocked(sel); break;
       case 'crop': enterCrop(); break;
       case 'autobg': autoBackground(); break;
       case 'erase': setMode('erase'); break;

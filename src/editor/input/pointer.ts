@@ -50,12 +50,14 @@ export const setSpaceDown = (v: boolean) => { spaceDown = v; };
 /** Durante un gesto la barra contextual se oculta para no estorbar. */
 export const isGesturing = () => !!gest || !!(drag && !['none', 'tap', 'pan'].includes(drag.t));
 
-/** Imagen bajo el punto. precise: ignora las zonas transparentes (salvo de la seleccionada). */
+/** Se puede tocar en el lienzo: ni oculta ni bloqueada. */
+const touchable = (l: Layer) => !l.hidden && !l.locked;
+/** Imagen bajo el punto. precise: ignora las zonas transparentes (salvo de la seleccionada). Salta las bloqueadas. */
 function hitLayer(p: Pt, precise = true): Layer | null {
   const m = s2mm(p), L = st.layers;
-  if (!precise) { for (let i = L.length - 1; i >= 0; i--) if (!L[i]!.hidden && inside(L[i]!, m)) return L[i]!; return null; }
-  for (let i = L.length - 1; i >= 0; i--) { const l = L[i]!; if (!l.hidden && inside(l, m) && opaqueAt(l, m)) return l; }
-  if (st.sel && !st.sel.hidden && inside(st.sel, m)) return st.sel;
+  if (!precise) { for (let i = L.length - 1; i >= 0; i--) if (touchable(L[i]!) && inside(L[i]!, m)) return L[i]!; return null; }
+  for (let i = L.length - 1; i >= 0; i--) { const l = L[i]!; if (touchable(l) && inside(l, m) && opaqueAt(l, m)) return l; }
+  if (st.sel && touchable(st.sel) && inside(st.sel, m)) return st.sel;
   return hitLayer(p, false);
 }
 function opaqueAt(l: Layer, m: Pt) {
@@ -75,7 +77,7 @@ const startMove = (m: Pt): Drag => ({ t: 'move', m0: m, items: selected().map((l
 function inMarquee(a: Pt, b: Pt): Layer[] {
   const p = s2mm(a), q = s2mm(b);
   const box = { x0: Math.min(p.x, q.x), y0: Math.min(p.y, q.y), x1: Math.max(p.x, q.x), y1: Math.max(p.y, q.y) };
-  return st.layers.filter((l) => !l.hidden && boxInside(bboxMM(l), box));
+  return st.layers.filter((l) => touchable(l) && boxInside(bboxMM(l), box));
 }
 /** Menú de una imagen: si forma parte de un grupo, el del grupo; si no, se selecciona sola. */
 function menuFor(h: Layer) {
@@ -106,7 +108,7 @@ export function initPointer(cv: HTMLCanvasElement) {
       // Al recortar, pellizcar sobre la imagen la amplía o reduce dentro del marco.
       drag = null;
       const g0 = gInfo('view'), c0 = s2mm({ x: g0.cx, y: g0.cy }), sel = st.sel;
-      const mode = !sel || sel.hidden ? 'view'
+      const mode = !sel || !touchable(sel) ? 'view'
         : S.mode === 'move' && inside(sel, c0) ? 'layer'
           : S.mode === 'crop' && insideImage(sel, c0) ? 'frame' : 'view';
       gest = { ...g0, mode };
@@ -134,7 +136,7 @@ export function initPointer(cv: HTMLCanvasElement) {
     if (e.button === 1 || spaceDown) { drag = { t: 'pan', last: p }; return; }
 
     if (S.mode === 'move') {
-      if (sel && !sel.hidden) {
+      if (sel && touchable(sel)) {
         const h = nearest(boxHandles(sel, true), p, R);
         if (h) {
           setPending(takeSnap());
@@ -185,7 +187,7 @@ export function initPointer(cv: HTMLCanvasElement) {
       const prevHoverL = st.hoverL;
       if (e.pointerType === 'mouse') {
         if (S.mode === 'move') {
-          const h = sel && !sel.hidden && nearest(boxHandles(sel, true), p, 11);
+          const h = sel && touchable(sel) && nearest(boxHandles(sel, true), p, 11);
           st.hoverL = h ? null : hitLayer(p, false);
           setCursor(h && sel ? handleCursor(sel, h.id) : st.hoverL ? (e.altKey ? 'copy' : 'move') : 'default');
         } else if (S.mode === 'crop' && sel) {

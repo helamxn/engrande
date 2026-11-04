@@ -9,8 +9,9 @@
 import {
   alignSelected, copyLayer, copySelected, distributeSelected, duplicateLayer, duplicateSelected, enterCrop, fitSel,
   centerSel, flip, newPoster, pasteLayer, removeLayer, removeSelected, reorder, resetOriginal, rotate90, select,
-  selectAll, selectMany, setMode, toggleHidden, unstretchSel, autoBackground,
+  selectAll, selectMany, setMode, toggleHidden, toggleLocked, unstretchSel, autoBackground,
 } from '../actions';
+import { focusName } from './panel';
 import { $, toast } from '../dom';
 import { isStretched } from '../geometry';
 import { DELK, isTouch, MOD, SHIFT } from '../platform';
@@ -50,7 +51,7 @@ async function pasteAny() {
  */
 export function layerMenu(l: Layer, prev: Layer[] = []): MenuItem[] {
   const i = st.layers.indexOf(l), top = i === st.layers.length - 1, bottom = i === 0;
-  const locked = l.hidden; // oculta: no se puede editar hasta mostrarla
+  const locked = l.hidden || l.locked; // oculta o bloqueada: no se puede editar hasta mostrarla o desbloquearla
   // en táctil no hay Shift ni Ctrl: mantener pulsada otra imagen ofrece sumarla a lo que estaba seleccionado
   const addTo = prev.filter((x) => !x.hidden && x !== l);
   return [
@@ -71,6 +72,8 @@ export function layerMenu(l: Layer, prev: Layer[] = []): MenuItem[] {
     { label: 'Pegar', icon: 'paste', kbd: MOD + 'V', fn: () => void pasteAny(), disabled: !canPaste() },
     { label: 'Duplicar', icon: 'dup', kbd: MOD + 'D', fn: () => duplicateLayer(l) },
     { label: l.hidden ? 'Mostrar' : 'Ocultar', icon: l.hidden ? 'eye' : 'eyeOff', fn: () => toggleHidden(l) },
+    { label: l.locked ? 'Desbloquear' : 'Bloquear', icon: l.locked ? 'lockOpen' : 'lock', fn: () => toggleLocked(l) },
+    { label: 'Renombrar…', icon: 'rename', fn: () => { select(l); focusName(); } },
     '-',
     ...(st.layers.length > 1 ? [{
       label: 'Orden', icon: 'layers', submenu: [
@@ -81,7 +84,7 @@ export function layerMenu(l: Layer, prev: Layer[] = []): MenuItem[] {
       ],
     } satisfies SubmenuItem] : []),
     {
-      label: 'Girar y voltear', icon: 'rot', submenu: [
+      label: 'Girar y voltear', icon: 'rot', disabled: l.locked, submenu: [
         { label: 'Girar 90° a la derecha', kbd: 'R', fn: rotate90(1) },
         { label: 'Girar 90° a la izquierda', kbd: SHIFT + 'R', fn: rotate90(-1) },
         { label: 'Espejo horizontal', kbd: 'H', fn: flip('x') },
@@ -89,7 +92,7 @@ export function layerMenu(l: Layer, prev: Layer[] = []): MenuItem[] {
       ],
     },
     {
-      label: 'Tamaño y posición', icon: 'scaling', submenu: [
+      label: 'Tamaño y posición', icon: 'scaling', disabled: l.locked, submenu: [
         { label: 'Ajustar al póster', fn: fitSel('contain') },
         { label: 'Llenar el póster', fn: fitSel('cover') },
         { label: 'Centrar', fn: centerSel },

@@ -23,6 +23,9 @@ interface SavedLayer {
   crop: Crop; page: number; pages: number; fit: Fit;
   /** Opcional para leer proyectos guardados antes de existir la opción de ocultar. */
   hidden?: boolean;
+  /** Opcionales por la misma razón (bloquear y opacidad llegaron después). */
+  locked?: boolean;
+  opacity?: number;
   /** null solo en proyectos antiguos con la imagen de ejemplo (ya no existe): esas capas se omiten al restaurar. */
   src: SavedSource | null;
   /** Lienzo editado (borrador, varita, quitar fondo) en PNG; null si no se editó. */
@@ -137,7 +140,8 @@ async function save() {
     }
     layers.push({
       name: l.name, cx: l.cx, cy: l.cy, w: l.w, h: l.h, rot: l.rot, flipX: l.flipX, flipY: l.flipY,
-      crop: { ...l.crop }, page: l.page, pages: l.pages, fit: l.fit && { ...l.fit }, hidden: l.hidden, src, edit,
+      crop: { ...l.crop }, page: l.page, pages: l.pages, fit: l.fit && { ...l.fit }, hidden: l.hidden,
+      locked: l.locked, opacity: l.opacity, src, edit,
     });
   }
   const project: SavedProject = {
@@ -250,6 +254,7 @@ export async function restoreProject(): Promise<{ failed: string[] } | null> {
       st.layers.push(newLayer(orig, r.name, {
         ...extra, img, orig, cx: r.cx, cy: r.cy, w: r.w, h: r.h, rot: r.rot, flipX: r.flipX, flipY: r.flipY,
         crop: { ...r.crop }, page: r.page, pages: r.pages, fit: r.fit && { ...r.fit }, hidden: !!r.hidden,
+        locked: !!r.locked, opacity: typeof r.opacity === 'number' ? Math.min(1, Math.max(0, r.opacity)) : 1,
       }));
     } catch (err) {
       console.warn('No se pudo recuperar', r.name, err);

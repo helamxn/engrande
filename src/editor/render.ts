@@ -80,6 +80,7 @@ function drawDots() {
 export function drawLayer(c: CanvasRenderingContext2D, l: Layer, clipIt = true, img: CanvasImageSource = l.img) {
   const w = l.w, h = l.h, k = l.crop;
   c.save();
+  if (l.opacity < 1) c.globalAlpha *= l.opacity;
   c.translate(l.cx, l.cy); c.rotate(rad(l.rot)); c.scale(l.flipX ? -1 : 1, l.flipY ? -1 : 1);
   if (clipIt) { c.beginPath(); c.rect((k.x0 - 0.5) * w, (k.y0 - 0.5) * h, (k.x1 - k.x0) * w, (k.y1 - k.y0) * h); c.clip(); }
   c.imageSmoothingEnabled = true; c.imageSmoothingQuality = 'high';
@@ -234,9 +235,10 @@ export function render() {
     if (st.hoverL && st.hoverL !== sel && !st.group.includes(st.hoverL)) {
       ctx.strokeStyle = C.accent!; ctx.globalAlpha = 0.55; ctx.lineWidth = 1; poly(cropPts(st.hoverL)); ctx.stroke(); ctx.globalAlpha = 1;
     }
-    if (sel?.hidden) {
-      // oculta: solo un contorno discontinuo para saber dónde está
+    if (sel?.hidden || sel?.locked) {
+      // oculta o bloqueada: solo un contorno discontinuo para saber dónde está (sin tiradores)
       ctx.strokeStyle = C.muted!; ctx.lineWidth = 1; ctx.setLineDash([4, 4]); poly(cropPts(sel)); ctx.stroke(); ctx.setLineDash([]);
+      if (sel.locked && !sel.hidden) sizeLabel(sel, 'Bloqueada · ' + dims(sel));
     } else if (sel) {
       ctx.strokeStyle = C.accent!; ctx.lineWidth = 1.5; poly(cropPts(sel)); ctx.stroke();
       const hs = boxHandles(sel, true), rot = hs.pop()!;

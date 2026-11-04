@@ -50,6 +50,10 @@ export interface Layer extends LayerGeom {
   fit: Fit;
   /** Oculta: no se dibuja, no se exporta y no se puede tocar en el lienzo. */
   hidden: boolean;
+  /** Bloqueada: se ve y se imprime, pero en el lienzo no se puede tocar (útil para un fondo). Se elige desde la lista. */
+  locked: boolean;
+  /** Opacidad 0..1 (también en el PDF: se mezcla con el blanco del papel o con lo que haya debajo). */
+  opacity: number;
 }
 
 export interface Settings {
@@ -91,6 +95,9 @@ export interface LayerProps extends Transform {
   orig: HTMLCanvasElement;
   page: number;
   fit: Fit;
+  name: string;
+  locked: boolean;
+  opacity: number;
   hidden: boolean;
 }
 

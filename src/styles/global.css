@@ -54,7 +54,7 @@
   --font-ui: "Archivo Variable", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
   --breakpoint-xs: 32.5rem;   /* 520px: se oculta el consejo de la barra de herramientas */
-  --breakpoint-desk: 60rem;   /* 960px: el lienzo pasa a ser el fondo de la app, con islas flotantes */
+  --breakpoint-desk: 60rem;   /* 960px: panel flotante a la derecha (por debajo, panel inferior deslizable) */
 }
 /* panel plegado (escritorio): desk:panel-off:hidden, desk:panel-off:grid */
 @custom-variant panel-off (body.panel-off &);
@@ -71,11 +71,15 @@
    */
   :root { --pr: 384px; }
   body.panel-off { --pr: 68px; }
-  /* escritorio: el lienzo ocupa toda la ventana; nada hace scroll fuera de él */
-  @media (width >= 60rem) {
-    html, body { overflow: hidden; }
-    body { background: var(--desk); }
+  /* el lienzo ocupa toda la ventana (también en móvil): la página no hace scroll, solo los paneles por dentro */
+  html, body { overflow: hidden; overscroll-behavior: none; }
+  body { background: var(--desk); }
+  /* panel inferior (móvil): su altura cambia con una transición, salvo mientras se arrastra */
+  @media (width < 60rem) {
+    #panel { transition: height .22s cubic-bezier(.2, .8, .2, 1); }
+    #panel.sheet-drag { transition: none; }
   }
+  @media (prefers-reduced-motion: reduce) { #panel { transition: none !important; } }
   /* mientras el worker quita el fondo o aplica la varita */
   body.busy #cv { cursor: progress !important; }
 }
@@ -87,20 +91,14 @@
 @layer components {
   /* islas: los grupos que flotan sobre el lienzo en escritorio (en móvil no llevan caja) */
   .island {
-    @variant desk {
-      @apply rounded-xl border border-line bg-panel;
-      box-shadow: 0 1px 2px var(--shadow), 0 6px 20px -8px var(--shadow);
-    }
+    @apply rounded-xl border border-line bg-panel;
+    box-shadow: 0 1px 2px var(--shadow), 0 6px 20px -8px var(--shadow);
   }
   /* dentro de la isla de herramientas los grupos ya tienen fondo: se quita el suyo */
   #tools .tgroup {
-    @variant desk {
-      @apply bg-transparent p-0;
-      & button:hover:not(:disabled) { background: color-mix(in srgb, var(--fg) 7%, transparent); }
-    }
+    @apply bg-transparent p-0;
+    & button:hover:not(:disabled) { background: color-mix(in srgb, var(--fg) 7%, transparent); }
   }
-  /* solo en pantallas anchas: en escritorio estrecho la cabecera flotante se compacta */
-  .wide-only { @media (width >= 60rem) and (width < 80rem) { display: none !important; } }
 
   /* botones */
   .btn {
@@ -194,7 +192,10 @@
   /* aviso dentro del panel cuando no hay selección */
   .sel-note { @apply m-0 hidden rounded-lg border border-dashed border-line px-3 py-2.5 text-[.84rem] text-muted; }
   .no-sel .sel-note { @apply block; }
-  .no-sel .needs-sel { @apply hidden; }
+  /* !important: estos bloques llevan utilidades de display (flex) que, por capa, ganarían a esta regla */
+  .no-sel .needs-sel { display: none !important; }
+  /* imagen bloqueada: se ve su nombre, pero no las medidas que no se pueden cambiar */
+  .sel-locked .edit-sel { display: none !important; }
 
   /* lista de imágenes */
   .layer {
@@ -203,7 +204,7 @@
     /* oculta: la miniatura y el nombre se atenúan; los botones siguen nítidos */
     &.off .layer-main { @apply opacity-45; }
     & .act {
-      @apply grid size-[30px] flex-none cursor-pointer place-items-center rounded-md border-0 bg-transparent text-muted;
+      @apply grid size-7 flex-none cursor-pointer place-items-center rounded-md border-0 bg-transparent text-muted;
       &:hover { @apply bg-panel text-fg; }
       &:disabled { @apply cursor-default bg-transparent opacity-30; }
       & svg { @apply size-4; }
@@ -224,6 +225,7 @@
     & .mini {
       @apply flex flex-none items-center gap-1.5 whitespace-nowrap px-1.5 text-[.8rem] text-muted;
       & output { @apply min-w-[3.2em] font-mono text-fg; }
+      & svg { @apply size-4 flex-none; }
     }
     & input[type="range"] { @apply h-6 w-[104px]; }
     & input[type="checkbox"] { @apply size-4; accent-color: var(--accent); }

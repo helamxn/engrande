@@ -1,10 +1,13 @@
 ---
 import Icon from './Icon.astro';
-/** Cabecera: marca, agregar imagen y descarga rápida del PDF por hojas. En escritorio flota arriba a la izquierda. */
+/**
+ * Cabecera: marca, agregar imagen y descarga rápida del PDF por hojas. Flota sobre el lienzo: en móvil ocupa el
+ * ancho de arriba (solo iconos en pantallas estrechas); en escritorio, arriba a la izquierda.
+ */
 ---
 
 <header
-  class="island flex flex-wrap items-center gap-3 desk:fixed desk:top-3 desk:left-3 desk:z-20 desk:max-w-[calc(100vw-var(--pr)-24px)] desk:flex-nowrap desk:gap-2 desk:py-1.5 desk:pr-1.5 desk:pl-3"
+  class="island fixed top-2 right-2 left-2 z-20 flex items-center gap-2 py-1.5 pr-1.5 pl-3 desk:top-3 desk:right-auto desk:left-3 desk:max-w-[calc(100vw-var(--pr)-24px)]"
 >
   <div class="mr-auto flex min-w-0 items-center gap-2.5 desk:mr-2">
     <svg class="flex-none text-mark" width="30" height="30" viewBox="0 0 30 30" aria-hidden="true">
@@ -12,22 +15,19 @@ import Icon from './Icon.astro';
       <circle cx="15" cy="15" r="3.2" fill="currentColor"></circle>
       <path d="M15 1v28M1 15h28" stroke="currentColor" stroke-width="1.6"></path>
     </svg>
-    <div>
-      <h1 class="m-0 text-[1.45rem] leading-none font-extrabold tracking-[-.01em] [font-stretch:118%]">Pliego</h1>
-      <p class="wide-only mt-0.5 mb-0 text-[.82rem] text-muted">Pósters grandes impresos por hojas</p>
-    </div>
+    <h1 class="m-0 text-[1.3rem] leading-none font-extrabold tracking-[-.01em] [font-stretch:118%] desk:text-[1.45rem]">Pliego</h1>
   </div>
   <button class="btn" type="button" id="newPoster" title="Empezar un póster nuevo y borrar el trabajo guardado en este navegador" aria-label="Nuevo póster">
     <Icon name="newPoster" />
-    <span class="wide-only hidden xs:inline">Nuevo</span>
+    <span class="hidden desk:inline">Nuevo</span>
   </button>
   <button class="btn" type="button" data-addfile>
     <Icon name="addImage" />
-    Agregar imagen
+    <span class="max-xs:sr-only">Agregar imagen</span>
   </button>
   <input id="file" class="sr-only" type="file" accept="image/*,application/pdf" multiple tabindex="-1" aria-hidden="true" />
   <button class="btn btn-primary" type="button" id="quickExport">
     <Icon name="download" />
-    <span id="qeLabel">Descargar PDF</span>
+    <span id="qeLabel" class="max-xs:sr-only">Descargar PDF</span>
   </button>
 </header>
