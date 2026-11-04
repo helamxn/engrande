@@ -39,7 +39,7 @@ export function newLayer(img: HTMLCanvasElement, name: string, extra: Partial<La
   return {
     id: st.nextId++, name, img, orig: img, cx: g.W / 2, cy: g.H / 2, w: g.W, h: (g.W * img.height) / img.width,
     rot: 0, flipX: false, flipY: false, crop: { x0: 0, y0: 0, x1: 1, y1: 1 },
-    pdf: null, page: 1, pages: 1, isSample: false, src: null as Source | null, fit: null, ...extra,
+    pdf: null, page: 1, pages: 1, isSample: false, src: null as Source | null, fit: null, hidden: false, ...extra,
   };
 }
 /** Coloca una imagen nueva ajustada al póster. Si va desplazada (varias a la vez), queda como colocada a mano. */
@@ -54,6 +54,20 @@ export const cloneLayer = (l: Layer, extra: Partial<Layer> = {}): Layer =>
   ({ ...l, id: st.nextId++, crop: { ...l.crop }, isSample: false, fit: l.fit && { ...l.fit }, ...extra });
 /** La imagen se movió o cambió de tamaño a mano: ya no se reajusta al cambiar la hoja. */
 export const markManual = (l: Layer) => { l.fit = null; };
+
+/**
+ * Oculta o muestra una imagen: oculta no se dibuja, no se exporta y no se puede tocar en el lienzo.
+ * Al ocultar la seleccionada se deselecciona, porque en el lienzo ya no habría nada que tocar.
+ */
+export function toggleHidden(l: Layer) {
+  if (S.mode === 'crop') applyCrop();
+  if (S.mode !== 'move') setMode('move');
+  snap();
+  l.hidden = !l.hidden;
+  if (l.hidden && st.sel === l) select(null);
+  afterChange();
+  toast(l.hidden ? `“${l.name}” oculta: no se imprimirá` : `“${l.name}” visible de nuevo`);
+}
 
 export function select(l: Layer | null) {
   if (S.mode === 'crop' && l !== st.sel) applyCrop();
@@ -150,6 +164,7 @@ export function setMode(m: Mode) {
   if (S.mode === 'crop' && m !== 'crop') applyCrop();
   if (m === 'crop') { enterCrop(); return; }
   if (m !== 'move' && !st.sel) { toast('Primero toca una imagen'); return; }
+  if (m !== 'move' && st.sel?.hidden) { toast('La imagen está oculta. Muéstrala para editarla.'); return; }
   S.mode = m;
   $('#cv').style.cursor = cursorFor(m);
   st.hoverL = null;
@@ -157,6 +172,7 @@ export function setMode(m: Mode) {
 }
 export function enterCrop() {
   if (!st.sel || S.mode === 'crop') return;
+  if (st.sel.hidden) { toast('La imagen está oculta. Muéstrala para recortarla.'); return; }
   S.cropRatio = null; S.cropRatioKey = 'null';
   cropSession = takeSnap();
   S.mode = 'crop';

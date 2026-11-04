@@ -10,6 +10,7 @@ Todo ocurre en el navegador: no hay servidor, cuentas ni base de datos, y las im
 - **Tailwind CSS 4**: tokens del tema en `src/styles/global.css` (`@theme`) y unas pocas clases de componente para lo que el editor genera desde TypeScript
 - **pdf.js 6** para leer PDF y **jsPDF 4** para exportar. Las dos librerías se cargan solo cuando se usan.
 - Fuentes Archivo e IBM Plex Mono servidas desde el propio dominio (Fontsource)
+- Iconos de **Lucide** (`lucide-static`), importados uno a uno en `src/editor/ui/icons.ts`
 - **Vitest** para la lógica pura
 
 ## Comandos

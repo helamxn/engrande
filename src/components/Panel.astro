@@ -1,4 +1,5 @@
 ---
+import Icon from './Icon.astro';
 /** Panel lateral con tres pestañas: Hojas, Imágenes y Exportar. */
 const pane = 'flex min-h-0 flex-col gap-[18px] overflow-x-hidden overflow-y-auto p-4';
 const field = 'flex flex-col gap-2';
@@ -86,7 +87,7 @@ const tabs = [
       <div class="grid grid-cols-[1fr_auto_1fr] items-end gap-2">
         <label class="pf"><span>Ancho</span><span class="unit"><input id="pW" type="number" step="0.1" min="0.3" inputmode="decimal" /><em>cm</em></span></label>
         <button type="button" class="lock" id="pLock" aria-pressed="true" title="Mantener proporción" aria-label="Mantener proporción">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 018 0v4"></path></svg>
+          <Icon name="lock" />
         </button>
         <label class="pf"><span>Alto</span><span class="unit"><input id="pH" type="number" step="0.1" min="0.3" inputmode="decimal" /><em>cm</em></span></label>
       </div>
@@ -111,7 +112,7 @@ const tabs = [
       <div class="lbl">Imágenes en el póster <span class="val" id="layerCount"></span></div>
       <ol class="m-0 flex list-none flex-col gap-1.5 p-0" id="layers"></ol>
       <button type="button" class="btn" data-addfile>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
+        <Icon name="addImage" />
         Agregar imagen
       </button>
       <p class="note">Arriba en la lista = al frente en el póster. También puedes arrastrar archivos a la página o pegarlos con Ctrl+V.</p>

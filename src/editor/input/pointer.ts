@@ -49,9 +49,9 @@ export const isGesturing = () => !!gest || !!(drag && !['none', 'tap', 'pan'].in
 /** Imagen bajo el punto. precise: ignora las zonas transparentes (salvo de la seleccionada). */
 function hitLayer(p: Pt, precise = true): Layer | null {
   const m = s2mm(p), L = st.layers;
-  if (!precise) { for (let i = L.length - 1; i >= 0; i--) if (inside(L[i]!, m)) return L[i]!; return null; }
-  for (let i = L.length - 1; i >= 0; i--) { const l = L[i]!; if (inside(l, m) && opaqueAt(l, m)) return l; }
-  if (st.sel && inside(st.sel, m)) return st.sel;
+  if (!precise) { for (let i = L.length - 1; i >= 0; i--) if (!L[i]!.hidden && inside(L[i]!, m)) return L[i]!; return null; }
+  for (let i = L.length - 1; i >= 0; i--) { const l = L[i]!; if (!l.hidden && inside(l, m) && opaqueAt(l, m)) return l; }
+  if (st.sel && !st.sel.hidden && inside(st.sel, m)) return st.sel;
   return hitLayer(p, false);
 }
 function opaqueAt(l: Layer, m: Pt) {
@@ -84,7 +84,7 @@ export function initPointer(cv: HTMLCanvasElement) {
       // Al recortar, pellizcar sobre la imagen la amplía o reduce dentro del marco.
       drag = null;
       const g0 = gInfo('view'), c0 = s2mm({ x: g0.cx, y: g0.cy }), sel = st.sel;
-      const mode = !sel ? 'view'
+      const mode = !sel || sel.hidden ? 'view'
         : S.mode === 'move' && inside(sel, c0) ? 'layer'
           : S.mode === 'crop' && insideImage(sel, c0) ? 'frame' : 'view';
       gest = { ...g0, mode };
@@ -113,7 +113,7 @@ export function initPointer(cv: HTMLCanvasElement) {
     if (e.button === 1 || spaceDown) { drag = { t: 'pan', last: p }; return; }
 
     if (S.mode === 'move') {
-      if (sel) {
+      if (sel && !sel.hidden) {
         const h = nearest(boxHandles(sel, true), p, R);
         if (h) {
           setPending(takeSnap());
@@ -159,7 +159,7 @@ export function initPointer(cv: HTMLCanvasElement) {
       // solo pasar el ratón por encima: cursores y resaltado
       if (e.pointerType === 'mouse') {
         if (S.mode === 'move') {
-          const h = sel && nearest(boxHandles(sel, true), p, 11);
+          const h = sel && !sel.hidden && nearest(boxHandles(sel, true), p, 11);
           st.hoverL = h ? null : hitLayer(p, false);
           cv.style.cursor = h && sel ? handleCursor(sel, h.id) : st.hoverL ? (e.altKey ? 'copy' : 'move') : 'default';
         } else if (S.mode === 'crop' && sel) {

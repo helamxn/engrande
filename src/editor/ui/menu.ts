@@ -1,7 +1,7 @@
 /** Menú contextual (clic derecho, mantener pulsado o botón "Más"). */
 import {
   copyLayer, duplicateLayer, enterCrop, fitSel, centerSel, flip, newPoster, pasteLayer, removeLayer, reorder,
-  resetOriginal, rotate90, select, setMode, unstretchSel, autoBackground,
+  resetOriginal, rotate90, select, setMode, toggleHidden, unstretchSel, autoBackground,
 } from '../actions';
 import { $, toast } from '../dom';
 import { isStretched } from '../geometry';
@@ -45,6 +45,7 @@ export function layerMenu(l: Layer): MenuItem[] {
     { label: 'Copiar', kbd: MOD + 'C', fn: () => copyLayer(l) },
     { label: 'Pegar', kbd: MOD + 'V', fn: () => void pasteAny(), disabled: !canPaste() },
     { label: 'Duplicar', kbd: MOD + 'D', fn: () => duplicateLayer(l) },
+    { label: l.hidden ? 'Mostrar' : 'Ocultar', fn: () => toggleHidden(l) },
     '-',
     { head: 'Orden' },
     { label: 'Traer al frente', kbd: MOD + SHIFT + ']', fn: () => reorder(l, 'front'), disabled: top },

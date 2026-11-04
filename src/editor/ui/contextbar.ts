@@ -22,7 +22,7 @@ function tb(icon: IconName | null, label: string, act: string, title = label, cl
 const SEP = '<span class="sep"></span>';
 
 export function renderBar() {
-  if (!st.sel) { bar.hidden = true; $('#hint').hidden = false; updateHint(); return; }
+  if (!st.sel || st.sel.hidden) { bar.hidden = true; $('#hint').hidden = false; updateHint(); return; }
   let h = '';
   if (S.mode === 'move') {
     h = tb('crop', 'Recortar', 'crop', 'Recortar (doble clic)') + tb('bg', 'Quitar fondo', 'autobg')

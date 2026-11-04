@@ -155,6 +155,8 @@
   .layer {
     @apply flex items-center gap-1 rounded-[9px] border border-line p-1;
     &.on { @apply border-accent bg-accent-soft; }
+    /* oculta: la miniatura y el nombre se atenúan; los botones siguen nítidos */
+    &.off .layer-main { @apply opacity-45; }
     & .act {
       @apply grid size-[30px] flex-none cursor-pointer place-items-center rounded-md border-0 bg-transparent text-muted;
       &:hover { @apply bg-panel text-fg; }

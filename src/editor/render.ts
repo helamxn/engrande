@@ -53,7 +53,7 @@ export function drawLayer(c: CanvasRenderingContext2D, l: Layer, clipIt = true, 
 }
 /** hi: versión en alta resolución de cada lienzo de trabajo (solo al exportar). */
 export const drawAll = (c: CanvasRenderingContext2D, hi?: Map<HTMLCanvasElement, HTMLCanvasElement>) =>
-  st.layers.forEach((l) => drawLayer(c, l, true, hi?.get(l.img) ?? l.img));
+  st.layers.forEach((l) => { if (!l.hidden) drawLayer(c, l, true, hi?.get(l.img) ?? l.img); });
 
 /* ---------- tiradores ---------- */
 export interface Handle extends Pt { id: HandleId | 'rot'; base?: Pt }
@@ -124,6 +124,7 @@ export function render() {
   ctx.save(); ctx.beginPath(); ctx.rect(0, 0, g.W, g.H); ctx.clip();
   if (!editing) { ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, g.W, g.H); }
   for (const l of st.layers) {
+    if (l.hidden) continue;
     if (cropping && l === sel) { ctx.globalAlpha = 0.35; drawLayer(ctx, l, false); ctx.globalAlpha = 1; }
     drawLayer(ctx, l);
   }
@@ -158,7 +159,10 @@ export function render() {
     if (st.hoverL && st.hoverL !== sel) {
       ctx.strokeStyle = C.accent!; ctx.globalAlpha = 0.55; ctx.lineWidth = 1; poly(cropPts(st.hoverL)); ctx.stroke(); ctx.globalAlpha = 1;
     }
-    if (sel) {
+    if (sel?.hidden) {
+      // oculta: solo un contorno discontinuo para saber dónde está
+      ctx.strokeStyle = C.muted!; ctx.lineWidth = 1; ctx.setLineDash([4, 4]); poly(cropPts(sel)); ctx.stroke(); ctx.setLineDash([]);
+    } else if (sel) {
       ctx.strokeStyle = C.accent!; ctx.lineWidth = 1.5; poly(cropPts(sel)); ctx.stroke();
       const hs = boxHandles(sel, true), rot = hs.pop()!;
       ctx.beginPath(); ctx.moveTo(rot.base!.x, rot.base!.y); ctx.lineTo(rot.x, rot.y); ctx.stroke();

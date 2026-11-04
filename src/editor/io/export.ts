@@ -27,6 +27,7 @@ function setBusy(b: boolean) {
 }
 function canExport() {
   if (!st.layers.length) { setStatus('El póster está vacío. Agrega al menos una imagen.'); return false; }
+  if (st.layers.every((l) => l.hidden)) { setStatus('Todas las imágenes están ocultas. Muestra al menos una para exportar.'); return false; }
   return true;
 }
 
@@ -52,7 +53,7 @@ const jpg = (c: HTMLCanvasElement) => c.toDataURL('image/jpeg', 0.92);
 async function hiSources(dpi: number): Promise<HiMap> {
   const need = new Map<HTMLCanvasElement, { l: (typeof st.layers)[number]; w: number }>();
   for (const l of st.layers) {
-    if (!l.src) continue;
+    if (!l.src || l.hidden) continue;
     const w = (l.w / 25.4) * dpi, cur = need.get(l.img);
     if (!cur || w > cur.w) need.set(l.img, { l, w });
   }

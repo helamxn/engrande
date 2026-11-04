@@ -49,6 +49,8 @@ export interface Layer extends LayerGeom {
   isSample: boolean;
   src: Source | null;
   fit: Fit;
+  /** Oculta: no se dibuja, no se exporta y no se puede tocar en el lienzo. */
+  hidden: boolean;
   pasteN?: number;
 }
 
@@ -91,6 +93,7 @@ export interface LayerProps extends Transform {
   orig: HTMLCanvasElement;
   page: number;
   fit: Fit;
+  hidden: boolean;
 }
 
 /** Ajustes que definen la geometría del póster (se guardan en el historial). */

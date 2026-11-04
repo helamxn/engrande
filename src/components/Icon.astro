@@ -1,0 +1,13 @@
+---
+/** Icono de Lucide para el marcado .astro (el mismo juego que usa el editor en TypeScript). */
+import { ICON, type IconName } from '../editor/ui/icons';
+
+interface Props {
+  name: IconName;
+  class?: string;
+}
+const { name, class: className } = Astro.props;
+const svg = className ? ICON[name].replace('class="', `class="${className} `) : ICON[name];
+---
+
+<Fragment set:html={svg} />

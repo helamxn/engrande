@@ -1,4 +1,5 @@
 ---
+import Icon from './Icon.astro';
 /** Mesa de trabajo: historial, zoom, lienzo con las hojas y lectura del tamaño y la calidad. */
 const icon = 'size-[17px]';
 ---
@@ -7,21 +8,21 @@ const icon = 'size-[17px]';
   <div class="flex flex-wrap items-center gap-2">
     <div class="seg" role="group" aria-label="Historial">
       <button type="button" id="undo" title="Deshacer (Ctrl+Z)" aria-label="Deshacer" disabled>
-        <svg class={icon} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14L4 9l5-5"></path><path d="M4 9h10a6 6 0 010 12h-3"></path></svg>
+        <Icon name="undo" class={icon} />
       </button>
       <button type="button" id="redo" title="Rehacer (Ctrl+Y)" aria-label="Rehacer" disabled>
-        <svg class={icon} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 14l5-5-5-5"></path><path d="M20 9H10a6 6 0 000 12h3"></path></svg>
+        <Icon name="redo" class={icon} />
       </button>
     </div>
     <span class="hidden text-[.8rem] text-muted xs:inline" id="tip">Clic derecho sobre el lienzo para más opciones</span>
     <span class="flex-1"></span>
     <div class="seg" role="group" aria-label="Vista">
       <button type="button" id="zoomOut" title="Alejar" aria-label="Alejar">
-        <svg class={icon} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14"></path></svg>
+        <Icon name="zoomOut" class={icon} />
       </button>
       <button type="button" id="zoomFit" title="Ver todo el póster (Ctrl+0)">Ver todo</button>
       <button type="button" id="zoomIn" title="Acercar" aria-label="Acercar">
-        <svg class={icon} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14M12 5v14"></path></svg>
+        <Icon name="zoomIn" class={icon} />
       </button>
     </div>
   </div>

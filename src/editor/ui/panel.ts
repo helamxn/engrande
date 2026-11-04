@@ -1,6 +1,6 @@
 /** Panel lateral: pestañas, ajustes de hojas, propiedades de la imagen, lista de imágenes, exportación y lectura. */
 import {
-  afterChange, centerSel, duplicateLayer, fitSel, markManual, removeLayer, reorder, select, unstretchSel,
+  afterChange, centerSel, duplicateLayer, fitSel, markManual, removeLayer, reorder, select, toggleHidden, unstretchSel,
 } from '../actions';
 import { MAX_COLS_ROWS, PRESETS } from '../constants';
 import { $, $$, toast } from '../dom';
@@ -118,7 +118,7 @@ export function renderList() {
   const n = st.layers.length;
   [...st.layers].reverse().forEach((l) => {
     const li = document.createElement('li');
-    li.className = 'layer' + (l === st.sel ? ' on' : '');
+    li.className = 'layer' + (l === st.sel ? ' on' : '') + (l.hidden ? ' off' : '');
     const b = document.createElement('button');
     b.type = 'button'; b.className = 'layer-main';
     b.addEventListener('click', () => select(l));
@@ -132,11 +132,13 @@ export function renderList() {
     // el nombre del archivo es dato del usuario: siempre con textContent
     const nm = document.createElement('span'); nm.textContent = l.name;
     const sm = document.createElement('small');
-    sm.textContent = `${cm(visW(l))} × ${cm(visH(l))} cm` + (l.isSample ? ' · ejemplo' : l.pdf ? ` · PDF pág. ${l.page}` : '');
+    sm.textContent = (l.hidden ? 'Oculta · ' : '') + `${cm(visW(l))} × ${cm(visH(l))} cm` + (l.isSample ? ' · ejemplo' : l.pdf ? ` · PDF pág. ${l.page}` : '');
     nm.appendChild(sm);
     b.append(tc, nm); li.appendChild(b);
     const i = st.layers.indexOf(l);
     const acts: [keyof typeof ICON, string, () => void, boolean][] = [
+      // ojo abierto = visible, como en Figma o Photoshop; al pulsarlo se oculta
+      [l.hidden ? 'eyeOff' : 'eye', l.hidden ? 'Mostrar' : 'Ocultar', () => toggleHidden(l), false],
       ['up', 'Traer adelante', () => reorder(l, 1), i === n - 1],
       ['down', 'Enviar atrás', () => reorder(l, -1), i === 0],
       ['dup', 'Duplicar', () => duplicateLayer(l), false],
@@ -161,7 +163,8 @@ export function renderList() {
 /* ---------- lectura bajo el lienzo ---------- */
 export function updateReadout() {
   const g = posterGeo(), sel = st.sel;
-  const t = sel ?? st.layers.reduce<Layer | null>((a, l) => (!a || pppOf(l, HI_AREA) < pppOf(a, HI_AREA) ? l : a), null);
+  // las imágenes ocultas no se imprimen: no cuentan para la calidad
+  const t = sel ?? st.layers.reduce<Layer | null>((a, l) => (l.hidden ? a : !a || pppOf(l, HI_AREA) < pppOf(a, HI_AREA) ? l : a), null);
   const out = $('#readout');
   out.textContent = '';
   const item = (label: string, value: string) => {
@@ -191,6 +194,7 @@ export function updateHint() {
   const t = isTouch(), sel = st.sel;
   const H: Record<string, string> = {
     move: !st.layers.length ? 'Agrega una imagen para empezar'
+      : sel?.hidden ? 'Imagen oculta: no se imprime · muéstrala con el ojo de la lista'
       : sel ? (t ? 'Arrastra para mover · pellizca sobre la imagen para escalar y girar · toca fuera para soltar' : 'Esquinas: escalar · lados: estirar · punto superior: girar · clic fuera para soltar')
         : (t ? 'Toca una imagen para seleccionarla · mantén pulsado para más opciones' : 'Clic en una imagen para seleccionarla · clic derecho para más opciones'),
     crop: t
@@ -255,7 +259,12 @@ export function initPanel() {
   numField('#pX', (l, v) => { l.cx += v * 10 - bboxMM(l).x0; markManual(l); });
   numField('#pY', (l, v) => { l.cy += v * 10 - bboxMM(l).y0; markManual(l); });
   numField('#pR', (l, v) => { rotateLayer(l, normDeg(v) - l.rot, cropCenter(l)); markManual(l); });
-  $('#pLock').addEventListener('click', () => { S.lock = !S.lock; $('#pLock').setAttribute('aria-pressed', String(S.lock)); });
+  $('#pLock').addEventListener('click', () => {
+    S.lock = !S.lock;
+    const b = $('#pLock');
+    b.setAttribute('aria-pressed', String(S.lock));
+    b.innerHTML = ICON[S.lock ? 'lock' : 'lockOpen']; // constante del código
+  });
   $('#unstretch').addEventListener('click', unstretchSel);
   $('#fitContain').addEventListener('click', fitSel('contain'));
   $('#fitCover').addEventListener('click', fitSel('cover'));

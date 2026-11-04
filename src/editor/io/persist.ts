@@ -22,6 +22,8 @@ interface SavedSource { kind: 'img' | 'svg' | 'pdf'; key: string }
 interface SavedLayer {
   name: string; cx: number; cy: number; w: number; h: number; rot: number; flipX: boolean; flipY: boolean;
   crop: Crop; page: number; pages: number; isSample: boolean; fit: Fit;
+  /** Opcional para leer proyectos guardados antes de existir la opción de ocultar. */
+  hidden?: boolean;
   /** null solo para la imagen de ejemplo, que se vuelve a dibujar. */
   src: SavedSource | null;
   /** Lienzo editado (borrador, varita, quitar fondo) en PNG; null si no se editó. */
@@ -134,7 +136,7 @@ async function save() {
     }
     layers.push({
       name: l.name, cx: l.cx, cy: l.cy, w: l.w, h: l.h, rot: l.rot, flipX: l.flipX, flipY: l.flipY,
-      crop: { ...l.crop }, page: l.page, pages: l.pages, isSample: l.isSample, fit: l.fit && { ...l.fit }, src, edit,
+      crop: { ...l.crop }, page: l.page, pages: l.pages, isSample: l.isSample, fit: l.fit && { ...l.fit }, hidden: l.hidden, src, edit,
     });
   }
   const project: SavedProject = {
@@ -248,7 +250,7 @@ export async function restoreProject(): Promise<{ failed: string[] } | null> {
       }
       st.layers.push(newLayer(orig, r.name, {
         ...extra, img, orig, cx: r.cx, cy: r.cy, w: r.w, h: r.h, rot: r.rot, flipX: r.flipX, flipY: r.flipY,
-        crop: { ...r.crop }, page: r.page, pages: r.pages, isSample: r.isSample, fit: r.fit && { ...r.fit },
+        crop: { ...r.crop }, page: r.page, pages: r.pages, isSample: r.isSample, fit: r.fit && { ...r.fit }, hidden: !!r.hidden,
       }));
     } catch (err) {
       console.warn('No se pudo recuperar', r.name, err);
