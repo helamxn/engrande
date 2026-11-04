@@ -32,22 +32,24 @@ const tabs = [
   <div class={pane} role="tabpanel" id="pane-sheets" aria-labelledby="tab-sheets" data-pane="sheets">
     <div class={field}>
       <div class="lbl">Distribución <span class="val">columnas × filas</span></div>
-      <div class="flex flex-wrap gap-1.5" id="presets"></div>
+      <!-- presets en cuadrícula de 4: dos filas parejas en vez de 5 + 3 -->
+      <div class="grid grid-cols-4 gap-1.5" id="presets"></div>
+      <!-- columnas y filas con la misma estructura que el zoom de la barra: [− valor +] -->
       <div class="grid grid-cols-2 gap-2.5">
-        <div class="stepper">
-          <span>Columnas</span>
-          <div class="flex items-center gap-0.5">
-            <button type="button" data-step="cols" data-d="-1" aria-label="Menos columnas">−</button>
-            <output id="colsOut">2</output>
-            <button type="button" data-step="cols" data-d="1" aria-label="Más columnas">+</button>
+        <div class="flex min-w-0 flex-col gap-1">
+          <span class="text-[.78rem] text-muted" id="lblCols">Columnas</span>
+          <div class="tgroup self-start" role="group" aria-labelledby="lblCols">
+            <button type="button" data-step="cols" data-d="-1" aria-label="Menos columnas" title="Menos columnas"><Icon name="minus" class="size-4" /></button>
+            <output id="colsOut" class="tval">2</output>
+            <button type="button" data-step="cols" data-d="1" aria-label="Más columnas" title="Más columnas"><Icon name="plus" class="size-4" /></button>
           </div>
         </div>
-        <div class="stepper">
-          <span>Filas</span>
-          <div class="flex items-center gap-0.5">
-            <button type="button" data-step="rows" data-d="-1" aria-label="Menos filas">−</button>
-            <output id="rowsOut">2</output>
-            <button type="button" data-step="rows" data-d="1" aria-label="Más filas">+</button>
+        <div class="flex min-w-0 flex-col gap-1">
+          <span class="text-[.78rem] text-muted" id="lblRows">Filas</span>
+          <div class="tgroup self-start" role="group" aria-labelledby="lblRows">
+            <button type="button" data-step="rows" data-d="-1" aria-label="Menos filas" title="Menos filas"><Icon name="minus" class="size-4" /></button>
+            <output id="rowsOut" class="tval">2</output>
+            <button type="button" data-step="rows" data-d="1" aria-label="Más filas" title="Más filas"><Icon name="plus" class="size-4" /></button>
           </div>
         </div>
       </div>

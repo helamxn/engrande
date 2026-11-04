@@ -84,19 +84,39 @@
     &:hover { filter: brightness(1.08); }
   }
 
-  /* control segmentado */
+  /*
+   * Grupos de controles con la misma estructura (referencia de diseño de la barra de zoom):
+   * fondo suave sin borde, esquinas de 12 px y botones de 36 px de alto.
+   * .seg = elegir una opción (Papel, Orientación, Calidad); .tgroup = acciones (zoom, historial, columnas/filas).
+   */
   .seg {
-    @apply inline-flex gap-0.5 rounded-[9px] border border-line bg-panel p-[3px];
+    @apply inline-flex gap-0.5 rounded-xl p-1;
+    background: color-mix(in srgb, var(--fg) 6%, transparent);
     & button {
-      @apply inline-flex min-h-8 cursor-pointer items-center gap-1.5 rounded-md border-0 bg-transparent px-2.5 py-1.5 text-[.86rem] font-semibold text-muted;
+      @apply inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-lg border-0 bg-transparent px-3 text-[.86rem] font-semibold text-muted;
       & svg { @apply size-[17px]; }
+      &:hover:not(:disabled):not([aria-pressed="true"]) { @apply text-fg; }
       &[aria-pressed="true"] { @apply bg-accent-soft text-accent; }
       &:disabled { @apply cursor-default opacity-40; }
     }
   }
 
+  .tgroup {
+    @apply inline-flex items-center gap-0.5 rounded-xl p-1;
+    background: color-mix(in srgb, var(--fg) 6%, transparent);
+    & button {
+      @apply grid h-9 min-w-9 cursor-pointer place-items-center rounded-lg border-0 bg-transparent px-2 text-muted;
+      &:hover:not(:disabled) { @apply bg-panel text-fg; }
+      &:disabled { @apply cursor-default opacity-40; }
+    }
+    & .tpct { @apply min-w-[4.5rem] text-[.9rem] font-medium text-fg tabular-nums; }
+    /* valor entre − y + (columnas, filas) */
+    & .tval { @apply min-w-8 text-center text-[.95rem] font-semibold text-fg tabular-nums; }
+  }
+
   .chip {
-    @apply min-w-[52px] cursor-pointer rounded-[7px] border border-line bg-transparent px-2.5 py-1.5 font-mono text-[.85rem];
+    @apply h-9 w-full cursor-pointer rounded-lg border border-line bg-transparent px-2 font-mono text-[.85rem];
+    &:hover:not([aria-pressed="true"]) { @apply border-muted; }
     &[aria-pressed="true"] { @apply border-accent bg-accent-soft font-medium text-accent; }
   }
 
@@ -106,13 +126,6 @@
     & output, & .val { @apply font-mono text-[.82rem] font-medium normal-case tracking-normal text-fg; }
   }
   .note { @apply m-0 max-w-[62ch] text-[.84rem] text-muted; & strong { @apply text-fg; } }
-
-  .stepper {
-    @apply flex items-center justify-between rounded-lg border border-line p-1;
-    & > span { @apply pl-1.5 text-[.8rem] text-muted; }
-    & button { @apply size-8 cursor-pointer rounded-md border-0 bg-accent-soft text-[1.05rem] font-bold text-accent; }
-    & output { @apply min-w-[26px] text-center font-mono font-medium; }
-  }
 
   input[type="range"] { @apply h-7 w-full; accent-color: var(--accent); }
 

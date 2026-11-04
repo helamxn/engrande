@@ -54,6 +54,7 @@ const RAW = {
   up: arrowUp, down: arrowDown, dup: copyPlus, eye, eyeOff,
   // cabecera y herramientas
   newPoster: filePlus, addImage: imagePlus, download, undo, redo, zoomIn: plus, zoomOut: minus, lock, lockOpen, printer,
+  plus, minus,
   // menú contextual (flechas de submenú e iconos de las opciones principales)
   chevronRight, chevronLeft, copy, paste: clipboardPaste, layers, scaling, history, fitAll: maximize, zoomInLens, zoomOutLens,
 } as const;

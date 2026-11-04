@@ -18,6 +18,7 @@ export function fitView() {
   V.ox = (CW - g.W * V.k) / 2;
   V.oy = top + (CH - bottom - top - g.H * V.k) / 2;
   V.fitted = true;
+  syncZoomLabel();
   dirty();
 }
 
@@ -26,9 +27,22 @@ export function zoomAt(sx: number, sy: number, f: number) {
   const nk = clamp(V.k * f, base * 0.3, base * 25);
   const r = nk / V.k;
   V.ox = sx - (sx - V.ox) * r; V.oy = sy - (sy - V.oy) * r; V.k = nk; V.fitted = false;
+  syncZoomLabel();
   dirty();
 }
 export const zoomCenter = (f: number) => zoomAt(view.CW / 2, view.CH / 2, f);
+
+/** Zoom en porcentaje: 100 % = tamaño real aproximado en pantalla (96 px CSS por pulgada, el estándar web). */
+export const zoomPercent = () => Math.round(((V.k * 25.4) / 96) * 100);
+let shownPct = -1;
+/** Actualiza el porcentaje de la barra, solo si cambió (al encajar y al hacer zoom). */
+export function syncZoomLabel() {
+  const p = zoomPercent();
+  if (p === shownPct) return;
+  shownPct = p;
+  const el = document.querySelector('#zoomPct');
+  if (el) el.textContent = p + '%';
+}
 
 export function panBy(dx: number, dy: number) {
   V.ox += dx; V.oy += dy; V.fitted = false;

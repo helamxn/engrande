@@ -6,7 +6,19 @@ const icon = 'size-[17px]';
 
 <section class="flex min-w-0 flex-col gap-2 desk:min-h-0">
   <div class="flex flex-wrap items-center gap-2">
-    <div class="seg" role="group" aria-label="Historial">
+    <!-- zoom: − porcentaje + (el porcentaje encaja el póster entero al pulsarlo) -->
+    <div class="tgroup" role="group" aria-label="Zoom">
+      <button type="button" id="zoomOut" title="Alejar (−)" aria-label="Alejar">
+        <Icon name="zoomOut" class={icon} />
+      </button>
+      <button type="button" id="zoomFit" class="tpct" title="Ver todo el póster (Ctrl+0) · 100 % = tamaño real aproximado">
+        <span id="zoomPct">100%</span>
+      </button>
+      <button type="button" id="zoomIn" title="Acercar (+)" aria-label="Acercar">
+        <Icon name="zoomIn" class={icon} />
+      </button>
+    </div>
+    <div class="tgroup" role="group" aria-label="Historial">
       <button type="button" id="undo" title="Deshacer (Ctrl+Z)" aria-label="Deshacer" disabled>
         <Icon name="undo" class={icon} />
       </button>
@@ -14,17 +26,8 @@ const icon = 'size-[17px]';
         <Icon name="redo" class={icon} />
       </button>
     </div>
-    <span class="hidden text-[.8rem] text-muted xs:inline" id="tip">Clic derecho sobre el lienzo para más opciones</span>
     <span class="flex-1"></span>
-    <div class="seg" role="group" aria-label="Vista">
-      <button type="button" id="zoomOut" title="Alejar" aria-label="Alejar">
-        <Icon name="zoomOut" class={icon} />
-      </button>
-      <button type="button" id="zoomFit" title="Ver todo el póster (Ctrl+0)">Ver todo</button>
-      <button type="button" id="zoomIn" title="Acercar" aria-label="Acercar">
-        <Icon name="zoomIn" class={icon} />
-      </button>
-    </div>
+    <span class="hidden text-[.8rem] text-muted xs:inline" id="tip">Clic derecho sobre el lienzo para más opciones</span>
   </div>
 
   <div
