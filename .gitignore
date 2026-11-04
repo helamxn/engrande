@@ -22,3 +22,9 @@ pnpm-debug.log*
 
 # jetbrains setting folder
 .idea/
+
+# recursos de pdf.js copiados por scripts/copy-pdfjs.mjs
+public/pdfjs/
+
+# vercel
+.vercel/

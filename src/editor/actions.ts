@@ -1,0 +1,270 @@
+/** Acciones del editor: selección, capas, modos de herramienta, recorte y edición de píxeles. */
+import { MAX_SIDE } from './constants';
+import { $, toast } from './dom';
+import {
+  conformCrop, cropCenter, fitLayer, keepCenter, mmToLocal, natRatio, rotateLayer, scaleLayer, unstretch,
+} from './geometry';
+import { pushUndo, snap, takeSnap, restoreSnap } from './history';
+import { MOD } from './platform';
+import { dirty } from './render';
+import { posterGeo, S, st, V } from './state';
+import { s2mm } from './view';
+import { renderBar } from './ui/contextbar';
+import { renderList, syncSel } from './ui/panel';
+import type { Layer, Mode, Pt, Snapshot, Source } from './types';
+
+/* ---------- lienzos ---------- */
+export function cloneCanvas(src: HTMLCanvasElement) {
+  const c = document.createElement('canvas');
+  c.width = src.width; c.height = src.height;
+  c.getContext('2d', { willReadFrequently: true })!.drawImage(src, 0, 0);
+  return c;
+}
+/** Lienzo de trabajo (máx. MAX_SIDE). upscale: para SVG, que se puede rasterizar más grande que su tamaño nominal. */
+export function makeCanvas(src: CanvasImageSource, sw: number, sh: number, upscale = false) {
+  const sc = upscale ? MAX_SIDE / Math.max(sw, sh) : Math.min(1, MAX_SIDE / Math.max(sw, sh));
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(sw * sc)); c.height = Math.max(1, Math.round(sh * sc));
+  const x = c.getContext('2d', { willReadFrequently: true })!;
+  x.imageSmoothingQuality = 'high';
+  x.drawImage(src, 0, 0, c.width, c.height);
+  return c;
+}
+
+/* ---------- capas ---------- */
+export function newLayer(img: HTMLCanvasElement, name: string, extra: Partial<Layer> = {}): Layer {
+  const g = posterGeo();
+  return {
+    id: st.nextId++, name, img, orig: img, cx: g.W / 2, cy: g.H / 2, w: g.W, h: (g.W * img.height) / img.width,
+    rot: 0, flipX: false, flipY: false, crop: { x0: 0, y0: 0, x1: 1, y1: 1 },
+    pdf: null, page: 1, pages: 1, isSample: false, src: null as Source | null, ...extra,
+  };
+}
+export function addLayer(l: Layer, { factor = 1, offset = 0 } = {}) {
+  st.layers.push(l);
+  fitLayer(l, 'contain', posterGeo());
+  if (factor !== 1) scaleLayer(l, factor, cropCenter(l));
+  l.cx += offset; l.cy += offset;
+  select(l);
+}
+export const cloneLayer = (l: Layer, extra: Partial<Layer> = {}): Layer =>
+  ({ ...l, id: st.nextId++, crop: { ...l.crop }, isSample: false, ...extra });
+
+export function select(l: Layer | null) {
+  if (S.mode === 'crop' && l !== st.sel) applyCrop();
+  st.sel = l;
+  st.hoverL = null;
+  if (!l && S.mode !== 'move') setMode('move');
+  renderList(); syncSel(); renderBar(); dirty();
+}
+export function afterChange() { renderList(); syncSel(); dirty(); }
+export function afterHistory() {
+  if (!st.sel && S.mode !== 'move') setMode('move');
+  renderList(); syncSel(); renderBar(); dirty();
+}
+
+export function removeLayer(l: Layer) {
+  if (S.mode === 'crop') applyCrop();
+  snap();
+  st.layers = st.layers.filter((x) => x !== l);
+  if (st.sel === l) select(null); else afterChange();
+  toast(`“${l.name}” quitada · ${MOD}Z para deshacer`);
+}
+export function reorder(l: Layer, to: 'front' | 'back' | number) {
+  const i = st.layers.indexOf(l);
+  let j = to === 'front' ? st.layers.length - 1 : to === 'back' ? 0 : i + to;
+  j = Math.min(Math.max(j, 0), st.layers.length - 1);
+  if (i === j) return;
+  snap();
+  st.layers.splice(i, 1); st.layers.splice(j, 0, l);
+  afterChange();
+}
+export function duplicateLayer(l: Layer) {
+  snap();
+  const d = cloneLayer(l, { name: l.name + ' (copia)' });
+  d.cx += 10; d.cy += 10;
+  st.layers.splice(st.layers.indexOf(l) + 1, 0, d);
+  select(d);
+}
+export function copyLayer(l: Layer) { st.clip = { ...cloneLayer(l), pasteN: 0 }; toast('Imagen copiada'); }
+export function pasteLayer() {
+  const clip = st.clip;
+  if (!clip) return false;
+  snap();
+  clip.pasteN = (clip.pasteN ?? 0) + 1;
+  const d = cloneLayer(clip, { name: clip.name });
+  delete d.pasteN;
+  d.cx += 10 * clip.pasteN; d.cy += 10 * clip.pasteN;
+  st.layers.push(d);
+  select(d);
+  return true;
+}
+/** Envuelve una transformación de la imagen seleccionada con su paso de deshacer. */
+export const tx = (fn: (l: Layer) => void) => () => {
+  const l = st.sel;
+  if (!l) return;
+  snap(); fn(l); afterChange();
+};
+export const rotate90 = (dir: 1 | -1) => tx((l) => rotateLayer(l, 90 * dir, cropCenter(l)));
+export const flip = (axis: 'x' | 'y') => tx((l) => keepCenter(l, (x) => { if (axis === 'x') x.flipX = !x.flipX; else x.flipY = !x.flipY; }));
+export const fitSel = (mode: 'contain' | 'cover') => tx((l) => fitLayer(l, mode, posterGeo()));
+export const centerSel = tx((l) => { const g = posterGeo(), c = cropCenter(l); l.cx += g.W / 2 - c.x; l.cy += g.H / 2 - c.y; });
+export const unstretchSel = tx(unstretch);
+
+/* ---------- modos ---------- */
+let cropSession: Snapshot | null = null;
+const cursorFor = (m: Mode) => (m === 'wand' ? 'crosshair' : m === 'erase' ? 'none' : 'default');
+
+export function setMode(m: Mode) {
+  if (S.mode === 'crop' && m !== 'crop') applyCrop();
+  if (m === 'crop') { enterCrop(); return; }
+  if (m !== 'move' && !st.sel) { toast('Primero toca una imagen'); return; }
+  S.mode = m;
+  $('#cv').style.cursor = cursorFor(m);
+  st.hoverL = null;
+  renderBar(); dirty();
+}
+export function enterCrop() {
+  if (!st.sel || S.mode === 'crop') return;
+  S.cropRatio = null; S.cropRatioKey = 'null';
+  cropSession = takeSnap();
+  S.mode = 'crop';
+  $('#cv').style.cursor = 'default';
+  renderBar(); dirty();
+}
+export function applyCrop() {
+  if (S.mode !== 'crop') return;
+  const s = cropSession, sel = st.sel;
+  cropSession = null; S.mode = 'move';
+  const p = s && sel && s.props.find((q) => q.l === sel);
+  if (s && p && sel && JSON.stringify(p.crop) !== JSON.stringify(sel.crop)) pushUndo(s);
+  renderBar(); afterChange();
+}
+export function cancelCrop() {
+  if (S.mode !== 'crop') return;
+  if (cropSession) restoreSnap(cropSession);
+  cropSession = null; S.mode = 'move';
+  renderBar(); afterChange();
+}
+export function setCropRatio(key: string) {
+  const sel = st.sel;
+  if (!sel) return;
+  S.cropRatioKey = key;
+  S.cropRatio = key === 'null' ? null : key === 'orig' ? sel.w / sel.h : +key;
+  conformCrop(sel, S.cropRatio);
+  renderBar(); afterChange();
+}
+
+/* ---------- edición de píxeles ---------- */
+const mmToPx = (l: Layer, m: Pt) => {
+  const q = mmToLocal(l, m);
+  return { x: q.u * l.img.width, y: q.v * l.img.height };
+};
+/** Guarda el paso de deshacer y trabaja sobre una copia del lienzo (el anterior queda en el historial). */
+export function beginPixelEdit(l: Layer) { snap(); l.img = cloneCanvas(l.img); }
+
+export function paint(l: Layer, a: Pt, b: Pt) {
+  const r = S.brush / (V.k * Math.sqrt((l.w / l.img.width) * (l.h / l.img.height)));
+  const pa = mmToPx(l, s2mm(a)), pb = mmToPx(l, s2mm(b)), c = l.img.getContext('2d')!;
+  if (S.brushMode === 'erase') {
+    c.save(); c.globalCompositeOperation = 'destination-out'; c.lineCap = 'round'; c.lineWidth = 2 * r; c.strokeStyle = '#000'; c.fillStyle = '#000';
+    c.beginPath(); c.moveTo(pa.x, pa.y); c.lineTo(pb.x, pb.y); c.stroke();
+    c.beginPath(); c.arc(pb.x, pb.y, r, 0, Math.PI * 2); c.fill(); c.restore();
+  } else {
+    const d = Math.hypot(pb.x - pa.x, pb.y - pa.y), n = Math.max(1, Math.ceil(d / (r * 0.4)));
+    c.save(); c.beginPath();
+    for (let i = 0; i <= n; i++) { const x = pa.x + ((pb.x - pa.x) * i) / n, y = pa.y + ((pb.y - pa.y) * i) / n; c.moveTo(x + r, y); c.arc(x, y, r, 0, Math.PI * 2); }
+    c.clip(); c.clearRect(0, 0, l.img.width, l.img.height); c.drawImage(l.orig, 0, 0); c.restore();
+  }
+  dirty();
+}
+
+/** Vuelve transparentes los píxeles parecidos a ref (con borde suave). contig: solo la zona conectada a las semillas. */
+export function removeColor(l: Layer, seeds: number[], ref: readonly [number, number, number], tol: number, contig: boolean) {
+  const c = l.img.getContext('2d', { willReadFrequently: true })!, w = l.img.width, h = l.img.height;
+  const id = c.getImageData(0, 0, w, h), d = id.data;
+  const t2 = tol * tol, softT = tol * 1.35, soft2 = softT * softT;
+  let removed = 0;
+  const handle = (i: number) => {
+    const o = i * 4;
+    if (d[o + 3] === 0) return true;
+    const dr = d[o]! - ref[0], dg = d[o + 1]! - ref[1], db = d[o + 2]! - ref[2], q = dr * dr + dg * dg + db * db;
+    if (q <= t2) { d[o + 3] = 0; removed++; return true; }
+    if (q < soft2) d[o + 3] = Math.round((d[o + 3]! * (Math.sqrt(q) - tol)) / (softT - tol));
+    return false;
+  };
+  if (!contig) { for (let i = 0, n = w * h; i < n; i++) handle(i); }
+  else {
+    const vis = new Uint8Array(w * h), stack = new Int32Array(w * h);
+    let sp = 0;
+    for (const s of seeds) if (!vis[s]) { vis[s] = 1; stack[sp++] = s; }
+    while (sp) {
+      const i = stack[--sp]!;
+      if (!handle(i)) continue;
+      const x = i % w;
+      if (x > 0 && !vis[i - 1]) { vis[i - 1] = 1; stack[sp++] = i - 1; }
+      if (x < w - 1 && !vis[i + 1]) { vis[i + 1] = 1; stack[sp++] = i + 1; }
+      if (i >= w && !vis[i - w]) { vis[i - w] = 1; stack[sp++] = i - w; }
+      if (i < w * h - w && !vis[i + w]) { vis[i + w] = 1; stack[sp++] = i + w; }
+    }
+  }
+  c.putImageData(id, 0, 0);
+  dirty();
+  return removed;
+}
+/** Prueba la edición sobre una copia y solo la guarda en el historial si borró algo (así no se pierde "rehacer"). */
+function tryRemove(l: Layer, run: () => number) {
+  const before = l.img, s0 = takeSnap();
+  l.img = cloneCanvas(before);
+  const n = run();
+  if (n) pushUndo(s0); else { l.img = before; dirty(); }
+  return n;
+}
+export function wandAt(p: Pt) {
+  const l = st.sel;
+  if (!l) return;
+  const q = mmToPx(l, s2mm(p)), x = Math.floor(q.x), y = Math.floor(q.y), w = l.img.width;
+  if (x < 0 || y < 0 || x >= w || y >= l.img.height) { toast('Toca dentro de la imagen seleccionada'); return; }
+  const px = l.img.getContext('2d', { willReadFrequently: true })!.getImageData(x, y, 1, 1).data;
+  if (px[3] === 0) { toast('Esa zona ya está vacía'); return; }
+  const n = tryRemove(l, () => removeColor(l, [y * w + x], [px[0]!, px[1]!, px[2]!], S.tol, S.contig));
+  if (!n) toast('Nada que borrar con esta tolerancia. Súbela un poco.');
+  renderList();
+}
+/** Quita el fondo uniforme tomando como referencia el color mediano de las cuatro esquinas. */
+export function autoBackground() {
+  const l = st.sel;
+  if (!l) return;
+  const w = l.img.width, h = l.img.height, d = l.img.getContext('2d', { willReadFrequently: true })!.getImageData(0, 0, w, h).data;
+  const samples: [number[], number[], number[]] = [[], [], []], patch = Math.max(3, Math.round(Math.min(w, h) * 0.01));
+  for (const [cx, cy] of [[0, 0], [w - patch, 0], [0, h - patch], [w - patch, h - patch]] as const) {
+    for (let y = cy; y < cy + patch; y++) for (let x = cx; x < cx + patch; x++) {
+      const o = (y * w + x) * 4;
+      if (d[o + 3]! > 200) { samples[0].push(d[o]!); samples[1].push(d[o + 1]!); samples[2].push(d[o + 2]!); }
+    }
+  }
+  if (!samples[0].length) { toast('Los bordes ya están transparentes'); return; }
+  const med = (a: number[]) => { a.sort((p, q) => p - q); return a[a.length >> 1]!; };
+  const ref = [med(samples[0]), med(samples[1]), med(samples[2])] as const;
+  const t2 = S.tol * S.tol, seeds: number[] = [];
+  const near = (i: number) => {
+    const o = i * 4;
+    if (d[o + 3] === 0) return true;
+    const a = d[o]! - ref[0], b = d[o + 1]! - ref[1], e = d[o + 2]! - ref[2];
+    return a * a + b * b + e * e <= t2;
+  };
+  for (let x = 0; x < w; x++) { if (near(x)) seeds.push(x); if (near((h - 1) * w + x)) seeds.push((h - 1) * w + x); }
+  for (let y = 0; y < h; y++) { if (near(y * w)) seeds.push(y * w); if (near(y * w + w - 1)) seeds.push(y * w + w - 1); }
+  if (!seeds.length) { toast('No encontré un fondo uniforme. Prueba con la varita.'); return; }
+  const n = tryRemove(l, () => removeColor(l, seeds, ref, S.tol, true));
+  toast(n ? 'Fondo quitado. Retoca con la Varita o el Borrador si hace falta.' : 'No se borró nada. Sube la tolerancia en la Varita.');
+  renderList();
+}
+export function resetOriginal(l: Layer) {
+  beginPixelEdit(l);
+  const c = l.img.getContext('2d')!;
+  c.clearRect(0, 0, l.img.width, l.img.height); c.drawImage(l.orig, 0, 0);
+  keepCenter(l, (x) => { x.crop = { x0: 0, y0: 0, x1: 1, y1: 1 }; x.h = x.w * natRatio(x); x.flipX = false; x.flipY = false; });
+  afterChange();
+  toast('Imagen original restaurada');
+}

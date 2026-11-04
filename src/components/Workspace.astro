@@ -1,0 +1,57 @@
+---
+/** Mesa de trabajo: historial, zoom, lienzo con las hojas y lectura del tamaño y la calidad. */
+const icon = 'size-[17px]';
+---
+
+<section class="flex min-w-0 flex-col gap-2 desk:min-h-0">
+  <div class="flex flex-wrap items-center gap-2">
+    <div class="seg" role="group" aria-label="Historial">
+      <button type="button" id="undo" title="Deshacer (Ctrl+Z)" aria-label="Deshacer" disabled>
+        <svg class={icon} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14L4 9l5-5"></path><path d="M4 9h10a6 6 0 010 12h-3"></path></svg>
+      </button>
+      <button type="button" id="redo" title="Rehacer (Ctrl+Y)" aria-label="Rehacer" disabled>
+        <svg class={icon} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 14l5-5-5-5"></path><path d="M20 9H10a6 6 0 000 12h3"></path></svg>
+      </button>
+    </div>
+    <span class="hidden text-[.8rem] text-muted xs:inline" id="tip">Clic derecho sobre el lienzo para más opciones</span>
+    <span class="flex-1"></span>
+    <div class="seg" role="group" aria-label="Vista">
+      <button type="button" id="zoomOut" title="Alejar" aria-label="Alejar">
+        <svg class={icon} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14"></path></svg>
+      </button>
+      <button type="button" id="zoomFit" title="Ver todo el póster (Ctrl+0)">Ver todo</button>
+      <button type="button" id="zoomIn" title="Acercar" aria-label="Acercar">
+        <svg class={icon} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14M12 5v14"></path></svg>
+      </button>
+    </div>
+  </div>
+
+  <div
+    id="stage"
+    class="relative h-[clamp(340px,56svh,680px)] overflow-hidden rounded-[10px] border border-line bg-desk desk:h-auto desk:min-h-[380px] desk:flex-1"
+  >
+    <canvas
+      id="cv"
+      role="img"
+      aria-label="Vista previa del póster"
+      class="absolute inset-0 block size-full touch-none select-none [-webkit-touch-callout:none]"
+    ></canvas>
+    <div id="sampleBadge" class="pointer-events-none absolute top-2.5 left-2.5 rounded-full border border-line bg-panel px-2.5 py-1 text-[.78rem] text-muted">
+      Imagen de ejemplo · agrega la tuya
+    </div>
+    <div
+      id="hint"
+      class="pointer-events-none absolute bottom-2.5 left-1/2 w-max max-w-[calc(100%-20px)] -translate-x-1/2 rounded-full border border-line bg-panel/90 px-3 py-1 text-center text-[.78rem] text-muted"
+    ></div>
+    <div id="ctxbar" class="ctxbar" role="toolbar" aria-label="Herramientas de la imagen" hidden></div>
+    <div
+      id="drop"
+      class="pointer-events-none absolute inset-0 grid place-items-center rounded-[10px] border-2 border-dashed border-accent bg-accent/20 font-bold text-accent"
+      hidden
+    >
+      Suelta las imágenes aquí
+    </div>
+  </div>
+
+  <div id="readout" class="flex flex-wrap gap-x-4 gap-y-1.5 font-mono text-[.8rem] text-muted tabular-nums [&_b]:font-medium [&_b]:text-fg"></div>
+</section>

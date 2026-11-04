@@ -1,0 +1,26 @@
+---
+/** Cabecera: marca, agregar imagen y descarga rápida del PDF por hojas. */
+---
+
+<header class="flex flex-wrap items-center gap-3">
+  <div class="mr-auto flex min-w-0 items-center gap-2.5">
+    <svg class="flex-none text-mark" width="30" height="30" viewBox="0 0 30 30" aria-hidden="true">
+      <circle cx="15" cy="15" r="8.5" fill="none" stroke="currentColor" stroke-width="1.6"></circle>
+      <circle cx="15" cy="15" r="3.2" fill="currentColor"></circle>
+      <path d="M15 1v28M1 15h28" stroke="currentColor" stroke-width="1.6"></path>
+    </svg>
+    <div>
+      <h1 class="m-0 text-[1.45rem] leading-none font-extrabold tracking-[-.01em] [font-stretch:118%]">Pliego</h1>
+      <p class="mt-0.5 mb-0 text-[.82rem] text-muted">Pósters grandes impresos por hojas</p>
+    </div>
+  </div>
+  <button class="btn" type="button" data-addfile>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
+    Agregar imagen
+  </button>
+  <input id="file" class="sr-only" type="file" accept="image/*,application/pdf" multiple tabindex="-1" aria-hidden="true" />
+  <button class="btn btn-primary" type="button" id="quickExport">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v12M7 11l5 5 5-5M4 20h16"></path></svg>
+    <span id="qeLabel">Descargar PDF</span>
+  </button>
+</header>

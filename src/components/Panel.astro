@@ -1,0 +1,145 @@
+---
+/** Panel lateral con tres pestañas: Hojas, Imágenes y Exportar. */
+const pane = 'flex min-h-0 flex-col gap-[18px] overflow-x-hidden overflow-y-auto p-4';
+const field = 'flex flex-col gap-2';
+const tabs = [
+  { id: 'sheets', label: 'Hojas' },
+  { id: 'image', label: 'Imágenes' },
+  { id: 'export', label: 'Exportar' },
+];
+---
+
+<aside class="flex min-h-0 min-w-0 flex-col rounded-[10px] border border-line bg-panel desk:overflow-hidden">
+  <div class="flex flex-none border-b border-line px-1" role="tablist" aria-label="Panel de opciones">
+    {tabs.map((t, i) => (
+      <button
+        type="button"
+        class="tab"
+        role="tab"
+        id={`tab-${t.id}`}
+        aria-controls={`pane-${t.id}`}
+        aria-selected={i === 0 ? 'true' : 'false'}
+        tabindex={i === 0 ? 0 : -1}
+        data-tab={t.id}
+      >
+        {t.label}
+      </button>
+    ))}
+  </div>
+
+  <!-- Hojas -->
+  <div class={pane} role="tabpanel" id="pane-sheets" aria-labelledby="tab-sheets" data-pane="sheets">
+    <div class={field}>
+      <div class="lbl">Distribución <span class="val">columnas × filas</span></div>
+      <div class="flex flex-wrap gap-1.5" id="presets"></div>
+      <div class="grid grid-cols-2 gap-2.5">
+        <div class="stepper">
+          <span>Columnas</span>
+          <div class="flex items-center gap-0.5">
+            <button type="button" data-step="cols" data-d="-1" aria-label="Menos columnas">−</button>
+            <output id="colsOut">2</output>
+            <button type="button" data-step="cols" data-d="1" aria-label="Más columnas">+</button>
+          </div>
+        </div>
+        <div class="stepper">
+          <span>Filas</span>
+          <div class="flex items-center gap-0.5">
+            <button type="button" data-step="rows" data-d="-1" aria-label="Menos filas">−</button>
+            <output id="rowsOut">2</output>
+            <button type="button" data-step="rows" data-d="1" aria-label="Más filas">+</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class={field}>
+      <div class="lbl" id="lblPaper">Papel</div>
+      <div class="seg self-start" role="group" aria-labelledby="lblPaper">
+        <button type="button" data-paper="A4" aria-pressed="true">A4</button>
+        <button type="button" data-paper="A3" aria-pressed="false">A3</button>
+        <button type="button" data-paper="Carta" aria-pressed="false">Carta</button>
+      </div>
+    </div>
+    <div class={field}>
+      <div class="lbl" id="lblOrient">Orientación de cada hoja</div>
+      <div class="seg self-start" role="group" aria-labelledby="lblOrient">
+        <button type="button" data-orient="portrait" aria-pressed="true">Vertical</button>
+        <button type="button" data-orient="landscape" aria-pressed="false">Horizontal</button>
+      </div>
+    </div>
+    <div class={field}>
+      <label class="lbl" for="margin">Margen sin imprimir <output id="marginOut">6 mm</output></label>
+      <input type="range" id="margin" min="0" max="15" step="1" value="6" />
+      <p class="note">La mayoría de impresoras caseras no imprimen los últimos 4–6 mm del borde.</p>
+    </div>
+    <div class={field}>
+      <label class="lbl" for="overlap">Solape para pegar <output id="overlapOut">10 mm</output></label>
+      <input type="range" id="overlap" min="0" max="30" step="1" value="10" />
+      <p class="note">La franja rosada se imprime en las dos hojas vecinas. Al pegar una encima de otra, no se pierde nada de la imagen.</p>
+    </div>
+  </div>
+
+  <!-- Imágenes -->
+  <div class={pane} role="tabpanel" id="pane-image" aria-labelledby="tab-image" data-pane="image" hidden>
+    <p class="sel-note">Toca una imagen en el lienzo o en la lista para ver su tamaño y posición.</p>
+    <div class:list={[field, 'needs-sel']}>
+      <div class="lbl">Tamaño visible</div>
+      <div class="grid grid-cols-[1fr_auto_1fr] items-end gap-2">
+        <label class="pf"><span>Ancho</span><span class="unit"><input id="pW" type="number" step="0.1" min="0.3" inputmode="decimal" /><em>cm</em></span></label>
+        <button type="button" class="lock" id="pLock" aria-pressed="true" title="Mantener proporción" aria-label="Mantener proporción">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 018 0v4"></path></svg>
+        </button>
+        <label class="pf"><span>Alto</span><span class="unit"><input id="pH" type="number" step="0.1" min="0.3" inputmode="decimal" /><em>cm</em></span></label>
+      </div>
+      <button type="button" class="btn" id="unstretch" hidden>Quitar deformación</button>
+    </div>
+    <div class:list={[field, 'needs-sel']}>
+      <div class="lbl">Posición y giro</div>
+      <div class="grid grid-cols-2 items-end gap-2">
+        <label class="pf"><span>Desde la izquierda</span><span class="unit"><input id="pX" type="number" step="0.1" inputmode="decimal" /><em>cm</em></span></label>
+        <label class="pf"><span>Desde arriba</span><span class="unit"><input id="pY" type="number" step="0.1" inputmode="decimal" /><em>cm</em></span></label>
+        <label class="pf"><span>Rotación</span><span class="unit"><input id="pR" type="number" step="1" min="-180" max="180" inputmode="decimal" /><em>°</em></span></label>
+        <label class="pf" id="pdfField" hidden><span>Página del PDF <b id="pdfPages"></b></span><span class="unit"><input id="pdfPage" type="number" min="1" value="1" /></span></label>
+      </div>
+      <div class="flex flex-wrap gap-2 [&>.btn]:flex-auto">
+        <button type="button" class="btn" id="fitContain">Ajustar</button>
+        <button type="button" class="btn" id="fitCover">Llenar</button>
+        <button type="button" class="btn" id="center">Centrar</button>
+      </div>
+    </div>
+    <div class="h-px flex-none bg-line"></div>
+    <div class={field}>
+      <div class="lbl">Imágenes en el póster <span class="val" id="layerCount"></span></div>
+      <ol class="m-0 flex list-none flex-col gap-1.5 p-0" id="layers"></ol>
+      <button type="button" class="btn" data-addfile>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
+        Agregar imagen
+      </button>
+      <p class="note">Arriba en la lista = al frente en el póster. También puedes arrastrar archivos a la página o pegarlos con Ctrl+V.</p>
+    </div>
+    <details class="[&[open]>summary]:mb-2.5">
+      <summary class="cursor-pointer text-[.72rem] font-bold tracking-[.07em] text-muted uppercase">Atajos</summary>
+      <dl class="keys" id="keys"></dl>
+    </details>
+  </div>
+
+  <!-- Exportar -->
+  <div class={pane} role="tabpanel" id="pane-export" aria-labelledby="tab-export" data-pane="export" hidden>
+    <div class={field}>
+      <div class="lbl" id="lblDpi">Calidad</div>
+      <div class="seg self-start" role="group" aria-labelledby="lblDpi">
+        <button type="button" data-dpi="150" aria-pressed="true">150 ppp</button>
+        <button type="button" data-dpi="200" aria-pressed="false">200 ppp</button>
+        <button type="button" data-dpi="300" aria-pressed="false">300 ppp</button>
+      </div>
+      <p class="note">150 ppp basta para un póster visto a un metro. 300 ppp genera archivos mucho más pesados.</p>
+    </div>
+    <label class="check"><input type="checkbox" id="marks" checked /><span>Marcas de corte y de solape<small>Esquinas para recortar y línea discontinua donde va la hoja vecina.</small></span></label>
+    <label class="check"><input type="checkbox" id="guide" checked /><span>Página de guía de armado<small>Primera página con el mapa de hojas y los pasos.</small></span></label>
+    <div class={field}>
+      <button type="button" class="btn btn-primary" id="exportTiles">Descargar PDF por hojas</button>
+      <button type="button" class="btn" id="exportSingle">PDF en una sola hoja grande (para imprenta)</button>
+      <div class="min-h-[1.2em] font-mono text-[.8rem] text-muted" id="status" aria-live="polite"></div>
+    </div>
+    <p class="note">Al imprimir, elige <strong>tamaño real / 100 %</strong> y desactiva “Ajustar a la página”. Si no, las hojas no encajarán.</p>
+  </div>
+</aside>
