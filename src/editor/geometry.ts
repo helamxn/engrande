@@ -3,7 +3,7 @@
  * Todo está en milímetros del póster; las coordenadas locales (u, v) van de 0 a 1 sobre la imagen completa.
  */
 import { PAPERS } from './constants';
-import type { Crop, CropDrag, FitMode, Geo, HandleId, LayerGeom, Pt, ScaleDrag, Settings, Source, Transform, UV } from './types';
+import type { Crop, CropDrag, Fit, FitMode, Geo, HandleId, LayerGeom, Pt, ScaleDrag, Settings, Source, Transform, UV } from './types';
 
 export const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
 export const rad = (d: number) => (d * Math.PI) / 180;
@@ -173,14 +173,67 @@ export function conformCrop(l: LayerGeom, ratio: number | null) {
   l.crop = { x0: cu - fw / 2, x1: cu + fw / 2, y0: cv - fh / 2, y1: cv + fh / 2 };
 }
 
+/** Ajusta o llena el póster y, si scale < 1, lo reduce desde el centro (p. ej. la imagen de ejemplo al 94 %). */
+export function applyFit(l: LayerGeom, fit: NonNullable<Fit>, g: Geo) {
+  fitLayer(l, fit.mode, g);
+  if (fit.scale !== 1) scaleLayer(l, fit.scale, cropCenter(l));
+}
+
 /**
- * Al cambiar papel, orientación o número de hojas: la posición sigue al póster en cada eje y el tamaño usa
- * el menor de los dos factores, para no deformar y para que añadir filas o columnas se comporte igual.
+ * Al cambiar papel, orientación, margen, solape u hojas:
+ * - Imagen ajustada o llenada: se vuelve a ajustar al nuevo póster.
+ * - Imagen colocada a mano: conserva su tamaño en cm (lo que se imprimirá) y el centro de su zona visible
+ *   mantiene su posición relativa en el póster.
+ * Las dos reglas son reversibles: volver a la distribución anterior deja la imagen exactamente igual.
+ * (Antes se escalaba por min(sx, sy) en cada paso, y la imagen se encogía con cada ida y vuelta.)
  */
-export function rescaleForLayout(layers: Transform[], prev: Geo, next: Geo) {
-  const sx = next.W / prev.W, sy = next.H / prev.H, f = Math.min(sx, sy);
-  if (sx === 1 && sy === 1) return;
-  for (const l of layers) { l.cx *= sx; l.cy *= sy; l.w *= f; l.h *= f; }
+export function relayout(layers: (LayerGeom & { fit: Fit })[], prev: Geo, next: Geo) {
+  if (prev.W === next.W && prev.H === next.H) return;
+  const sx = next.W / prev.W, sy = next.H / prev.H;
+  for (const l of layers) {
+    if (l.fit) { applyFit(l, l.fit, next); continue; }
+    const c = cropCenter(l);
+    l.cx += c.x * (sx - 1);
+    l.cy += c.y * (sy - 1);
+  }
+}
+
+/* ---------- recorte con marco fijo ---------- */
+/** El punto cae sobre la imagen completa (también la parte recortada, que se ve atenuada al recortar). */
+export function insideImage(l: Transform, m: Pt) {
+  const q = mmToLocal(l, m);
+  return q.u >= 0 && q.u <= 1 && q.v >= 0 && q.v <= 1;
+}
+
+/**
+ * Deja el recorte como un marco fijo en el póster (centro C, tamaño vw × vh mm) sobre la imagen en su posición
+ * actual. Si la imagen ya no cubre el marco, la desplaza lo justo para que lo cubra: nunca quedan huecos.
+ */
+export function frameCrop(l: LayerGeom, C: Pt, vw: number, vh: number) {
+  const fw = Math.min(1, vw / l.w), fh = Math.min(1, vh / l.h);
+  const q = mmToLocal(l, C);
+  const u = clamp(q.u, fw / 2, 1 - fw / 2), v = clamp(q.v, fh / 2, 1 - fh / 2);
+  l.crop = { x0: u - fw / 2, x1: u + fw / 2, y0: v - fh / 2, y1: v + fh / 2 };
+  placeLocal(l, u, v, C);
+}
+
+/** Desplaza la imagen d mm bajo el marco de recorte, que no se mueve. */
+export function panInFrame(l: LayerGeom, start: LayerGeom, d: Pt) {
+  const C = cropCenter(start), vw = visW(start), vh = visH(start);
+  Object.assign(l, { cx: start.cx + d.x, cy: start.cy + d.y, w: start.w, h: start.h });
+  frameCrop(l, C, vw, vh);
+}
+
+/**
+ * Amplía (f > 1) o reduce la imagen dentro del marco de recorte, alrededor del punto P del póster.
+ * El marco no cambia; la imagen nunca se reduce tanto que deje huecos, ni se amplía por debajo de un 2 % visible.
+ */
+export function zoomInFrame(l: LayerGeom, f: number, P: Pt) {
+  const C = cropCenter(l), vw = visW(l), vh = visH(l);
+  const cw = l.crop.x1 - l.crop.x0, ch = l.crop.y1 - l.crop.y0;
+  const s = clamp(f, Math.max(cw, ch), Math.min(cw, ch) / 0.02);
+  scaleLayer(l, s, P);
+  frameCrop(l, C, vw, vh);
 }
 
 /* ---------- resolución ---------- */

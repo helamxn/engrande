@@ -1,6 +1,6 @@
 /** Atajos de teclado. */
 import {
-  afterChange, applyCrop, cancelCrop, copyLayer, duplicateLayer, enterCrop, flip, removeLayer, reorder, rotate90, select, setMode,
+  afterChange, applyCrop, cancelCrop, copyLayer, duplicateLayer, enterCrop, flip, markManual, removeLayer, reorder, rotate90, select, setMode,
 } from '../actions';
 import { redo, snap, undo } from '../history';
 import { S, st } from '../state';
@@ -41,6 +41,7 @@ export function initKeyboard() {
       if (e.key === 'ArrowRight') sel.cx += d;
       if (e.key === 'ArrowUp') sel.cy -= d;
       if (e.key === 'ArrowDown') sel.cy += d;
+      markManual(sel);
       afterChange();
       return;
     }

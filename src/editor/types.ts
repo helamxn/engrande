@@ -24,6 +24,12 @@ export interface LayerGeom extends Transform {
   img: { width: number; height: number };
 }
 
+/**
+ * Cómo está colocada la imagen. Si se ajustó o llenó el póster, al cambiar la hoja se vuelve a ajustar
+ * (scale: fracción del ajuste, p. ej. 0.94). null = colocada a mano: conserva su tamaño en cm.
+ */
+export type Fit = { mode: FitMode; scale: number } | null;
+
 /** Origen de la imagen, para exportar a la resolución del archivo original y no a la del lienzo de trabajo. */
 export type Source =
   | { kind: 'img'; blob: Blob; w: number; h: number }
@@ -42,6 +48,7 @@ export interface Layer extends LayerGeom {
   pages: number;
   isSample: boolean;
   src: Source | null;
+  fit: Fit;
   pasteN?: number;
 }
 
@@ -83,12 +90,17 @@ export interface LayerProps extends Transform {
   img: HTMLCanvasElement;
   orig: HTMLCanvasElement;
   page: number;
+  fit: Fit;
 }
+
+/** Ajustes que definen la geometría del póster (se guardan en el historial). */
+export type LayoutSettings = Pick<Settings, 'paper' | 'orient' | 'cols' | 'rows' | 'margin' | 'overlap'>;
 
 export interface Snapshot {
   layers: Layer[];
   sel: Layer | null;
   props: LayerProps[];
+  layout: LayoutSettings;
 }
 
 export interface ScaleDrag { t: 'scale'; id: HandleId; L0: Transform; k0: Crop }

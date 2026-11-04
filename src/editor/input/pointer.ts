@@ -1,9 +1,10 @@
 /** Ratón, táctil y lápiz sobre el lienzo: seleccionar, mover, escalar, girar, recortar, pintar y gestos. */
 import {
-  applyCrop, beginPixelEdit, cloneLayer, enterCrop, paint, select, setMode, wandAt,
+  applyCrop, beginPixelEdit, cloneLayer, enterCrop, markManual, paint, select, setMode, wandAt,
 } from '../actions';
 import {
-  applyCropDrag, applyScale, cropCenter, inside, mmToLocal, normDeg, rotateLayer, scaleLayer, startScale,
+  applyCropDrag, applyScale, cropCenter, inside, insideImage, mmToLocal, normDeg, panInFrame, rotateLayer, scaleLayer,
+  startScale, zoomInFrame,
 } from '../geometry';
 import { commitPending, setPending, snap, takeSnap, undo } from '../history';
 import { lastPointerType, setLastPointer } from '../platform';
@@ -12,20 +13,26 @@ import { S, st, V } from '../state';
 import { panBy, s2mm, zoomAt } from '../view';
 import { closeMenu, emptyMenu, layerMenu, openMenu } from '../ui/menu';
 import { renderList, syncSel } from '../ui/panel';
-import type { CropDrag, Layer, Pt, ScaleDrag, UV } from '../types';
+import type { CropDrag, Layer, LayerGeom, Pt, ScaleDrag } from '../types';
 
 type Drag =
   | { t: 'none' }
   | { t: 'pan'; last: Pt }
   | { t: 'move'; m0: Pt; c0: Pt }
   | { t: 'rot'; cc: Pt; a0: number; r0: number }
-  | { t: 'cropmove'; last: UV }
+  /** Recortar: la imagen se arrastra bajo el marco de recorte, que queda fijo. */
+  | { t: 'frame'; m0: Pt; start: LayerGeom }
   | { t: 'paint'; last: Pt }
   | { t: 'tap'; x: number; y: number; moved: boolean }
   | ScaleDrag
   | CropDrag;
 
-interface Gesture { cx: number; cy: number; d: number; a: number; layer: boolean }
+/** Pellizco con dos dedos: zoom de la vista, transformar la imagen o (al recortar) encuadrarla en el marco. */
+interface Gesture { cx: number; cy: number; d: number; a: number; mode: 'view' | 'layer' | 'frame' }
+
+const geomOf = (l: Layer): LayerGeom => ({
+  cx: l.cx, cy: l.cy, w: l.w, h: l.h, rot: l.rot, flipX: l.flipX, flipY: l.flipY, crop: { ...l.crop }, img: l.img,
+});
 
 const ptrs = new Map<number, Pt>();
 let gest: Gesture | null = null;
@@ -52,9 +59,9 @@ function opaqueAt(l: Layer, m: Pt) {
   try { return l.img.getContext('2d', { willReadFrequently: true })!.getImageData(x, y, 1, 1).data[3]! > 16; } catch { return true; }
 }
 
-function gInfo(layer: boolean): Gesture {
+function gInfo(mode: Gesture['mode']): Gesture {
   const [a, b] = [...ptrs.values()] as [Pt, Pt];
-  return { cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2, d: Math.max(1, Math.hypot(b.x - a.x, b.y - a.y)), a: Math.atan2(b.y - a.y, b.x - a.x), layer };
+  return { cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2, d: Math.max(1, Math.hypot(b.x - a.x, b.y - a.y)), a: Math.atan2(b.y - a.y, b.x - a.x), mode };
 }
 const clearLP = () => { if (lpTimer) clearTimeout(lpTimer); lpTimer = null; };
 
@@ -72,11 +79,15 @@ export function initPointer(cv: HTMLCanvasElement) {
     const R = e.pointerType === 'mouse' ? 11 : 22;
     clearLP();
     if (ptrs.size === 2) {
-      // pellizco: transforma la imagen solo si el centro del gesto cae sobre ella; si no, hace zoom de la vista
+      // pellizco: transforma la imagen solo si el centro del gesto cae sobre ella; si no, hace zoom de la vista.
+      // Al recortar, pellizcar sobre la imagen la amplía o reduce dentro del marco.
       drag = null;
-      const g0 = gInfo(false), onSel = S.mode === 'move' && !!st.sel && inside(st.sel, s2mm({ x: g0.cx, y: g0.cy }));
-      gest = { ...g0, layer: onSel };
-      setPending(onSel ? takeSnap() : null);
+      const g0 = gInfo('view'), c0 = s2mm({ x: g0.cx, y: g0.cy }), sel = st.sel;
+      const mode = !sel ? 'view'
+        : S.mode === 'move' && inside(sel, c0) ? 'layer'
+          : S.mode === 'crop' && insideImage(sel, c0) ? 'frame' : 'view';
+      gest = { ...g0, mode };
+      setPending(mode === 'layer' ? takeSnap() : null);
       dirty();
       return;
     }
@@ -125,7 +136,8 @@ export function initPointer(cv: HTMLCanvasElement) {
     } else if (S.mode === 'crop' && sel) {
       const h = nearest(boxHandles(sel, false), p, R);
       if (h && h.id !== 'rot') { drag = { t: 'crop', id: h.id, k0: { ...sel.crop }, ratio0: (sel.w * (sel.crop.x1 - sel.crop.x0)) / (sel.h * (sel.crop.y1 - sel.crop.y0)) }; return; }
-      if (inside(sel, m)) { drag = { t: 'cropmove', last: mmToLocal(sel, m) }; return; }
+      // dentro del marco o sobre la parte atenuada de la imagen: se arrastra la imagen, el marco queda fijo
+      if (insideImage(sel, m)) { drag = { t: 'frame', m0: m, start: geomOf(sel) }; cv.style.cursor = 'grabbing'; return; }
       const hit = hitLayer(p);
       if (hit && hit !== sel) { select(hit); drag = { t: 'none' }; }
       else { if (!hit) applyCrop(); drag = { t: 'pan', last: p }; }
@@ -151,7 +163,7 @@ export function initPointer(cv: HTMLCanvasElement) {
           cv.style.cursor = h && sel ? handleCursor(sel, h.id) : st.hoverL ? (e.altKey ? 'copy' : 'move') : 'default';
         } else if (S.mode === 'crop' && sel) {
           const h = nearest(boxHandles(sel, false), p, 11);
-          cv.style.cursor = h ? handleCursor(sel, h.id) : inside(sel, s2mm(p)) ? 'move' : 'default';
+          cv.style.cursor = h ? handleCursor(sel, h.id) : insideImage(sel, s2mm(p)) ? 'grab' : 'default';
         }
       }
       dirty();
@@ -162,14 +174,19 @@ export function initPointer(cv: HTMLCanvasElement) {
     if (lpTimer && lpStart && Math.hypot(p.x - lpStart.x, p.y - lpStart.y) > 8) clearLP();
 
     if (gest && ptrs.size === 2) {
-      const n = gInfo(gest.layer);
-      if (gest.layer && sel) {
+      const n = gInfo(gest.mode);
+      const pv = s2mm({ x: n.cx, y: n.cy }), pp = s2mm({ x: gest.cx, y: gest.cy });
+      if (gest.mode === 'layer' && sel) {
         commitPending();
-        const pv = s2mm({ x: n.cx, y: n.cy }), pp = s2mm({ x: gest.cx, y: gest.cy });
+        markManual(sel);
         sel.cx += pv.x - pp.x; sel.cy += pv.y - pp.y;
         scaleLayer(sel, n.d / gest.d, pv);
         rotateLayer(sel, ((n.a - gest.a) * 180) / Math.PI, pv);
         syncSel();
+      } else if (gest.mode === 'frame' && sel) {
+        // encuadre con dos dedos: desplazar y ampliar la imagen bajo el marco fijo (sin girar)
+        panInFrame(sel, geomOf(sel), { x: pv.x - pp.x, y: pv.y - pp.y });
+        zoomInFrame(sel, n.d / gest.d, pv);
       } else { V.ox += n.cx - gest.cx; V.oy += n.cy - gest.cy; zoomAt(n.cx, n.cy, n.d / gest.d); }
       gest = n;
       dirty();
@@ -182,15 +199,17 @@ export function initPointer(cv: HTMLCanvasElement) {
       case 'move': {
         if (!sel) break;
         commitPending();
+        markManual(sel);
         let dx = m.x - drag.m0.x, dy = m.y - drag.m0.y;
         if (e.shiftKey) { if (Math.abs(dx) > Math.abs(dy)) dy = 0; else dx = 0; }
         sel.cx = drag.c0.x + dx; sel.cy = drag.c0.y + dy;
         syncSel(); break;
       }
-      case 'scale': if (sel) { commitPending(); applyScale(sel, drag, m, e.shiftKey, e.altKey); syncSel(); } break;
+      case 'scale': if (sel) { commitPending(); markManual(sel); applyScale(sel, drag, m, e.shiftKey, e.altKey); syncSel(); } break;
       case 'rot': {
         if (!sel) break;
         commitPending();
+        markManual(sel);
         let r = drag.r0 + ((Math.atan2(m.y - drag.cc.y, m.x - drag.cc.x) - drag.a0) * 180) / Math.PI;
         if (e.shiftKey) r = Math.round(r / 15) * 15;
         else { const q = Math.round(r / 90) * 90; if (Math.abs(r - q) < 3) r = q; } // imán a 0/90/180/270
@@ -198,12 +217,11 @@ export function initPointer(cv: HTMLCanvasElement) {
         syncSel(); break;
       }
       case 'crop': if (sel) applyCropDrag(sel, drag, m, e.shiftKey, e.altKey, S.cropRatio); break;
-      case 'cropmove': {
+      case 'frame': {
         if (!sel) break;
-        const q = mmToLocal(sel, m), k = sel.crop;
-        const du = Math.min(Math.max(q.u - drag.last.u, -k.x0), 1 - k.x1), dv = Math.min(Math.max(q.v - drag.last.v, -k.y0), 1 - k.y1);
-        k.x0 += du; k.x1 += du; k.y0 += dv; k.y1 += dv;
-        drag.last = { u: drag.last.u + du, v: drag.last.v + dv };
+        let dx = m.x - drag.m0.x, dy = m.y - drag.m0.y;
+        if (e.shiftKey) { if (Math.abs(dx) > Math.abs(dy)) dy = 0; else dx = 0; }
+        panInFrame(sel, drag.start, { x: dx, y: dy });
         break;
       }
       case 'paint': if (sel) { paint(sel, drag.last, p); drag.last = p; } break;
@@ -220,7 +238,8 @@ export function initPointer(cv: HTMLCanvasElement) {
       if (sel && inside(sel, s2mm(p))) wandAt(p);
       else { const hit = hitLayer(p); if (hit) select(hit); else setMode('move'); }
     }
-    if (drag && ['paint', 'scale', 'crop', 'cropmove', 'move', 'rot'].includes(drag.t)) { renderList(); syncSel(); }
+    if (drag && ['paint', 'scale', 'crop', 'frame', 'move', 'rot'].includes(drag.t)) { renderList(); syncSel(); }
+    if (drag?.t === 'frame' && e.pointerType === 'mouse') cv.style.cursor = 'grab';
     ptrs.delete(e.pointerId);
     if (ptrs.size < 2) { if (gest) renderList(); gest = null; }
     drag = null; setPending(null);
@@ -236,9 +255,12 @@ export function initPointer(cv: HTMLCanvasElement) {
   cv.addEventListener('wheel', (e) => {
     e.preventDefault();
     closeMenu();
-    const p = pos(e);
+    const p = pos(e), m = s2mm(p), sel = st.sel;
     const zoom = e.ctrlKey || e.metaKey || e.deltaMode !== 0 || (e.deltaX === 0 && Number.isInteger(e.deltaY) && Math.abs(e.deltaY) >= 50);
-    if (zoom) zoomAt(p.x, p.y, Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0015)));
+    const f = Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0015));
+    // al recortar, la rueda (o el pellizco del trackpad) sobre la imagen la amplía dentro del marco fijo
+    if (zoom && S.mode === 'crop' && sel && insideImage(sel, m)) { zoomInFrame(sel, f, m); dirty(); return; }
+    if (zoom) zoomAt(p.x, p.y, f);
     else panBy(-e.deltaX, -e.deltaY);
   }, { passive: false });
 

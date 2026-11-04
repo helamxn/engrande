@@ -26,15 +26,21 @@ export function takeSnap(): Snapshot {
     sel: st.sel,
     props: st.layers.map((l) => ({
       l, cx: l.cx, cy: l.cy, w: l.w, h: l.h, rot: l.rot, flipX: l.flipX, flipY: l.flipY,
-      crop: { ...l.crop }, img: l.img, orig: l.orig, page: l.page,
+      crop: { ...l.crop }, img: l.img, orig: l.orig, page: l.page, fit: l.fit && { ...l.fit },
     })),
+    // la distribución de hojas también se deshace (cambiarla mueve y reajusta las imágenes)
+    layout: { paper: S.paper, orient: S.orient, cols: S.cols, rows: S.rows, margin: S.margin, overlap: S.overlap },
   };
 }
 export function restoreSnap(s: Snapshot) {
   st.layers = s.layers.slice();
   for (const p of s.props) {
-    Object.assign(p.l, { cx: p.cx, cy: p.cy, w: p.w, h: p.h, rot: p.rot, flipX: p.flipX, flipY: p.flipY, crop: { ...p.crop }, img: p.img, orig: p.orig, page: p.page });
+    Object.assign(p.l, {
+      cx: p.cx, cy: p.cy, w: p.w, h: p.h, rot: p.rot, flipX: p.flipX, flipY: p.flipY,
+      crop: { ...p.crop }, img: p.img, orig: p.orig, page: p.page, fit: p.fit && { ...p.fit },
+    });
   }
+  Object.assign(S, s.layout);
   st.sel = s.sel && st.layers.includes(s.sel) ? s.sel : null;
 }
 

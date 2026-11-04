@@ -1,17 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import {
-  applyCropDrag, applyScale, bboxMM, conformCrop, cropCenter, fitLayer, geo, hasCutMarks, inside, isStretched, localToMM,
-  markLen, mmToLocal, normDeg, pppOf, rescaleForLayout, rotateLayer, srcDims, startScale, unstretch, visH, visW,
+  applyCropDrag, applyFit, applyScale, bboxMM, conformCrop, cropCenter, cropPtsMM, fitLayer, geo, hasCutMarks, inside,
+  isStretched, localToMM, markLen, mmToLocal, normDeg, panInFrame, pppOf, relayout, rotateLayer, srcDims, startScale,
+  unstretch, visH, visW, zoomInFrame,
 } from './geometry';
-import type { LayerGeom, Settings, Source } from './types';
+import type { Fit, LayerGeom, Settings, Source } from './types';
 
 const settings = (o: Partial<Settings> = {}) =>
   ({ paper: 'A4', orient: 'portrait', cols: 2, rows: 2, margin: 6, overlap: 10, ...o }) as Settings;
 
 /** Capa de prueba: imagen de 1000×500 px colocada a 200×100 mm centrada en (100, 50). */
-const layer = (o: Partial<LayerGeom & { src: Source | null }> = {}) => ({
+const layer = (o: Partial<LayerGeom & { src: Source | null; fit: Fit }> = {}) => ({
   cx: 100, cy: 50, w: 200, h: 100, rot: 0, flipX: false, flipY: false,
-  crop: { x0: 0, y0: 0, x1: 1, y1: 1 }, img: { width: 1000, height: 500 }, src: null as Source | null, ...o,
+  crop: { x0: 0, y0: 0, x1: 1, y1: 1 }, img: { width: 1000, height: 500 }, src: null as Source | null, fit: null as Fit, ...o,
 });
 
 const close = (a: number, b: number, d = 1e-6) => expect(Math.abs(a - b)).toBeLessThan(d);
@@ -116,19 +117,88 @@ describe('recorte', () => {
   });
 });
 
-describe('cambio de distribución', () => {
-  it('añadir una fila o una columna no cambia el tamaño de la imagen (se comportan igual)', () => {
-    const a = geo(settings()), rows = geo(settings({ rows: 3 })), cols = geo(settings({ cols: 3 }));
-    const l1 = layer(), l2 = layer();
-    rescaleForLayout([l1], a, rows);
-    rescaleForLayout([l2], a, cols);
-    expect(l1.w).toBe(200); expect(l2.w).toBe(200);
+describe('cambio de distribución (relayout)', () => {
+  /** Aplica una secuencia de distribuciones y devuelve la capa. */
+  const run = (l: ReturnType<typeof layer>, seq: Partial<Settings>[]) => {
+    let prev = geo(settings(seq[0]));
+    for (const s of seq.slice(1)) { const next = geo(settings(s)); relayout([l], prev, next); prev = next; }
+    return l;
+  };
+  const snapshot = (l: ReturnType<typeof layer>) => ({ cx: l.cx, cy: l.cy, w: l.w, h: l.h });
+  const same = (a: ReturnType<typeof snapshot>, b: ReturnType<typeof snapshot>) => {
+    close(a.cx, b.cx, 1e-6); close(a.cy, b.cy, 1e-6); close(a.w, b.w, 1e-6); close(a.h, b.h, 1e-6);
+  };
+
+  // regresión: antes cada ida y vuelta Vertical → Horizontal → Vertical dejaba la imagen al 47,5 %
+  it.each([
+    ['orientación', [{}, { orient: 'landscape' }, {}, { orient: 'landscape' }, {}]],
+    ['margen', [{ margin: 6 }, { margin: 10 }, { margin: 15 }, { margin: 3 }, { margin: 6 }]],
+    ['solape', [{ overlap: 10 }, { overlap: 30 }, { overlap: 0 }, { overlap: 10 }]],
+    ['papel', [{}, { paper: 'A3' }, { paper: 'Carta' }, {}]],
+    ['filas y columnas', [{}, { rows: 3 }, { cols: 4, rows: 1 }, {}]],
+  ] as [string, Partial<Settings>[]][])('ida y vuelta de %s deja la imagen igual (colocada a mano y ajustada)', (_, seq) => {
+    const manual = layer({ cx: 140, cy: 220 });
+    const before = snapshot(manual);
+    same(snapshot(run(manual, seq)), before);
+
+    const g0 = geo(settings(seq[0])), fitted = layer({ fit: { mode: 'contain', scale: 1 } });
+    applyFit(fitted, fitted.fit!, g0);
+    const fb = snapshot(fitted);
+    same(snapshot(run(fitted, seq)), fb);
   });
-  it('pasar de A4 a A3 escala la imagen en proporción', () => {
-    const a = geo(settings()), b = geo(settings({ paper: 'A3' })), l = layer();
-    rescaleForLayout([l], a, b);
-    close(l.w / l.h, 2);
-    expect(l.w).toBeGreaterThan(200);
+
+  it('una imagen colocada a mano conserva su tamaño en cm', () => {
+    const l = run(layer(), [{}, { orient: 'landscape' }]);
+    expect(l.w).toBe(200); expect(l.h).toBe(100);
+  });
+  it('una imagen ajustada se vuelve a ajustar al nuevo póster', () => {
+    const g = geo(settings({ orient: 'landscape' })), l = layer({ fit: { mode: 'contain', scale: 1 } });
+    applyFit(l, l.fit!, geo(settings()));
+    run(l, [{}, { orient: 'landscape' }]);
+    expect(Math.abs(visW(l) - g.W) < 1e-6 || Math.abs(visH(l) - g.H) < 1e-6).toBe(true);
+    const c = cropCenter(l); close(c.x, g.W / 2); close(c.y, g.H / 2);
+  });
+  it('respeta la escala del ajuste (imagen de ejemplo al 94 %)', () => {
+    const g = geo(settings()), l = layer({ fit: { mode: 'contain', scale: 0.94 } });
+    applyFit(l, l.fit!, g);
+    close(visW(l), g.W * 0.94);
+  });
+});
+
+describe('recorte con marco fijo', () => {
+  const framed = () => layer({ crop: { x0: 0.25, y0: 0.25, x1: 0.75, y1: 0.75 } });
+  const frameOf = (l: ReturnType<typeof layer>) => cropPtsMM(l);
+
+  it('arrastrar mueve la imagen y el marco queda en el mismo sitio del póster', () => {
+    const l = framed(), before = frameOf(l), start = { ...l, crop: { ...l.crop } };
+    panInFrame(l, start, { x: 20, y: 10 });
+    frameOf(l).forEach((p, i) => { close(p.x, before[i]!.x); close(p.y, before[i]!.y); });
+    close(l.cx, 120); close(l.cy, 60);               // la imagen siguió al cursor
+    close(l.crop.x0, 0.25 - 20 / 200); close(l.crop.y0, 0.25 - 10 / 100); // y se ve otra zona
+  });
+  it('la imagen no puede dejar huecos dentro del marco', () => {
+    const l = framed(), before = frameOf(l), start = { ...l, crop: { ...l.crop } };
+    panInFrame(l, start, { x: 500, y: -500 });
+    expect(l.crop.x0).toBeGreaterThanOrEqual(-1e-9); expect(l.crop.y1).toBeLessThanOrEqual(1 + 1e-9);
+    frameOf(l).forEach((p, i) => { close(p.x, before[i]!.x); close(p.y, before[i]!.y); });
+  });
+  it('funciona con la imagen girada y en espejo', () => {
+    const l = layer({ rot: 30, flipX: true, crop: { x0: 0.25, y0: 0.25, x1: 0.75, y1: 0.75 } });
+    const before = frameOf(l), start = { ...l, crop: { ...l.crop } };
+    panInFrame(l, start, { x: 15, y: -5 });
+    frameOf(l).forEach((p, i) => { close(p.x, before[i]!.x); close(p.y, before[i]!.y); });
+  });
+  it('ampliar dentro del marco no cambia el marco', () => {
+    const l = framed(), before = frameOf(l);
+    zoomInFrame(l, 2, cropCenter(l));
+    close(l.w, 400);
+    frameOf(l).forEach((p, i) => { close(p.x, before[i]!.x); close(p.y, before[i]!.y); });
+  });
+  it('reducir se detiene cuando la imagen llena justo el marco', () => {
+    const l = framed();
+    zoomInFrame(l, 0.1, cropCenter(l));
+    close(l.w, 100); close(l.h, 50);                 // el recorte ocupa ahora toda la imagen
+    close(l.crop.x1 - l.crop.x0, 1); close(l.crop.y1 - l.crop.y0, 1);
   });
 });
 

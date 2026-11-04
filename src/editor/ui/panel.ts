@@ -1,12 +1,12 @@
 /** Panel lateral: pestañas, ajustes de hojas, propiedades de la imagen, lista de imágenes, exportación y lectura. */
 import {
-  afterChange, centerSel, duplicateLayer, fitSel, removeLayer, reorder, select, unstretchSel,
+  afterChange, centerSel, duplicateLayer, fitSel, markManual, removeLayer, reorder, select, unstretchSel,
 } from '../actions';
 import { MAX_COLS_ROWS, PRESETS } from '../constants';
 import { $, $$, toast } from '../dom';
 import { cm, fmt1 } from '../format';
 import {
-  bboxMM, cropCenter, isStretched, keepCenter, natRatio, normDeg, pppOf, qualityOf, rescaleForLayout,
+  applyFit, bboxMM, cropCenter, isStretched, keepCenter, natRatio, normDeg, pppOf, qualityOf, relayout,
   rotateLayer, scaleLayer, visH, visW,
 } from '../geometry';
 import { snap } from '../history';
@@ -17,7 +17,7 @@ import { fitView } from '../view';
 import { renderPdfPage } from '../io/pdf';
 import { ICON } from './icons';
 import { layerMenu, openMenu } from './menu';
-import type { Geo, Layer, Orient, Paper } from '../types';
+import type { Geo, Layer, LayoutSettings, Orient, Paper } from '../types';
 
 /* ---------- pestañas (patrón ARIA tabs) ---------- */
 function showTab(t: string) {
@@ -33,9 +33,30 @@ function showTab(t: string) {
 let prevG: Geo | null = null;
 export function layoutChanged() {
   const g = posterGeo();
-  if (prevG) rescaleForLayout(st.layers, prevG, g);
+  if (prevG) relayout(st.layers, prevG, g);
   prevG = g;
   syncLayoutUI(); syncSel(); renderList(); fitView();
+}
+/** Tras deshacer o rehacer: la distribución ya viene restaurada junto con las imágenes, solo se sincroniza la interfaz. */
+export function layoutRestored() {
+  const g = posterGeo(), changed = !prevG || prevG.W !== g.W || prevG.H !== g.H;
+  prevG = g;
+  syncLayoutUI();
+  if (changed) fitView();
+}
+
+/**
+ * Cambia un ajuste de la hoja guardando el paso de deshacer. Un arrastre continuo del mismo deslizador
+ * cuenta como un solo paso; si el valor no cambia, no se guarda nada.
+ */
+let lastLayoutEdit = { key: '', t: 0 };
+function editLayout<K extends keyof LayoutSettings>(key: K, value: LayoutSettings[K], coalesce = false) {
+  if (S[key] === value) return;
+  const now = performance.now();
+  if (!(coalesce && lastLayoutEdit.key === key && now - lastLayoutEdit.t < 1000)) snap();
+  lastLayoutEdit = { key, t: now };
+  (S as LayoutSettings)[key] = value;
+  layoutChanged();
 }
 export function syncLayoutUI() {
   $('#colsOut').textContent = String(S.cols);
@@ -163,7 +184,9 @@ export function updateHint() {
     move: !st.layers.length ? 'Agrega una imagen para empezar'
       : sel ? (t ? 'Arrastra para mover · pellizca sobre la imagen para escalar y girar · toca fuera para soltar' : 'Esquinas: escalar · lados: estirar · punto superior: girar · clic fuera para soltar')
         : (t ? 'Toca una imagen para seleccionarla · mantén pulsado para más opciones' : 'Clic en una imagen para seleccionarla · clic derecho para más opciones'),
-    crop: t ? 'Arrastra los bordes del recorte · toca Aplicar para terminar' : `Arrastra los bordes · Shift mantiene la proporción · ${ALT} desde el centro · Enter aplica`,
+    crop: t
+      ? 'Arrastra la imagen para encuadrarla · pellizca para ampliarla · bordes: tamaño del recorte'
+      : `Arrastra la imagen para encuadrarla · rueda: ampliarla · bordes: tamaño del recorte (Shift: proporción, ${ALT}: desde el centro) · Enter aplica`,
     erase: S.brushMode === 'erase' ? 'Pinta sobre la imagen para borrar' : 'Pinta para recuperar lo borrado',
     wand: 'Toca un color de la imagen para borrarlo',
   };
@@ -173,7 +196,7 @@ export function updateHint() {
 }
 
 const SHORTCUTS: [string, string][] = [
-  ['Clic derecho / mantener pulsado', 'Menú de opciones'], ['Doble clic', 'Recortar · Enter aplica · Esc cancela'],
+  ['Clic derecho / mantener pulsado', 'Menú de opciones'], ['Doble clic', 'Recortar · Enter aplica · Esc cancela'], ['Al recortar: arrastrar · rueda', 'Encuadrar · ampliar la imagen en el marco'],
   ['Esquina', 'Escalar proporcional'], ['Shift + esquina', 'Escalar libre (deforma)'], ['Lado', 'Estirar en una dirección'],
   [ALT + ' + tirador', 'Escalar o recortar desde el centro'], ['Shift + girar', 'De 15° en 15°'],
   ['Shift + arrastrar', 'Mover solo en horizontal o vertical'], [ALT + ' + arrastrar', 'Arrastrar una copia'],
@@ -202,25 +225,27 @@ export function initPanel() {
     const b = document.createElement('button');
     b.type = 'button'; b.className = 'chip'; b.textContent = `${c}×${r}`;
     b.dataset.c = String(c); b.dataset.r = String(r);
-    b.addEventListener('click', () => { S.cols = c; S.rows = r; layoutChanged(); });
+    b.addEventListener('click', () => {
+      if (S.cols === c && S.rows === r) return;
+      snap(); S.cols = c; S.rows = r; layoutChanged();
+    });
     presets.appendChild(b);
   }
   for (const b of $$('[data-step]')) b.addEventListener('click', () => {
     const k = b.dataset.step === 'rows' ? 'rows' : 'cols';
-    S[k] = Math.min(Math.max(S[k] + Number(b.dataset.d), 1), MAX_COLS_ROWS);
-    layoutChanged();
+    editLayout(k, Math.min(Math.max(S[k] + Number(b.dataset.d), 1), MAX_COLS_ROWS));
   });
-  for (const b of $$('[data-paper]')) b.addEventListener('click', () => { S.paper = b.dataset.paper as Paper; layoutChanged(); });
-  for (const b of $$('[data-orient]')) b.addEventListener('click', () => { S.orient = b.dataset.orient as Orient; layoutChanged(); });
-  $<HTMLInputElement>('#margin').addEventListener('input', (e) => { S.margin = +(e.target as HTMLInputElement).value; layoutChanged(); });
-  $<HTMLInputElement>('#overlap').addEventListener('input', (e) => { S.overlap = +(e.target as HTMLInputElement).value; layoutChanged(); });
+  for (const b of $$('[data-paper]')) b.addEventListener('click', () => editLayout('paper', b.dataset.paper as Paper));
+  for (const b of $$('[data-orient]')) b.addEventListener('click', () => editLayout('orient', b.dataset.orient as Orient));
+  $<HTMLInputElement>('#margin').addEventListener('input', (e) => editLayout('margin', +(e.target as HTMLInputElement).value, true));
+  $<HTMLInputElement>('#overlap').addEventListener('input', (e) => editLayout('overlap', +(e.target as HTMLInputElement).value, true));
 
-  // propiedades
-  numField('#pW', (l, v) => { const f = Math.max(3, v * 10) / visW(l); if (S.lock) scaleLayer(l, f, cropCenter(l)); else keepCenter(l, (x) => { x.w *= f; }); });
-  numField('#pH', (l, v) => { const f = Math.max(3, v * 10) / visH(l); if (S.lock) scaleLayer(l, f, cropCenter(l)); else keepCenter(l, (x) => { x.h *= f; }); });
-  numField('#pX', (l, v) => { l.cx += v * 10 - bboxMM(l).x0; });
-  numField('#pY', (l, v) => { l.cy += v * 10 - bboxMM(l).y0; });
-  numField('#pR', (l, v) => { rotateLayer(l, normDeg(v) - l.rot, cropCenter(l)); });
+  // propiedades (escribir una medida = colocar a mano)
+  numField('#pW', (l, v) => { const f = Math.max(3, v * 10) / visW(l); if (S.lock) scaleLayer(l, f, cropCenter(l)); else keepCenter(l, (x) => { x.w *= f; }); markManual(l); });
+  numField('#pH', (l, v) => { const f = Math.max(3, v * 10) / visH(l); if (S.lock) scaleLayer(l, f, cropCenter(l)); else keepCenter(l, (x) => { x.h *= f; }); markManual(l); });
+  numField('#pX', (l, v) => { l.cx += v * 10 - bboxMM(l).x0; markManual(l); });
+  numField('#pY', (l, v) => { l.cy += v * 10 - bboxMM(l).y0; markManual(l); });
+  numField('#pR', (l, v) => { rotateLayer(l, normDeg(v) - l.rot, cropCenter(l)); markManual(l); });
   $('#pLock').addEventListener('click', () => { S.lock = !S.lock; $('#pLock').setAttribute('aria-pressed', String(S.lock)); });
   $('#unstretch').addEventListener('click', unstretchSel);
   $('#fitContain').addEventListener('click', fitSel('contain'));
@@ -236,6 +261,8 @@ export function initPanel() {
       snap();
       const w = visW(l);
       keepCenter(l, (x) => { Object.assign(x, { img: c, orig: c, page: n, crop: { x0: 0, y0: 0, x1: 1, y1: 1 } }); x.w = w; x.h = w * natRatio(x); });
+      // si estaba ajustada al póster, la nueva página (quizá de otra proporción) también se ajusta
+      if (l.fit) applyFit(l, l.fit, posterGeo());
       afterChange();
     } catch { toast('No se pudo leer esa página'); }
   });

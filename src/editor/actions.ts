@@ -2,7 +2,7 @@
 import { MAX_SIDE } from './constants';
 import { $, toast } from './dom';
 import {
-  conformCrop, cropCenter, fitLayer, keepCenter, mmToLocal, natRatio, rotateLayer, scaleLayer, unstretch,
+  applyFit, conformCrop, cropCenter, keepCenter, mmToLocal, natRatio, rotateLayer, unstretch,
 } from './geometry';
 import { pushUndo, snap, takeSnap, restoreSnap } from './history';
 import { MOD } from './platform';
@@ -10,8 +10,8 @@ import { dirty } from './render';
 import { posterGeo, S, st, V } from './state';
 import { s2mm } from './view';
 import { renderBar } from './ui/contextbar';
-import { renderList, syncSel } from './ui/panel';
-import type { Layer, Mode, Pt, Snapshot, Source } from './types';
+import { layoutRestored, renderList, syncSel } from './ui/panel';
+import type { FitMode, Layer, LayerProps, Mode, Pt, Snapshot, Source } from './types';
 
 /* ---------- lienzos ---------- */
 export function cloneCanvas(src: HTMLCanvasElement) {
@@ -37,18 +37,21 @@ export function newLayer(img: HTMLCanvasElement, name: string, extra: Partial<La
   return {
     id: st.nextId++, name, img, orig: img, cx: g.W / 2, cy: g.H / 2, w: g.W, h: (g.W * img.height) / img.width,
     rot: 0, flipX: false, flipY: false, crop: { x0: 0, y0: 0, x1: 1, y1: 1 },
-    pdf: null, page: 1, pages: 1, isSample: false, src: null as Source | null, ...extra,
+    pdf: null, page: 1, pages: 1, isSample: false, src: null as Source | null, fit: null, ...extra,
   };
 }
+/** Coloca una imagen nueva ajustada al póster. Si va desplazada (varias a la vez), queda como colocada a mano. */
 export function addLayer(l: Layer, { factor = 1, offset = 0 } = {}) {
   st.layers.push(l);
-  fitLayer(l, 'contain', posterGeo());
-  if (factor !== 1) scaleLayer(l, factor, cropCenter(l));
-  l.cx += offset; l.cy += offset;
+  const fit = { mode: 'contain' as const, scale: factor };
+  applyFit(l, fit, posterGeo());
+  if (offset) { l.cx += offset; l.cy += offset; l.fit = null; } else l.fit = fit;
   select(l);
 }
 export const cloneLayer = (l: Layer, extra: Partial<Layer> = {}): Layer =>
-  ({ ...l, id: st.nextId++, crop: { ...l.crop }, isSample: false, ...extra });
+  ({ ...l, id: st.nextId++, crop: { ...l.crop }, isSample: false, fit: l.fit && { ...l.fit }, ...extra });
+/** La imagen se movió o cambió de tamaño a mano: ya no se reajusta al cambiar la hoja. */
+export const markManual = (l: Layer) => { l.fit = null; };
 
 export function select(l: Layer | null) {
   if (S.mode === 'crop' && l !== st.sel) applyCrop();
@@ -60,6 +63,7 @@ export function select(l: Layer | null) {
 export function afterChange() { renderList(); syncSel(); dirty(); }
 export function afterHistory() {
   if (!st.sel && S.mode !== 'move') setMode('move');
+  layoutRestored();
   renderList(); syncSel(); renderBar(); dirty();
 }
 
@@ -81,7 +85,7 @@ export function reorder(l: Layer, to: 'front' | 'back' | number) {
 }
 export function duplicateLayer(l: Layer) {
   snap();
-  const d = cloneLayer(l, { name: l.name + ' (copia)' });
+  const d = cloneLayer(l, { name: l.name + ' (copia)', fit: null });
   d.cx += 10; d.cy += 10;
   st.layers.splice(st.layers.indexOf(l) + 1, 0, d);
   select(d);
@@ -92,7 +96,7 @@ export function pasteLayer() {
   if (!clip) return false;
   snap();
   clip.pasteN = (clip.pasteN ?? 0) + 1;
-  const d = cloneLayer(clip, { name: clip.name });
+  const d = cloneLayer(clip, { name: clip.name, fit: null });
   delete d.pasteN;
   d.cx += 10 * clip.pasteN; d.cy += 10 * clip.pasteN;
   st.layers.push(d);
@@ -105,11 +109,11 @@ export const tx = (fn: (l: Layer) => void) => () => {
   if (!l) return;
   snap(); fn(l); afterChange();
 };
-export const rotate90 = (dir: 1 | -1) => tx((l) => rotateLayer(l, 90 * dir, cropCenter(l)));
+export const rotate90 = (dir: 1 | -1) => tx((l) => { rotateLayer(l, 90 * dir, cropCenter(l)); markManual(l); });
 export const flip = (axis: 'x' | 'y') => tx((l) => keepCenter(l, (x) => { if (axis === 'x') x.flipX = !x.flipX; else x.flipY = !x.flipY; }));
-export const fitSel = (mode: 'contain' | 'cover') => tx((l) => fitLayer(l, mode, posterGeo()));
+export const fitSel = (mode: FitMode) => tx((l) => { l.fit = { mode, scale: 1 }; applyFit(l, l.fit, posterGeo()); });
 export const centerSel = tx((l) => { const g = posterGeo(), c = cropCenter(l); l.cx += g.W / 2 - c.x; l.cy += g.H / 2 - c.y; });
-export const unstretchSel = tx(unstretch);
+export const unstretchSel = tx((l) => { unstretch(l); markManual(l); });
 
 /* ---------- modos ---------- */
 let cropSession: Snapshot | null = null;
@@ -137,7 +141,9 @@ export function applyCrop() {
   const s = cropSession, sel = st.sel;
   cropSession = null; S.mode = 'move';
   const p = s && sel && s.props.find((q) => q.l === sel);
-  if (s && p && sel && JSON.stringify(p.crop) !== JSON.stringify(sel.crop)) pushUndo(s);
+  // al encuadrar se mueve o amplía la imagen, no solo el recorte: se comparan las dos cosas
+  const key = (o: Layer | LayerProps) => JSON.stringify([o.crop, o.cx, o.cy, o.w, o.h]);
+  if (s && p && sel && key(p) !== key(sel)) { pushUndo(s); markManual(sel); }
   renderBar(); afterChange();
 }
 export function cancelCrop() {
@@ -265,6 +271,7 @@ export function resetOriginal(l: Layer) {
   const c = l.img.getContext('2d')!;
   c.clearRect(0, 0, l.img.width, l.img.height); c.drawImage(l.orig, 0, 0);
   keepCenter(l, (x) => { x.crop = { x0: 0, y0: 0, x1: 1, y1: 1 }; x.h = x.w * natRatio(x); x.flipX = false; x.flipY = false; });
+  markManual(l);
   afterChange();
   toast('Imagen original restaurada');
 }
