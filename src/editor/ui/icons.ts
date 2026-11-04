@@ -7,6 +7,8 @@
 import arrowDown from 'lucide-static/icons/arrow-down.svg?raw';
 import arrowUp from 'lucide-static/icons/arrow-up.svg?raw';
 import check from 'lucide-static/icons/check.svg?raw';
+import chevronLeft from 'lucide-static/icons/chevron-left.svg?raw';
+import chevronRight from 'lucide-static/icons/chevron-right.svg?raw';
 import copy from 'lucide-static/icons/copy.svg?raw';
 import crop from 'lucide-static/icons/crop.svg?raw';
 import download from 'lucide-static/icons/download.svg?raw';
@@ -43,6 +45,8 @@ const RAW = {
   up: arrowUp, down: arrowDown, dup: copy, eye, eyeOff,
   // cabecera y herramientas
   newPoster: filePlus, addImage: imagePlus, download, undo, redo, zoomIn: plus, zoomOut: minus, lock, lockOpen,
+  // menú contextual (submenús)
+  chevronRight, chevronLeft,
 } as const;
 
 export type IconName = keyof typeof RAW;
