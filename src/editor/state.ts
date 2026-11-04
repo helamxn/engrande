@@ -3,7 +3,7 @@ import { geo } from './geometry';
 import type { Layer, LayoutSettings, Pt, Settings } from './types';
 
 /** Ajustes de un póster nuevo (los que se guardan y se restablecen con "Nuevo póster"). */
-export const DEFAULT_LAYOUT: LayoutSettings = { paper: 'A4', orient: 'portrait', cols: 2, rows: 2, margin: 6, overlap: 10 };
+export const DEFAULT_LAYOUT: LayoutSettings = { paper: 'A4', orient: 'portrait', cols: 2, rows: 1, margin: 6, overlap: 10 };
 export const DEFAULT_EXPORT: Pick<Settings, 'dpi' | 'marks' | 'guide'> = { dpi: 150, marks: true, guide: true };
 
 export const S: Settings = {
