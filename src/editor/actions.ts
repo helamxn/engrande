@@ -222,13 +222,62 @@ export function paint(l: Layer, a: Pt, b: Pt) {
     c.beginPath(); c.moveTo(pa.x, pa.y); c.lineTo(pb.x, pb.y); c.stroke();
     c.beginPath(); c.arc(pb.x, pb.y, r, 0, Math.PI * 2); c.fill(); c.restore();
   } else {
-    const d = Math.hypot(pb.x - pa.x, pb.y - pa.y), n = Math.max(1, Math.ceil(d / (r * 0.4)));
-    c.save(); c.beginPath();
-    for (let i = 0; i <= n; i++) { const x = pa.x + ((pb.x - pa.x) * i) / n, y = pa.y + ((pb.y - pa.y) * i) / n; c.moveTo(x + r, y); c.arc(x, y, r, 0, Math.PI * 2); }
-    c.clip(); c.clearRect(0, 0, l.img.width, l.img.height); c.drawImage(l.orig, 0, 0); c.restore();
+    restoreStroke(l, c, pa, pb, r);
   }
   markCanvasChanged(l.img);
   dirty();
+}
+
+/** Lienzos auxiliares reutilizados por «Restaurar» (crecen según haga falta). */
+let maskCanvas: HTMLCanvasElement | null = null, origCanvas: HTMLCanvasElement | null = null;
+const scratchCanvas = (c: HTMLCanvasElement | null, w: number, h: number) => {
+  const s = c ?? document.createElement('canvas');
+  if (s.width < w) s.width = w;
+  if (s.height < h) s.height = h;
+  return s;
+};
+/**
+ * «Restaurar»: recupera el original bajo el pincel con la mezcla exacta
+ *   resultado = actual × (1 − cobertura) + original × cobertura
+ * (destination-out con la máscara y luego suma con 'lighter' del original enmascarado).
+ * Antes se recortaba con los círculos y se hacía clearRect + drawImage: en el borde suavizado del recorte
+ * cada píxel quedaba con opacidad cobertura + (1 − cobertura)², y como cada movimiento crea su propio borde
+ * sobre zonas ya restauradas, quedaban anillos semitransparentes («rebaba»). Ahora repasar no cambia nada.
+ * Solo se trabaja en el rectángulo que toca el pincel.
+ */
+function restoreStroke(l: Layer, c: CanvasRenderingContext2D, pa: Pt, pb: Pt, r: number) {
+  const W = l.img.width, H = l.img.height;
+  const x0 = Math.max(0, Math.floor(Math.min(pa.x, pb.x) - r - 2)), y0 = Math.max(0, Math.floor(Math.min(pa.y, pb.y) - r - 2));
+  const x1 = Math.min(W, Math.ceil(Math.max(pa.x, pb.x) + r + 2)), y1 = Math.min(H, Math.ceil(Math.max(pa.y, pb.y) + r + 2));
+  const bw = x1 - x0, bh = y1 - y0;
+  if (bw <= 0 || bh <= 0) return;
+  // máscara: los círculos del pincel a lo largo del segmento (con borde suave)
+  maskCanvas = scratchCanvas(maskCanvas, bw, bh);
+  const m = maskCanvas.getContext('2d')!;
+  m.globalCompositeOperation = 'source-over';
+  m.clearRect(0, 0, bw, bh);
+  m.fillStyle = '#000';
+  m.beginPath();
+  const d = Math.hypot(pb.x - pa.x, pb.y - pa.y), n = Math.max(1, Math.ceil(d / (r * 0.4)));
+  for (let i = 0; i <= n; i++) {
+    const x = pa.x + ((pb.x - pa.x) * i) / n - x0, y = pa.y + ((pb.y - pa.y) * i) / n - y0;
+    m.moveTo(x + r, y); m.arc(x, y, r, 0, Math.PI * 2);
+  }
+  m.fill();
+  // original × cobertura
+  origCanvas = scratchCanvas(origCanvas, bw, bh);
+  const o = origCanvas.getContext('2d')!;
+  o.globalCompositeOperation = 'copy';
+  o.drawImage(l.orig, x0, y0, bw, bh, 0, 0, bw, bh);
+  o.globalCompositeOperation = 'destination-in';
+  o.drawImage(maskCanvas, 0, 0, bw, bh, 0, 0, bw, bh);
+  // actual × (1 − cobertura) + original × cobertura
+  c.save();
+  c.globalCompositeOperation = 'destination-out';
+  c.drawImage(maskCanvas, 0, 0, bw, bh, x0, y0, bw, bh);
+  c.globalCompositeOperation = 'lighter';
+  c.drawImage(origCanvas, 0, 0, bw, bh, x0, y0, bw, bh);
+  c.restore();
 }
 
 /* ---------- quitar fondo y varita (en un worker) ---------- */
