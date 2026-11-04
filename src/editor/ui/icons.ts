@@ -29,6 +29,8 @@ import lockOpen from 'lucide-static/icons/lock-open.svg?raw';
 import maximize from 'lucide-static/icons/maximize.svg?raw';
 import minus from 'lucide-static/icons/minus.svg?raw';
 import paintbrush from 'lucide-static/icons/paintbrush.svg?raw';
+import panelRightClose from 'lucide-static/icons/panel-right-close.svg?raw';
+import panelRightOpen from 'lucide-static/icons/panel-right-open.svg?raw';
 import plus from 'lucide-static/icons/plus.svg?raw';
 import printer from 'lucide-static/icons/printer.svg?raw';
 import redo from 'lucide-static/icons/redo-2.svg?raw';
@@ -55,7 +57,7 @@ const RAW = {
   up: arrowUp, down: arrowDown, dup: copyPlus, eye, eyeOff,
   // cabecera y herramientas
   newPoster: filePlus, addImage: imagePlus, download, undo, redo, zoomIn: plus, zoomOut: minus, lock, lockOpen, printer,
-  plus, minus, keyboard,
+  plus, minus, keyboard, panelClose: panelRightClose, panelOpen: panelRightOpen,
   // menú contextual (flechas de submenú e iconos de las opciones principales)
   chevronRight, chevronLeft, copy, paste: clipboardPaste, layers, scaling, history, fitAll: maximize, zoomInLens, zoomOutLens,
 } as const;

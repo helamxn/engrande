@@ -10,6 +10,8 @@ export const SHIFT = isMac ? '⇧' : 'Shift+';
 export const DELK = isMac ? '⌫' : 'Supr';
 
 export const coarseMQ = mm('(pointer: coarse)');
+/** Escritorio (breakpoint desk de Tailwind): el lienzo ocupa la ventana y el resto flota encima. */
+export const deskMQ = mm('(min-width: 60rem)');
 /** Barra contextual acoplada abajo del lienzo (móvil o pantalla táctil). */
 export const dockMQ = mm('(max-width: 700px), (pointer: coarse)');
 

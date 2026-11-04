@@ -13,6 +13,8 @@ import type { HandleId, Layer, Pt } from './types';
 let cv: HTMLCanvasElement;
 let ctx: CanvasRenderingContext2D;
 let checker: CanvasPattern | null = null;
+/** Cuadrícula de puntos del fondo: patrón de un punto, rehecho solo si cambia su tamaño o el color. */
+let dotPat: { key: string; pat: CanvasPattern | null; n: number } | null = null;
 let dirtyFlag = false;
 
 export function initRender(canvas: HTMLCanvasElement) {
@@ -31,7 +33,8 @@ export function dirty() {
 /** Lee los colores del tema (cambian con el modo oscuro) y rehace el patrón de transparencia. */
 export function readColors() {
   const cs = getComputedStyle(document.documentElement);
-  for (const k of ['desk', 'accent', 'mark', 'fg', 'muted', 'panel', 'chk1', 'chk2', 'line']) C[k] = cs.getPropertyValue('--' + k).trim();
+  dotPat = null;
+  for (const k of ['desk', 'dot', 'accent', 'mark', 'fg', 'muted', 'panel', 'chk1', 'chk2', 'line']) C[k] = cs.getPropertyValue('--' + k).trim();
   const p = document.createElement('canvas');
   p.width = p.height = 16;
   const x = p.getContext('2d')!;
@@ -40,6 +43,37 @@ export function readColors() {
   checker = ctx.createPattern(p, 'repeat');
   dirty();
   renderList();
+}
+
+/* ---------- cuadrícula de puntos del fondo ---------- */
+/** Separación de los puntos en mm (1 cm, 5 cm, 10 cm…): la menor que deja al menos DOT_MIN px entre ellos. */
+const DOT_STEPS = [10, 50, 100, 500, 1000, 5000];
+const DOT_MIN = 12;
+export const dotStep = (k: number) => DOT_STEPS.find((s) => s * k >= DOT_MIN) ?? DOT_STEPS[DOT_STEPS.length - 1]!;
+
+/**
+ * Puntos fijos al póster (se mueven y escalan con la vista, como en las pizarras infinitas) y alineados con su
+ * esquina, así que sirven de regla en cm reales. Se pinta con un patrón de un solo punto y un único fillRect.
+ */
+function drawDots() {
+  if (!C.dot) return;
+  const { dpr } = view, sp = dotStep(V.k) * V.k * dpr; // separación exacta en px del dispositivo
+  const n = Math.max(4, Math.round(sp));
+  const key = `${n}|${C.dot}|${dpr}`;
+  if (dotPat?.key !== key) {
+    const t = document.createElement('canvas');
+    t.width = t.height = n;
+    const x = t.getContext('2d')!;
+    x.fillStyle = C.dot; x.beginPath(); x.arc(n / 2, n / 2, Math.max(0.9, dpr), 0, Math.PI * 2); x.fill();
+    dotPat = { key, pat: ctx.createPattern(t, 'repeat'), n };
+  }
+  const pat = dotPat.pat;
+  if (!pat) return;
+  // el punto del patrón está en el centro de la celda: se desplaza media celda para que caiga en (0, 0) del póster
+  const o = mm2s({ x: 0, y: 0 }), f = sp / dotPat.n;
+  pat.setTransform(new DOMMatrix([f, 0, 0, f, o.x * dpr - sp / 2, o.y * dpr - sp / 2]));
+  ctx.fillStyle = pat;
+  ctx.fillRect(0, 0, cv.width, cv.height);
 }
 
 /* ---------- dibujo de una imagen (lo usa también la exportación) ---------- */
@@ -126,8 +160,9 @@ function handleDot(h: Handle, s: number) {
 function sizeLabel(l: Layer, txt: string) {
   const pts = cropPts(l), maxY = Math.max(...pts.map((p) => p.y)), cx = pts.reduce((a, p) => a + p.x, 0) / 4;
   ctx.font = '500 11.5px "IBM Plex Mono", ui-monospace, monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  const w = ctx.measureText(txt).width + 16, y = Math.min(maxY + 20, view.CH - 14);
-  const x = Math.min(Math.max(cx, w / 2 + 4), view.CW - w / 2 - 4);
+  // dentro de la zona libre (no debajo de las islas flotantes)
+  const { ins } = view, w = ctx.measureText(txt).width + 16, y = Math.min(maxY + 20, view.CH - ins.b - 14);
+  const x = Math.min(Math.max(cx, ins.l + w / 2 + 4), view.CW - ins.r - w / 2 - 4);
   ctx.fillStyle = 'rgba(22,32,42,.9)'; ctx.beginPath(); ctx.roundRect(x - w / 2, y - 10, w, 20, 10); ctx.fill();
   ctx.fillStyle = '#ffffff'; ctx.fillText(txt, x, y + 0.5);
 }
@@ -140,6 +175,7 @@ export function render() {
 
   // mesa de trabajo y papel
   ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = C.desk!; ctx.fillRect(0, 0, cv.width, cv.height);
+  drawDots();
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   const tl = mm2s({ x: 0, y: 0 }), pwS = g.W * V.k, phS = g.H * V.k;
   ctx.save(); ctx.shadowColor = 'rgba(0,0,0,.22)'; ctx.shadowBlur = 14; ctx.shadowOffsetY = 3;

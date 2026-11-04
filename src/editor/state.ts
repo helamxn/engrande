@@ -26,8 +26,11 @@ export const st = {
 /** Vista: escala (px por mm) y desplazamiento del lienzo. */
 export const V = { k: 1, ox: 0, oy: 0, fitted: true };
 
-/** Tamaño del lienzo en px CSS y densidad de píxeles. */
-export const view = { dpr: 1, CW: 0, CH: 0 };
+/**
+ * Tamaño del lienzo en px CSS y densidad de píxeles.
+ * ins: márgenes (px) que tapan las islas flotantes en escritorio; lo que queda dentro es la zona libre.
+ */
+export const view = { dpr: 1, CW: 0, CH: 0, ins: { t: 0, r: 0, b: 0, l: 0 } };
 
 /** Colores del tema leídos de las variables CSS (el canvas no entiende var()). */
 export const C: Record<string, string> = {};

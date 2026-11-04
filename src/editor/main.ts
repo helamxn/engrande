@@ -11,9 +11,10 @@ import { dockMQ } from './platform';
 import { initRender, readColors } from './render';
 import { st, V } from './state';
 import { initContextBar } from './ui/contextbar';
+import { initLayout } from './ui/layout';
 import { initMenu } from './ui/menu';
 import { initShortcuts } from './ui/shortcuts';
-import { initPanel, layoutRestored, renderList, syncExportUI, updateHint } from './ui/panel';
+import { initPanel, layoutRestored, renderList, syncExportUI, syncSel, updateHint } from './ui/panel';
 import { fitView, resize, zoomCenter } from './view';
 
 export function startEditor() {
@@ -28,6 +29,7 @@ export function startEditor() {
   initLoad();
   initPersistence();
   initShortcuts();
+  initLayout();
 
   setHistoryHooks({
     afterHistory,
@@ -77,6 +79,7 @@ export function startEditor() {
       else toast('Se recuperó tu póster.', 6000, { label: 'Empezar de nuevo', fn: newPoster });
     } else {
       renderList(); // sin póster guardado: pantalla de inicio
+      syncSel(); // tamaño del póster y hojas en la lectura
     }
     resize(stage, cv);
   })();

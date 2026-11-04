@@ -14,6 +14,7 @@ const GROUPS: Group[] = [
   ]],
   ['Vista', [
     [`${MOD}0`, 'Ver todo el póster'],
+    [`${MOD}\\`,'Mostrar u ocultar el panel (escritorio)'],
     ['+ · −', 'Acercar · alejar'],
     ['Rueda del ratón', 'Acercar o alejar'],
     ['Trackpad: dos dedos', 'Mover la vista (pellizco: zoom)'],

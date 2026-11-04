@@ -77,9 +77,11 @@ export function positionBar() {
   const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
   barSize ??= { w: bar.offsetWidth, h: bar.offsetHeight };
   const bw = barSize.w, bh = barSize.h;
-  const x = Math.min(Math.max((minX + maxX) / 2 - bw / 2, 8), Math.max(8, view.CW - bw - 8));
+  // dentro de la zona libre: que no quede debajo de las islas flotantes (escritorio)
+  const { ins } = view, top = ins.t + 8, left = ins.l + 8;
+  const x = Math.min(Math.max((minX + maxX) / 2 - bw / 2, left), Math.max(left, view.CW - ins.r - bw - 8));
   let y = minY - bh - (S.mode === 'move' ? 46 : 16);
-  if (y < 8) { y = maxY + 40; if (y + bh > view.CH - 8) y = 8; }
+  if (y < top) { y = maxY + 40; if (y + bh > view.CH - ins.b - 8) y = top; }
   bar.style.left = Math.round(x) + 'px';
   bar.style.top = Math.round(y) + 'px';
 }

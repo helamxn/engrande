@@ -1,11 +1,17 @@
 ---
 import Icon from './Icon.astro';
-/** Mesa de trabajo: historial, zoom, lienzo con las hojas y lectura del tamaño y la calidad. */
+/**
+ * Mesa de trabajo: historial, zoom, lienzo con las hojas y lectura del tamaño y la calidad.
+ * En escritorio el lienzo ocupa toda la ventana (es el fondo de la app) y la barra de herramientas y la lectura
+ * flotan abajo a la izquierda como «islas». En móvil, barra, lienzo y lectura van uno debajo de otro.
+ */
 const icon = 'size-[17px]';
 ---
 
-<section class="flex min-w-0 flex-col gap-2 desk:min-h-0">
-  <div class="flex flex-wrap items-center gap-2">
+<section
+  class="flex min-w-0 flex-col gap-2 desk:pointer-events-none desk:fixed desk:bottom-3 desk:left-3 desk:z-10 desk:max-w-[calc(100vw-var(--pr)-24px)] desk:flex-row desk:items-end"
+>
+  <div id="tools" class="island flex flex-wrap items-center gap-2 desk:pointer-events-auto desk:relative desk:z-[1] desk:flex-nowrap desk:gap-0 desk:p-1">
     <!-- zoom: − porcentaje + (el porcentaje encaja el póster entero al pulsarlo) -->
     <div class="tgroup" role="group" aria-label="Zoom">
       <button type="button" id="zoomOut" title="Alejar (−)" aria-label="Alejar">
@@ -18,6 +24,7 @@ const icon = 'size-[17px]';
         <Icon name="zoomIn" class={icon} />
       </button>
     </div>
+    <span class="mx-0.5 hidden h-6 w-px bg-line desk:block" aria-hidden="true"></span>
     <div class="tgroup" role="group" aria-label="Historial">
       <button type="button" id="undo" title="Deshacer (Ctrl+Z)" aria-label="Deshacer" disabled>
         <Icon name="undo" class={icon} />
@@ -26,13 +33,13 @@ const icon = 'size-[17px]';
         <Icon name="redo" class={icon} />
       </button>
     </div>
-    <span class="flex-1"></span>
-    <span class="hidden text-[.8rem] text-muted xs:inline" id="tip">Clic derecho sobre el lienzo para más opciones</span>
+    <span class="flex-1 desk:hidden"></span>
+    <span class="hidden text-[.8rem] text-muted xs:inline desk:hidden" id="tip">Clic derecho sobre el lienzo para más opciones</span>
   </div>
 
   <div
     id="stage"
-    class="relative h-[clamp(340px,56svh,680px)] overflow-hidden rounded-[10px] border border-line bg-desk desk:h-auto desk:min-h-[380px] desk:flex-1"
+    class="relative h-[clamp(340px,56svh,680px)] overflow-hidden rounded-[10px] border border-line bg-desk desk:pointer-events-auto desk:fixed desk:inset-0 desk:h-auto desk:rounded-none desk:border-0"
   >
     <canvas
       id="cv"
@@ -40,45 +47,51 @@ const icon = 'size-[17px]';
       aria-label="Vista previa del póster"
       class="absolute inset-0 block size-full touch-none select-none [-webkit-touch-callout:none]"
     ></canvas>
-    <!-- pantalla de inicio: solo con el póster vacío -->
-    <div id="empty" class="absolute inset-0 grid place-items-center overflow-y-auto p-4">
-      <div class="flex w-full max-w-[400px] flex-col items-center gap-3 rounded-2xl border-2 border-dashed border-line bg-panel/90 px-5 py-6 text-center">
-        <Icon name="addImage" class="size-9 text-accent" />
-        <div>
-          <h2 class="m-0 text-[1.1rem] font-bold">Empieza con una imagen o un PDF</h2>
-          <p class="mt-1 mb-0 text-[.86rem] text-muted">Arrástralo aquí, pégalo con Ctrl+V (⌘V en Mac) o elígelo.</p>
+    <!-- zona libre: la parte del lienzo que no tapan las islas (sus márgenes los pone el editor) -->
+    <div id="free" class="pointer-events-none absolute inset-0">
+      <!-- pantalla de inicio: solo con el póster vacío -->
+      <div id="empty" class="pointer-events-auto absolute inset-0 grid place-items-center overflow-y-auto p-4">
+        <div class="flex w-full max-w-[400px] flex-col items-center gap-3 rounded-2xl border-2 border-dashed border-line bg-panel/90 px-5 py-6 text-center">
+          <Icon name="addImage" class="size-9 text-accent" />
+          <div>
+            <h2 class="m-0 text-[1.1rem] font-bold">Empieza con una imagen o un PDF</h2>
+            <p class="mt-1 mb-0 text-[.86rem] text-muted">Arrástralo aquí, pégalo con Ctrl+V (⌘V en Mac) o elígelo.</p>
+          </div>
+          <button type="button" class="btn btn-primary" data-addfile>
+            <Icon name="addImage" />
+            Elegir imagen
+          </button>
+          <ol class="m-0 mt-1 grid w-full list-none gap-2 p-0 text-left text-[.84rem] text-muted xs:grid-cols-3 xs:gap-3">
+            {[
+              ['Elige la imagen', 'Foto, dibujo o PDF.'],
+              ['Ajusta el tamaño', 'Hojas, papel y margen en el panel.'],
+              ['Descarga e imprime', 'El PDF por hojas, al 100 %.'],
+            ].map(([t, d], i) => (
+              <li class="flex gap-2 xs:flex-col xs:gap-1">
+                <span class="grid size-6 flex-none place-items-center rounded-full bg-accent-soft text-[.78rem] font-bold text-accent">{i + 1}</span>
+                <span><b class="block text-fg">{t}</b>{d}</span>
+              </li>
+            ))}
+          </ol>
         </div>
-        <button type="button" class="btn btn-primary" data-addfile>
-          <Icon name="addImage" />
-          Elegir imagen
-        </button>
-        <ol class="m-0 mt-1 grid w-full list-none gap-2 p-0 text-left text-[.84rem] text-muted xs:grid-cols-3 xs:gap-3">
-          {[
-            ['Elige la imagen', 'Foto, dibujo o PDF.'],
-            ['Ajusta el tamaño', 'Hojas, papel y margen en el panel.'],
-            ['Descarga e imprime', 'El PDF por hojas, al 100 %.'],
-          ].map(([t, d], i) => (
-            <li class="flex gap-2 xs:flex-col xs:gap-1">
-              <span class="grid size-6 flex-none place-items-center rounded-full bg-accent-soft text-[.78rem] font-bold text-accent">{i + 1}</span>
-              <span><b class="block text-fg">{t}</b>{d}</span>
-            </li>
-          ))}
-        </ol>
       </div>
+      <div
+        id="hint"
+        class="pointer-events-none absolute bottom-2.5 left-1/2 w-max max-w-[calc(100%-20px)] -translate-x-1/2 rounded-full border border-line bg-panel/90 px-3 py-1 text-center text-[.78rem] text-muted"
+      ></div>
     </div>
-    <div
-      id="hint"
-      class="pointer-events-none absolute bottom-2.5 left-1/2 w-max max-w-[calc(100%-20px)] -translate-x-1/2 rounded-full border border-line bg-panel/90 px-3 py-1 text-center text-[.78rem] text-muted"
-    ></div>
     <div id="ctxbar" class="ctxbar" role="toolbar" aria-label="Herramientas de la imagen" hidden></div>
     <div
       id="drop"
-      class="pointer-events-none absolute inset-0 grid place-items-center rounded-[10px] border-2 border-dashed border-accent bg-accent/20 font-bold text-accent"
+      class="pointer-events-none absolute inset-0 grid place-items-center rounded-[10px] border-2 desk:rounded-none border-dashed border-accent bg-accent/20 font-bold text-accent"
       hidden
     >
       Suelta las imágenes aquí
     </div>
   </div>
 
-  <div id="readout" class="flex flex-wrap gap-x-4 gap-y-1.5 font-mono text-[.8rem] text-muted tabular-nums [&_b]:font-medium [&_b]:text-fg"></div>
+  <div
+    id="readout"
+    class="island flex flex-wrap gap-x-4 gap-y-1.5 font-mono desk:pointer-events-auto desk:relative desk:z-[1] desk:min-h-[46px] desk:content-center desk:items-center desk:px-3.5 desk:py-1.5 text-[.8rem] text-muted tabular-nums [&_b]:font-medium [&_b]:text-fg"
+  ></div>
 </section>

@@ -6,6 +6,7 @@ import { redo, snap, undo } from '../history';
 import { S, st } from '../state';
 import { fitView, zoomCenter } from '../view';
 import { isMenuOpen } from '../ui/menu';
+import { togglePanel } from '../ui/layout';
 import { isShortcutsOpen, openShortcuts } from '../ui/shortcuts';
 import { setSpaceDown } from './pointer';
 
@@ -22,6 +23,8 @@ export function initKeyboard() {
     if (typing) return;
     if (e.key === '?') { e.preventDefault(); openShortcuts(); return; }
     if (mod && k === '0') { e.preventDefault(); fitView(); return; }
+    // Ctrl+\ como en Figma (en teclado español, la tecla ç ocupa esa posición)
+    if (mod && (e.code === 'Backslash' || e.key === '\\')) { e.preventDefault(); togglePanel(); return; }
     if (mod && k === 'd' && sel) { e.preventDefault(); duplicateLayer(sel); return; }
     if (mod && k === 'c' && sel) { e.preventDefault(); copyLayer(sel); return; }
     if (mod && (e.key === ']' || e.code === 'BracketRight') && sel) { e.preventDefault(); reorder(sel, e.shiftKey ? 'front' : 1); return; }

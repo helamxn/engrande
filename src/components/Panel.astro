@@ -1,6 +1,6 @@
 ---
 import Icon from './Icon.astro';
-/** Panel lateral con tres pestañas: Hojas, Imágenes y Exportar. */
+/** Panel lateral con tres pestañas: Hojas, Imágenes y Exportar. En escritorio flota a la derecha y se puede plegar. */
 const pane = 'flex min-h-0 flex-col gap-[18px] overflow-x-hidden overflow-y-auto p-4';
 const field = 'flex flex-col gap-2';
 const tabs = [
@@ -10,22 +10,37 @@ const tabs = [
 ];
 ---
 
-<aside class="flex min-h-0 min-w-0 flex-col rounded-[10px] border border-line bg-panel desk:overflow-hidden">
-  <div class="flex flex-none border-b border-line px-1" role="tablist" aria-label="Panel de opciones">
-    {tabs.map((t, i) => (
-      <button
-        type="button"
-        class="tab"
-        role="tab"
-        id={`tab-${t.id}`}
-        aria-controls={`pane-${t.id}`}
-        aria-selected={i === 0 ? 'true' : 'false'}
-        tabindex={i === 0 ? 0 : -1}
-        data-tab={t.id}
-      >
-        {t.label}
-      </button>
-    ))}
+<aside
+  id="panel"
+  class="island flex min-h-0 min-w-0 flex-col rounded-xl border border-line bg-panel desk:fixed desk:top-3 desk:right-3 desk:bottom-3 desk:z-20 desk:w-[360px] desk:overflow-hidden desk:panel-off:hidden"
+>
+  <div class="flex flex-none items-center border-b border-line px-1">
+    <div class="flex min-w-0 flex-1" role="tablist" aria-label="Panel de opciones">
+      {tabs.map((t, i) => (
+        <button
+          type="button"
+          class="tab"
+          role="tab"
+          id={`tab-${t.id}`}
+          aria-controls={`pane-${t.id}`}
+          aria-selected={i === 0 ? 'true' : 'false'}
+          tabindex={i === 0 ? 0 : -1}
+          data-tab={t.id}
+        >
+          {t.label}
+        </button>
+      ))}
+    </div>
+    <button
+      type="button"
+      id="panelHide"
+      class="hidden size-9 flex-none cursor-pointer place-items-center rounded-lg border-0 bg-transparent text-muted hover:text-fg desk:grid"
+      aria-controls="panel"
+      aria-label="Ocultar panel"
+      title="Ocultar panel (Ctrl+\)"
+    >
+      <Icon name="panelClose" class="size-[18px]" />
+    </button>
   </div>
 
   <!-- Hojas -->
@@ -48,7 +63,7 @@ const tabs = [
           <span class="text-[.78rem] text-muted" id="lblRows">Filas</span>
           <div class="tgroup self-start" role="group" aria-labelledby="lblRows">
             <button type="button" data-step="rows" data-d="-1" aria-label="Menos filas" title="Menos filas"><Icon name="minus" class="size-4" /></button>
-            <output id="rowsOut" class="tval">2</output>
+            <output id="rowsOut" class="tval">1</output>
             <button type="button" data-step="rows" data-d="1" aria-label="Más filas" title="Más filas"><Icon name="plus" class="size-4" /></button>
           </div>
         </div>
@@ -152,3 +167,15 @@ const tabs = [
     <p class="note">Al imprimir, elige <strong>tamaño real / 100 %</strong> y desactiva “Ajustar a la página”. Si no, las hojas no encajarán.</p>
   </div>
 </aside>
+
+<!-- con el panel plegado (solo escritorio): botón flotante para volver a mostrarlo -->
+<button
+  type="button"
+  id="panelShow"
+  class="island hidden size-11 cursor-pointer place-items-center text-muted hover:text-fg desk:fixed desk:top-3 desk:right-3 desk:z-20 desk:panel-off:grid"
+  aria-controls="panel"
+  aria-label="Mostrar panel"
+  title="Mostrar panel (Ctrl+\)"
+>
+  <Icon name="panelOpen" class="size-[18px]" />
+</button>

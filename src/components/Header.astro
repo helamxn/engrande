@@ -1,10 +1,12 @@
 ---
 import Icon from './Icon.astro';
-/** Cabecera: marca, agregar imagen y descarga rápida del PDF por hojas. */
+/** Cabecera: marca, agregar imagen y descarga rápida del PDF por hojas. En escritorio flota arriba a la izquierda. */
 ---
 
-<header class="flex flex-wrap items-center gap-3">
-  <div class="mr-auto flex min-w-0 items-center gap-2.5">
+<header
+  class="island flex flex-wrap items-center gap-3 desk:fixed desk:top-3 desk:left-3 desk:z-20 desk:max-w-[calc(100vw-var(--pr)-24px)] desk:flex-nowrap desk:gap-2 desk:py-1.5 desk:pr-1.5 desk:pl-3"
+>
+  <div class="mr-auto flex min-w-0 items-center gap-2.5 desk:mr-2">
     <svg class="flex-none text-mark" width="30" height="30" viewBox="0 0 30 30" aria-hidden="true">
       <circle cx="15" cy="15" r="8.5" fill="none" stroke="currentColor" stroke-width="1.6"></circle>
       <circle cx="15" cy="15" r="3.2" fill="currentColor"></circle>
@@ -12,12 +14,12 @@ import Icon from './Icon.astro';
     </svg>
     <div>
       <h1 class="m-0 text-[1.45rem] leading-none font-extrabold tracking-[-.01em] [font-stretch:118%]">Pliego</h1>
-      <p class="mt-0.5 mb-0 text-[.82rem] text-muted">Pósters grandes impresos por hojas</p>
+      <p class="wide-only mt-0.5 mb-0 text-[.82rem] text-muted">Pósters grandes impresos por hojas</p>
     </div>
   </div>
   <button class="btn" type="button" id="newPoster" title="Empezar un póster nuevo y borrar el trabajo guardado en este navegador" aria-label="Nuevo póster">
     <Icon name="newPoster" />
-    <span class="hidden xs:inline">Nuevo</span>
+    <span class="wide-only hidden xs:inline">Nuevo</span>
   </button>
   <button class="btn" type="button" data-addfile>
     <Icon name="addImage" />
