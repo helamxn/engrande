@@ -260,3 +260,17 @@ export const qualityOf = (ppp: number): Quality => (ppp >= 150 ? 'good' : ppp >=
 /** Largo de las marcas de corte: van en el margen pero terminan a 3 mm del borde del papel. */
 export const markLen = (g: Geo) => Math.min(5, g.m - 0.8 - 3);
 export const hasCutMarks = (g: Geo, marks: boolean) => marks && markLen(g) >= 1.2;
+
+/* ---------- copias reducidas para la pantalla ---------- */
+/** Tamaños fijos de la copia de pantalla: así no se rehace con cada paso de zoom. */
+export const DISPLAY_STEPS = [256, 512, 768, 1024, 1536, 2048] as const;
+/**
+ * Lado largo (px) de la copia reducida con la que se dibuja una imagen en pantalla, o null si conviene usar
+ * el lienzo de trabajo tal cual (la copia casi no ahorraría nada o haría falta más resolución de la que hay).
+ * needPx: px que ocupa en pantalla el lado largo de la imagen completa; longPx: lado largo del lienzo de trabajo.
+ */
+export function displaySide(needPx: number, longPx: number): number | null {
+  const side = DISPLAY_STEPS.find((s) => s >= needPx * 1.1);
+  if (!side || side >= longPx * 0.85) return null;
+  return side;
+}

@@ -1,8 +1,9 @@
 /** Dibujo del lienzo: póster, imágenes, franjas de solape, nombres de hoja y tiradores. */
 import { cm } from './format';
 import {
-  HANDLES, cropCenter, cropPtsMM, handleLocal, localToMM, rad, rowName, visH, visW,
+  HANDLES, cropCenter, cropPtsMM, displaySide, handleLocal, localToMM, rad, rowName, visH, visW,
 } from './geometry';
+import { canvasRevision } from './io/persist';
 import { C, posterGeo, S, st, V, view } from './state';
 import { mm2s } from './view';
 import { positionBar } from './ui/contextbar';
@@ -51,9 +52,40 @@ export function drawLayer(c: CanvasRenderingContext2D, l: Layer, clipIt = true, 
   c.drawImage(img, -w / 2, -h / 2, w, h);
   c.restore();
 }
-/** hi: versión en alta resolución de cada lienzo de trabajo (solo al exportar). */
-export const drawAll = (c: CanvasRenderingContext2D, hi?: Map<HTMLCanvasElement, HTMLCanvasElement>) =>
-  st.layers.forEach((l) => { if (!l.hidden) drawLayer(c, l, true, hi?.get(l.img) ?? l.img); });
+/** pick: qué versión de cada imagen se dibuja (copia reducida en pantalla, alta resolución al exportar). */
+export const drawAll = (c: CanvasRenderingContext2D, pick: (l: Layer) => CanvasImageSource = (l) => l.img) =>
+  st.layers.forEach((l) => { if (!l.hidden) drawLayer(c, l, true, pick(l)); });
+
+/* ---------- copias reducidas para la pantalla ---------- */
+/**
+ * Dibujar en cada fotograma las imágenes a resolución de trabajo (hasta 2400 px) es caro: con varias fotos
+ * grandes el navegador no puede tenerlas todas en la tarjeta gráfica y las vuelve a subir en cada fotograma
+ * (en la prueba, 4 fotos: unos 39 ms por fotograma frente a 1,7 ms con copias reducidas).
+ * Por eso la pantalla usa una copia a la resolución que realmente se ve, en pasos fijos para no rehacerla
+ * con cada zoom. Se rehace al editar la imagen o al acercar más de lo que cubre. La exportación no la usa.
+ */
+interface DisplayCopy { c: HTMLCanvasElement; rev: number; side: number }
+const copies = new WeakMap<HTMLCanvasElement, DisplayCopy>(); // por lienzo: los duplicados la comparten
+export function displaySource(l: Layer): CanvasImageSource {
+  const img = l.img, long = Math.max(img.width, img.height);
+  // con el borrador la imagen cambia en cada movimiento: se dibuja directamente para no rehacer la copia cada vez
+  if (S.mode === 'erase' && l === st.sel) return img;
+  const side = displaySide(Math.max(l.w, l.h) * V.k * view.dpr, long);
+  if (!side) return img;
+  const rev = canvasRevision(img);
+  let d = copies.get(img);
+  if (!d || d.rev !== rev || d.side < side) {
+    const c = d?.c ?? document.createElement('canvas'), s = side / long;
+    c.width = Math.max(1, Math.round(img.width * s));
+    c.height = Math.max(1, Math.round(img.height * s));
+    const x = c.getContext('2d')!;
+    x.imageSmoothingEnabled = true; x.imageSmoothingQuality = 'high';
+    x.drawImage(img, 0, 0, c.width, c.height);
+    d = { c, rev, side };
+    copies.set(img, d);
+  }
+  return d.c;
+}
 
 /* ---------- tiradores ---------- */
 export interface Handle extends Pt { id: HandleId | 'rot'; base?: Pt }
@@ -117,16 +149,17 @@ export function render() {
   // imágenes: atenuadas fuera del póster, completas dentro
   ctx.setTransform(dpr * V.k, 0, 0, dpr * V.k, dpr * V.ox, dpr * V.oy);
   if (!editing) {
-    ctx.globalAlpha = 0.25; drawAll(ctx);
-    if (cropping) { ctx.globalAlpha = 0.35; drawLayer(ctx, sel, false); }
+    ctx.globalAlpha = 0.25; drawAll(ctx, displaySource);
+    if (cropping) { ctx.globalAlpha = 0.35; drawLayer(ctx, sel, false, displaySource(sel)); }
     ctx.globalAlpha = 1;
   }
   ctx.save(); ctx.beginPath(); ctx.rect(0, 0, g.W, g.H); ctx.clip();
   if (!editing) { ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, g.W, g.H); }
   for (const l of st.layers) {
     if (l.hidden) continue;
-    if (cropping && l === sel) { ctx.globalAlpha = 0.35; drawLayer(ctx, l, false); ctx.globalAlpha = 1; }
-    drawLayer(ctx, l);
+    const src = displaySource(l);
+    if (cropping && l === sel) { ctx.globalAlpha = 0.35; drawLayer(ctx, l, false, src); ctx.globalAlpha = 1; }
+    drawLayer(ctx, l, true, src);
   }
   ctx.restore();
 

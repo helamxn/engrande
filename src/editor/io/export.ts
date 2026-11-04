@@ -41,7 +41,7 @@ function renderRegion(x0: number, y0: number, wmm: number, hmm: number, dpi: num
   x.fillStyle = '#ffffff'; x.fillRect(0, 0, c.width, c.height);
   const s = c.width / wmm;
   x.setTransform(s, 0, 0, s, -x0 * s, -y0 * s);
-  drawAll(x, hi);
+  drawAll(x, (l) => hi?.get(l.img) ?? l.img);
   return c;
 }
 /** Codifica en JPEG y libera el lienzo enseguida (con tamaño 0 Safari devuelve la memoria sin esperar). */

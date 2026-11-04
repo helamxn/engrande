@@ -67,6 +67,8 @@ function gInfo(mode: Gesture['mode']): Gesture {
 const clearLP = () => { if (lpTimer) clearTimeout(lpTimer); lpTimer = null; };
 
 export function initPointer(cv: HTMLCanvasElement) {
+  /** Cambia el cursor solo si es distinto (asignar el mismo valor en cada movimiento también cuesta). */
+  const setCursor = (c: string) => { if (cv.style.cursor !== c) cv.style.cursor = c; };
   const pos = (e: MouseEvent): Pt => { const r = cv.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
 
   cv.addEventListener('pointerdown', (e) => {
@@ -157,17 +159,19 @@ export function initPointer(cv: HTMLCanvasElement) {
     if (e.pointerType === 'mouse' || drag?.t === 'paint') st.hover = p;
     if (!ptrs.has(e.pointerId)) {
       // solo pasar el ratón por encima: cursores y resaltado
+      const prevHoverL = st.hoverL;
       if (e.pointerType === 'mouse') {
         if (S.mode === 'move') {
           const h = sel && !sel.hidden && nearest(boxHandles(sel, true), p, 11);
           st.hoverL = h ? null : hitLayer(p, false);
-          cv.style.cursor = h && sel ? handleCursor(sel, h.id) : st.hoverL ? (e.altKey ? 'copy' : 'move') : 'default';
+          setCursor(h && sel ? handleCursor(sel, h.id) : st.hoverL ? (e.altKey ? 'copy' : 'move') : 'default');
         } else if (S.mode === 'crop' && sel) {
           const h = nearest(boxHandles(sel, false), p, 11);
-          cv.style.cursor = h ? handleCursor(sel, h.id) : insideImage(sel, s2mm(p)) ? 'grab' : 'default';
+          setCursor(h ? handleCursor(sel, h.id) : insideImage(sel, s2mm(p)) ? 'grab' : 'default');
         }
       }
-      dirty();
+      // solo se redibuja si cambia algo visible: el círculo del pincel o la imagen resaltada
+      if (S.mode === 'erase' || st.hoverL !== prevHoverL) dirty();
       return;
     }
     ptrs.set(e.pointerId, p);
@@ -250,7 +254,12 @@ export function initPointer(cv: HTMLCanvasElement) {
   };
   cv.addEventListener('pointerup', endPtr);
   cv.addEventListener('pointercancel', endPtr);
-  cv.addEventListener('pointerleave', (e) => { if (e.pointerType === 'mouse' && !ptrs.size) { st.hover = null; st.hoverL = null; dirty(); } });
+  cv.addEventListener('pointerleave', (e) => {
+    if (e.pointerType !== 'mouse' || ptrs.size) return;
+    const had = !!st.hoverL || S.mode === 'erase';
+    st.hover = null; st.hoverL = null;
+    if (had) dirty();
+  });
 
   /* rueda del ratón = zoom; dos dedos en el trackpad = mover la vista; pellizco en el trackpad (llega con ctrlKey) = zoom */
   cv.addEventListener('wheel', (e) => {

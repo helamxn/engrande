@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   applyCropDrag, applyFit, applyScale, bboxMM, conformCrop, cropCenter, cropPtsMM, fitLayer, geo, hasCutMarks, inside,
-  isStretched, localToMM, markLen, mmToLocal, normDeg, panInFrame, pppOf, relayout, rotateLayer, srcDims, startScale,
+  displaySide, isStretched, localToMM, markLen, mmToLocal, normDeg, panInFrame, pppOf, relayout, rotateLayer, srcDims, startScale,
   unstretch, visH, visW, zoomInFrame,
 } from './geometry';
 import type { Fit, LayerGeom, Settings, Source } from './types';
@@ -227,5 +227,18 @@ describe('marcas de corte', () => {
     expect(hasCutMarks(g6, true)).toBe(true);
     expect(hasCutMarks(g4, true)).toBe(false);
     expect(hasCutMarks(g6, false)).toBe(false);
+  });
+});
+
+describe('copia reducida para la pantalla (displaySide)', () => {
+  it('elige el tamaño fijo inmediatamente superior a lo que se ve, con un 10 % de margen', () => {
+    expect(displaySide(400, 2400)).toBe(512);
+    expect(displaySide(470, 2400)).toBe(768);
+    expect(displaySide(900, 2400)).toBe(1024);
+  });
+  it('usa el lienzo de trabajo si la copia casi no ahorraría nada o haría falta más resolución', () => {
+    expect(displaySide(1500, 1800)).toBeNull(); // 1536 ≥ 85 % de 1800
+    expect(displaySide(2500, 2400)).toBeNull(); // con mucho zoom se ve la resolución completa
+    expect(displaySide(100, 200)).toBeNull();   // imagen pequeña
   });
 });

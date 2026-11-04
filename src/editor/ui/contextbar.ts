@@ -13,6 +13,11 @@ import { layerMenu, openMenu } from './menu';
 import { updateHint } from './panel';
 
 let bar: HTMLElement;
+/**
+ * Tamaño de la barra, medido solo cuando cambia su contenido o se acopla/desacopla. positionBar() corre en cada
+ * fotograma y leer offsetWidth ahí obligaba al navegador a recalcular el diseño de la página cada vez.
+ */
+let barSize: { w: number; h: number } | null = null;
 
 /** Botón de la barra. opt: la etiqueta solo se ve en la barra acoplada (móvil). */
 function tb(icon: IconName | null, label: string, act: string, title = label, cls = '', opt = false) {
@@ -44,6 +49,7 @@ export function renderBar() {
   }
   bar.innerHTML = h; // solo constantes y números: sin datos del usuario
   bar.hidden = false;
+  barSize = null;
   bar.querySelector<HTMLInputElement>('#bBrush')?.addEventListener('input', (e) => {
     S.brush = +(e.target as HTMLInputElement).value;
     $('#bBrushOut').textContent = S.brush + ' px';
@@ -63,13 +69,14 @@ export function positionBar() {
   const sel = st.sel;
   if (!bar || bar.hidden || !sel) return;
   const docked = !!dockMQ?.matches;
-  bar.classList.toggle('dock', docked);
+  if (bar.classList.contains('dock') !== docked) { bar.classList.toggle('dock', docked); barSize = null; }
   bar.classList.toggle('ghost', isGesturing());
   $('#hint').hidden = docked;
   if (docked) { bar.style.left = ''; bar.style.top = ''; return; }
   const pts = cropPts(sel), xs = pts.map((p) => p.x), ys = pts.map((p) => p.y);
   const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
-  const bw = bar.offsetWidth, bh = bar.offsetHeight;
+  barSize ??= { w: bar.offsetWidth, h: bar.offsetHeight };
+  const bw = barSize.w, bh = barSize.h;
   const x = Math.min(Math.max((minX + maxX) / 2 - bw / 2, 8), Math.max(8, view.CW - bw - 8));
   let y = minY - bh - (S.mode === 'move' ? 46 : 16);
   if (y < 8) { y = maxY + 40; if (y + bh > view.CH - 8) y = 8; }
