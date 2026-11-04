@@ -22,6 +22,7 @@ import filePlus from 'lucide-static/icons/file-plus.svg?raw';
 import flip from 'lucide-static/icons/flip-horizontal-2.svg?raw';
 import history from 'lucide-static/icons/history.svg?raw';
 import imagePlus from 'lucide-static/icons/image-plus.svg?raw';
+import keyboard from 'lucide-static/icons/keyboard.svg?raw';
 import layers from 'lucide-static/icons/layers.svg?raw';
 import lock from 'lucide-static/icons/lock.svg?raw';
 import lockOpen from 'lucide-static/icons/lock-open.svg?raw';
@@ -54,7 +55,7 @@ const RAW = {
   up: arrowUp, down: arrowDown, dup: copyPlus, eye, eyeOff,
   // cabecera y herramientas
   newPoster: filePlus, addImage: imagePlus, download, undo, redo, zoomIn: plus, zoomOut: minus, lock, lockOpen, printer,
-  plus, minus,
+  plus, minus, keyboard,
   // menú contextual (flechas de submenú e iconos de las opciones principales)
   chevronRight, chevronLeft, copy, paste: clipboardPaste, layers, scaling, history, fitAll: maximize, zoomInLens, zoomOutLens,
 } as const;

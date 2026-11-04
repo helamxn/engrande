@@ -12,6 +12,7 @@ import { initRender, readColors } from './render';
 import { st, V } from './state';
 import { initContextBar } from './ui/contextbar';
 import { initMenu } from './ui/menu';
+import { initShortcuts } from './ui/shortcuts';
 import { initPanel, layoutRestored, renderList, syncExportUI, updateHint } from './ui/panel';
 import { fitView, resize, zoomCenter } from './view';
 
@@ -26,6 +27,7 @@ export function startEditor() {
   initKeyboard();
   initLoad();
   initPersistence();
+  initShortcuts();
 
   setHistoryHooks({
     afterHistory,

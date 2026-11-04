@@ -10,7 +10,7 @@ import {
   rotateLayer, scaleLayer, visH, visW,
 } from '../geometry';
 import { snap } from '../history';
-import { ALT, DELK, HI_AREA, isTouch, MOD } from '../platform';
+import { ALT, HI_AREA, isTouch } from '../platform';
 import { C, posterGeo, S, st } from '../state';
 import { fitView } from '../view';
 import { renderPdfPage } from '../io/pdf';
@@ -244,17 +244,6 @@ export function updateHint() {
 }
 
 
-const SHORTCUTS: [string, string][] = [
-  ['Clic derecho / mantener pulsado', 'Menú de opciones'], ['Doble clic', 'Recortar · Enter aplica · Esc cancela'], ['Al recortar: arrastrar · rueda', 'Encuadrar · ampliar la imagen en el marco'],
-  ['Esquina', 'Escalar proporcional'], ['Shift + esquina', 'Escalar libre (deforma)'], ['Lado', 'Estirar en una dirección'],
-  [ALT + ' + tirador', 'Escalar o recortar desde el centro'], ['Shift + girar', 'De 15° en 15°'],
-  ['Shift + arrastrar', 'Mover solo en horizontal o vertical'], [ALT + ' + arrastrar', 'Arrastrar una copia'],
-  [`${MOD}D · ${MOD}C · ${MOD}V`, 'Duplicar · copiar · pegar'], [`${MOD}] · ${MOD}[`, 'Adelante · atrás (con Shift: al frente / al fondo)'],
-  [`${MOD}Z · ${MOD}Y`, 'Deshacer · rehacer'], [MOD + '0', 'Ver todo el póster'], ['Flechas', 'Mover 1 mm (Shift: 10 mm)'],
-  ['C · E · W', 'Recortar · borrador · varita'], ['R · H', 'Girar 90° · espejo (Shift: al revés / vertical)'], [DELK, 'Quitar imagen'],
-  ['Rueda del ratón', 'Acercar o alejar'], ['Trackpad: dos dedos', 'Mover la vista (pellizco: zoom)'], ['Espacio + arrastrar', 'Mover la vista'],
-];
-
 export function initPanel() {
   // pestañas
   for (const b of $$<HTMLButtonElement>('[role=tab]')) b.addEventListener('click', () => showTab(b.dataset.tab!));
@@ -326,14 +315,6 @@ export function initPanel() {
   $<HTMLInputElement>('#marks').addEventListener('change', (e) => { S.marks = (e.target as HTMLInputElement).checked; scheduleSave(); });
   $<HTMLInputElement>('#guide').addEventListener('change', (e) => { S.guide = (e.target as HTMLInputElement).checked; syncLayoutUI(); scheduleSave(); });
 
-
-  // atajos
-  const keys = $('#keys');
-  for (const [k, d] of SHORTCUTS) {
-    const dt = document.createElement('dt'); dt.textContent = k;
-    const dd = document.createElement('dd'); dd.textContent = d;
-    keys.append(dt, dd);
-  }
 
   prevG = posterGeo();
   syncLayoutUI();

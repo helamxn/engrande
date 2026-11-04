@@ -6,6 +6,7 @@ import { redo, snap, undo } from '../history';
 import { S, st } from '../state';
 import { fitView, zoomCenter } from '../view';
 import { isMenuOpen } from '../ui/menu';
+import { isShortcutsOpen, openShortcuts } from '../ui/shortcuts';
 import { setSpaceDown } from './pointer';
 
 /** Una serie de pulsaciones de flecha seguidas cuenta como un solo paso de deshacer. */
@@ -13,12 +14,13 @@ let nudge: { l: unknown; t: number } = { l: null, t: 0 };
 
 export function initKeyboard() {
   document.addEventListener('keydown', (e) => {
-    if (isMenuOpen()) return;
+    if (isMenuOpen() || isShortcutsOpen()) return;
     const mod = e.ctrlKey || e.metaKey, k = e.key.toLowerCase(), sel = st.sel;
     const typing = (e.target as Element).matches?.('input,textarea,select') ?? false;
     if (mod && k === 'z' && !typing) { e.preventDefault(); if (e.shiftKey) redo(); else undo(); return; }
     if (mod && k === 'y' && !typing) { e.preventDefault(); redo(); return; }
     if (typing) return;
+    if (e.key === '?') { e.preventDefault(); openShortcuts(); return; }
     if (mod && k === '0') { e.preventDefault(); fitView(); return; }
     if (mod && k === 'd' && sel) { e.preventDefault(); duplicateLayer(sel); return; }
     if (mod && k === 'c' && sel) { e.preventDefault(); copyLayer(sel); return; }
