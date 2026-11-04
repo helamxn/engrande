@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   applyCropDrag, applyFit, applyScale, bboxMM, conformCrop, cropCenter, cropPtsMM, fitLayer, geo, hasCutMarks, inside,
-  displaySide, isStretched, localToMM, markLen, mmToLocal, normDeg, panInFrame, pppOf, relayout, rotateLayer, srcDims, startScale,
+  displaySide, flipOnScreen, isStretched, localToMM, markLen, mmToLocal, normDeg, panInFrame, pppOf, relayout, rotateLayer, srcDims, startScale,
   unstretch, visH, visW, zoomInFrame,
 } from './geometry';
 import type { Fit, LayerGeom, Settings, Source } from './types';
@@ -240,5 +240,29 @@ describe('copia reducida para la pantalla (displaySide)', () => {
     expect(displaySide(1500, 1800)).toBeNull(); // 1536 ≥ 85 % de 1800
     expect(displaySide(2500, 2400)).toBeNull(); // con mucho zoom se ve la resolución completa
     expect(displaySide(100, 200)).toBeNull();   // imagen pequeña
+  });
+});
+
+describe('espejo respecto a la pantalla (flipOnScreen)', () => {
+  // con cualquier giro, el espejo horizontal invierte izquierda/derecha en pantalla alrededor del centro visible
+  it.each([0, 90, -90, 30, -135])('espejo horizontal con giro de %i°', (rot) => {
+    const l = layer({ rot, crop: { x0: 0.1, y0: 0.2, x1: 0.8, y1: 0.9 } });
+    const c = cropCenter(l), before = [[0.15, 0.25], [0.7, 0.4], [0.5, 0.85]].map(([u, v]) => localToMM(l, u!, v!));
+    flipOnScreen(l, 'x');
+    const after = [[0.15, 0.25], [0.7, 0.4], [0.5, 0.85]].map(([u, v]) => localToMM(l, u!, v!));
+    after.forEach((p, i) => { close(p.x, 2 * c.x - before[i]!.x); close(p.y, before[i]!.y); });
+  });
+  it.each([0, 90, -90, 30])('espejo vertical con giro de %i°', (rot) => {
+    const l = layer({ rot });
+    const c = cropCenter(l), before = localToMM(l, 0.9, 0.1);
+    flipOnScreen(l, 'y');
+    const after = localToMM(l, 0.9, 0.1);
+    close(after.x, before.x); close(after.y, 2 * c.y - before.y);
+  });
+  it('dos espejos seguidos dejan la imagen como estaba', () => {
+    const l = layer({ rot: -90 }), before = { ...l };
+    flipOnScreen(l, 'x'); flipOnScreen(l, 'x');
+    close(l.cx, before.cx); close(l.cy, before.cy); close(l.rot, before.rot);
+    expect(l.flipX).toBe(false);
   });
 });

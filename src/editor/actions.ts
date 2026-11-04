@@ -2,7 +2,7 @@
 import { MAX_SIDE } from './constants';
 import { $, hideToast, toast } from './dom';
 import {
-  applyFit, conformCrop, cropCenter, keepCenter, mmToLocal, natRatio, rotateLayer, unstretch,
+  applyFit, conformCrop, cropCenter, flipOnScreen, keepCenter, mmToLocal, natRatio, rotateLayer, unstretch,
 } from './geometry';
 import { pushUndo, snap, takeSnap, restoreSnap, undo } from './history';
 import { canvasRevision, markCanvasChanged, scheduleSave } from './io/persist';
@@ -153,7 +153,8 @@ export const tx = (fn: (l: Layer) => void) => () => {
   snap(); fn(l); afterChange();
 };
 export const rotate90 = (dir: 1 | -1) => tx((l) => { rotateLayer(l, 90 * dir, cropCenter(l)); markManual(l); });
-export const flip = (axis: 'x' | 'y') => tx((l) => keepCenter(l, (x) => { if (axis === 'x') x.flipX = !x.flipX; else x.flipY = !x.flipY; }));
+/** Espejo horizontal o vertical tal como se ve en pantalla (también con la imagen girada). */
+export const flip = (axis: 'x' | 'y') => tx((l) => flipOnScreen(l, axis));
 export const fitSel = (mode: FitMode) => tx((l) => { l.fit = { mode, scale: 1 }; applyFit(l, l.fit, posterGeo()); });
 export const centerSel = tx((l) => { const g = posterGeo(), c = cropCenter(l); l.cx += g.W / 2 - c.x; l.cy += g.H / 2 - c.y; });
 export const unstretchSel = tx((l) => { unstretch(l); markManual(l); });

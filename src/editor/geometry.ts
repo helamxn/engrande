@@ -274,3 +274,17 @@ export function displaySide(needPx: number, longPx: number): number | null {
   if (!side || side >= longPx * 0.85) return null;
   return side;
 }
+
+/* ---------- espejo ---------- */
+/**
+ * Espejo respecto a la PANTALLA (lo que ve el usuario), no a los ejes propios de la imagen.
+ * Voltear en pantalla una imagen girada θ equivale a voltearla en sus ejes y cambiar el giro a −θ
+ * (M·R(θ) = R(−θ)·M). Antes solo se volteaba en sus ejes: con un giro de ±90° el espejo horizontal
+ * se veía vertical, y con otros ángulos salía en diagonal. El centro de la zona visible no se mueve.
+ */
+export function flipOnScreen(l: LayerGeom, axis: 'x' | 'y') {
+  keepCenter(l, (x) => {
+    if (axis === 'x') x.flipX = !x.flipX; else x.flipY = !x.flipY;
+    x.rot = normDeg(-x.rot);
+  });
+}

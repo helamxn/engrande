@@ -126,7 +126,7 @@ const canvasId = (c: HTMLCanvasElement) => {
 };
 function thumbFor(l: Layer) {
   const k = l.crop;
-  const key = [canvasId(l.img), canvasRevision(l.img), k.x0, k.y0, k.x1, k.y1, l.w, l.h, C.chk1, C.chk2].join('|');
+  const key = [canvasId(l.img), canvasRevision(l.img), k.x0, k.y0, k.x1, k.y1, l.w, l.h, l.rot, l.flipX, l.flipY, C.chk1, C.chk2].join('|');
   let t = thumbs.get(l);
   if (!t) {
     const c = document.createElement('canvas');
@@ -137,8 +137,15 @@ function thumbFor(l: Layer) {
   if (t.key !== key) {
     const x = t.c.getContext('2d')!;
     for (let i = 0; i < 8; i++) for (let j = 0; j < 8; j++) { x.fillStyle = (i + j) % 2 ? C.chk2! : C.chk1!; x.fillRect(i * 11, j * 11, 11, 11); }
-    const sw = (k.x1 - k.x0) * l.img.width, sh = (k.y1 - k.y0) * l.img.height, dw = visW(l), dh = visH(l), s = Math.min(84 / dw, 84 / dh);
-    x.drawImage(l.img, k.x0 * l.img.width, k.y0 * l.img.height, sw, sh, 44 - (dw * s) / 2, 44 - (dh * s) / 2, dw * s, dh * s);
+    // la miniatura muestra la zona visible tal como se ve en el póster: con su giro y su espejo, encajada en 84 px
+    const sw = (k.x1 - k.x0) * l.img.width, sh = (k.y1 - k.y0) * l.img.height, dw = visW(l), dh = visH(l);
+    const a = (l.rot * Math.PI) / 180, cos = Math.abs(Math.cos(a)), sin = Math.abs(Math.sin(a));
+    const s = Math.min(84 / (cos * dw + sin * dh), 84 / (sin * dw + cos * dh));
+    x.save();
+    x.translate(44, 44); x.rotate(a); x.scale(l.flipX ? -1 : 1, l.flipY ? -1 : 1);
+    x.imageSmoothingQuality = 'high';
+    x.drawImage(l.img, k.x0 * l.img.width, k.y0 * l.img.height, sw, sh, (-dw * s) / 2, (-dh * s) / 2, dw * s, dh * s);
+    x.restore();
     t.key = key;
   }
   return t.c;
