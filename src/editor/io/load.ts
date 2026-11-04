@@ -61,7 +61,6 @@ export async function loadFiles(list: Iterable<File | null> | ArrayLike<File | n
   if (!files.length) return;
   if (S.mode === 'crop') applyCrop();
   toast(files.length > 1 ? `Cargando ${files.length} archivos…` : 'Cargando…', 0);
-  const replaceSample = st.layers.length > 0 && st.layers.every((l) => l.isSample);
   let added = 0;
   const failed: string[] = [];
   for (const f of files) {
@@ -69,7 +68,6 @@ export async function loadFiles(list: Iterable<File | null> | ArrayLike<File | n
       const l = await fileToLayer(f);
       if (!l) continue;
       snap();
-      if (replaceSample && !added) st.layers = st.layers.filter((x) => !x.isSample);
       addLayer(l, st.layers.length === 0 ? {} : { factor: 0.5, offset: added * 12 });
       added++;
     } catch (err) {

@@ -1,5 +1,5 @@
-/** Arranque del editor: conecta módulos y eventos, y restaura el póster guardado (o pone la imagen de ejemplo). */
-import { addSample, afterHistory, cancelCrop, newPoster, pasteLayer, select } from './actions';
+/** Arranque del editor: conecta módulos y eventos, y restaura el póster guardado (si no hay, pantalla de inicio). */
+import { afterHistory, cancelCrop, newPoster, pasteLayer, select } from './actions';
 import { $, toast } from './dom';
 import { hasUnexported, redo, setHistoryHooks, undo } from './history';
 import { exportMarginTest, exportSingle, exportTiles } from './io/export';
@@ -63,12 +63,9 @@ export function startEditor() {
   readColors();
   updateHint();
 
-  // la imagen de ejemplo usa la fuente Archivo: se espera a que cargue
-  const fontReady = document.fonts.load('800 160px "Archivo Variable"').catch(() => {});
   void (async () => {
     // se restaura sin preguntar: solo hay una versión del trabajo, no hay nada que elegir
     const restored = await restoreProject().catch((err) => { console.error(err); return null; });
-    await fontReady;
     if (restored && st.layers.length) {
       syncExportUI();
       layoutRestored();
@@ -77,7 +74,7 @@ export function startEditor() {
       if (restored.failed.length) toast(`No se pudo recuperar: ${restored.failed.join(', ')}.`, 8000);
       else toast('Se recuperó tu póster.', 6000, { label: 'Empezar de nuevo', fn: newPoster });
     } else {
-      addSample();
+      renderList(); // sin póster guardado: pantalla de inicio
     }
     resize(stage, cv);
   })();

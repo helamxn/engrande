@@ -9,7 +9,6 @@ import type { PDFDocumentProxy } from 'pdfjs-dist';
 import { makeCanvas, newLayer } from '../actions';
 import { toast } from '../dom';
 import { S, st } from '../state';
-import { sampleCanvas } from '../sample';
 import { loadImg } from './load';
 import { openPdf, renderPdfPage } from './pdf';
 import type { Crop, Fit, Layer, LayoutSettings } from '../types';
@@ -21,10 +20,10 @@ const SAVE_DELAY = 1200;
 interface SavedSource { kind: 'img' | 'svg' | 'pdf'; key: string }
 interface SavedLayer {
   name: string; cx: number; cy: number; w: number; h: number; rot: number; flipX: boolean; flipY: boolean;
-  crop: Crop; page: number; pages: number; isSample: boolean; fit: Fit;
+  crop: Crop; page: number; pages: number; fit: Fit;
   /** Opcional para leer proyectos guardados antes de existir la opción de ocultar. */
   hidden?: boolean;
-  /** null solo para la imagen de ejemplo, que se vuelve a dibujar. */
+  /** null solo en proyectos antiguos con la imagen de ejemplo (ya no existe): esas capas se omiten al restaurar. */
   src: SavedSource | null;
   /** Lienzo editado (borrador, varita, quitar fondo) en PNG; null si no se editó. */
   edit: string | null;
@@ -109,8 +108,8 @@ export async function flushSave() {
 
 async function save() {
   const d = await db();
-  // la imagen de ejemplo sola no se guarda: al volver, la app empieza igual que la primera vez
-  if (!st.layers.length || st.layers.every((l) => l.isSample)) { await clearSaved(); return; }
+  // póster vacío: no se guarda nada y al volver aparece la pantalla de inicio
+  if (!st.layers.length) { await clearSaved(); return; }
 
   // 1. preparar lo que hay que escribir (fuera de la transacción: codificar PNG es asíncrono)
   const writes = new Map<string, Blob>();
@@ -124,7 +123,7 @@ async function save() {
       if (!stored.has(key)) writes.set(key, l.src.blob);
       used.add(key);
       src = { kind: l.src.kind, key };
-    } else if (!l.isSample) continue; // sin origen no se puede reconstruir
+    } else continue; // sin archivo de origen no se puede reconstruir
     let edit: string | null = null;
     if (l.img !== l.orig) {
       const info = savedCanvas.get(l.img), rev = canvasRev.get(l.img) ?? 0;
@@ -138,7 +137,7 @@ async function save() {
     }
     layers.push({
       name: l.name, cx: l.cx, cy: l.cy, w: l.w, h: l.h, rot: l.rot, flipX: l.flipX, flipY: l.flipY,
-      crop: { ...l.crop }, page: l.page, pages: l.pages, isSample: l.isSample, fit: l.fit && { ...l.fit }, hidden: l.hidden, src, edit,
+      crop: { ...l.crop }, page: l.page, pages: l.pages, fit: l.fit && { ...l.fit }, hidden: l.hidden, src, edit,
     });
   }
   const project: SavedProject = {
@@ -207,16 +206,14 @@ export async function restoreProject(): Promise<{ failed: string[] } | null> {
   const bases = new Map<string, { canvas: HTMLCanvasElement; blob: Blob; w: number; h: number }>();
   const pdfs = new Map<string, { doc: PDFDocumentProxy; blob: Blob }>();
   const edits = new Map<string, HTMLCanvasElement>();
-  let sample: HTMLCanvasElement | null = null;
   const used = new Set<string>();
   const failedNames: string[] = [];
 
   for (const r of project.layers) {
     try {
       let orig: HTMLCanvasElement, extra: Partial<Layer> = {};
-      if (!r.src) {
-        orig = sample ??= sampleCanvas();
-      } else if (r.src.kind === 'pdf') {
+      if (!r.src) continue; // imagen de ejemplo de versiones anteriores
+      if (r.src.kind === 'pdf') {
         let p = pdfs.get(r.src.key);
         if (!p) { const blob = await getBlob(r.src.key); p = { doc: await openPdf(await blob.arrayBuffer()), blob }; pdfs.set(r.src.key, p); }
         orig = await renderPdfPage(p.doc, r.page);
@@ -252,7 +249,7 @@ export async function restoreProject(): Promise<{ failed: string[] } | null> {
       }
       st.layers.push(newLayer(orig, r.name, {
         ...extra, img, orig, cx: r.cx, cy: r.cy, w: r.w, h: r.h, rot: r.rot, flipX: r.flipX, flipY: r.flipY,
-        crop: { ...r.crop }, page: r.page, pages: r.pages, isSample: r.isSample, fit: r.fit && { ...r.fit }, hidden: !!r.hidden,
+        crop: { ...r.crop }, page: r.page, pages: r.pages, fit: r.fit && { ...r.fit }, hidden: !!r.hidden,
       }));
     } catch (err) {
       console.warn('No se pudo recuperar', r.name, err);

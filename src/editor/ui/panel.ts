@@ -11,7 +11,6 @@ import {
 } from '../geometry';
 import { snap } from '../history';
 import { ALT, DELK, HI_AREA, isTouch, MOD } from '../platform';
-import { dirty } from '../render';
 import { C, posterGeo, S, st } from '../state';
 import { fitView } from '../view';
 import { renderPdfPage } from '../io/pdf';
@@ -167,7 +166,7 @@ export function renderList() {
     // el nombre del archivo es dato del usuario: siempre con textContent
     const nm = document.createElement('span'); nm.textContent = l.name;
     const sm = document.createElement('small');
-    sm.textContent = (l.hidden ? 'Oculta · ' : '') + `${cm(visW(l))} × ${cm(visH(l))} cm` + (l.isSample ? ' · ejemplo' : l.pdf ? ` · PDF pág. ${l.page}` : '');
+    sm.textContent = (l.hidden ? 'Oculta · ' : '') + `${cm(visW(l))} × ${cm(visH(l))} cm` + (l.pdf ? ` · PDF pág. ${l.page}` : '');
     nm.appendChild(sm);
     b.append(tc, nm); li.appendChild(b);
     const i = st.layers.indexOf(l);
@@ -189,9 +188,8 @@ export function renderList() {
     ol.appendChild(li);
   });
   $('#layerCount').textContent = String(n);
-  const badge = $('#sampleBadge'), wasHidden = badge.hidden;
-  badge.hidden = !st.layers.some((l) => l.isSample) || !!st.sel;
-  if (wasHidden !== badge.hidden) dirty();
+  // pantalla de inicio: solo con el póster vacío (sustituye a la antigua imagen de ejemplo)
+  $('#empty').hidden = n > 0;
   updateHint();
 }
 
@@ -239,9 +237,12 @@ export function updateHint() {
     wand: 'Toca un color de la imagen para borrarlo',
   };
   hint.textContent = H[S.mode] ?? '';
+  // con el póster vacío la pista sobra: la pantalla de inicio ya explica qué hacer
+  hint.classList.toggle('invisible', !st.layers.length);
   const tip = document.querySelector('#tip');
   if (tip) tip.textContent = t ? 'Mantén pulsada una imagen para más opciones' : 'Clic derecho sobre el lienzo para más opciones';
 }
+
 
 const SHORTCUTS: [string, string][] = [
   ['Clic derecho / mantener pulsado', 'Menú de opciones'], ['Doble clic', 'Recortar · Enter aplica · Esc cancela'], ['Al recortar: arrastrar · rueda', 'Encuadrar · ampliar la imagen en el marco'],
@@ -324,6 +325,7 @@ export function initPanel() {
   for (const b of $$('[data-dpi]')) b.addEventListener('click', () => { S.dpi = Number(b.dataset.dpi); syncExportUI(); scheduleSave(); });
   $<HTMLInputElement>('#marks').addEventListener('change', (e) => { S.marks = (e.target as HTMLInputElement).checked; scheduleSave(); });
   $<HTMLInputElement>('#guide').addEventListener('change', (e) => { S.guide = (e.target as HTMLInputElement).checked; syncLayoutUI(); scheduleSave(); });
+
 
   // atajos
   const keys = $('#keys');

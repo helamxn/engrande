@@ -46,7 +46,6 @@ export interface Layer extends LayerGeom {
   pdf: PDFDocumentProxy | null;
   page: number;
   pages: number;
-  isSample: boolean;
   src: Source | null;
   fit: Fit;
   /** Oculta: no se dibuja, no se exporta y no se puede tocar en el lienzo. */

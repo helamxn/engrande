@@ -14,7 +14,7 @@ let pending: Snapshot | null = null;
 let changes = 0;
 let exportedAt = 0;
 export const markExported = () => { exportedAt = changes; };
-export const hasUnexported = () => changes !== exportedAt && (st.layers.some((l) => !l.isSample) || undoStack.length > 0);
+export const hasUnexported = () => changes !== exportedAt && (st.layers.length > 0 || undoStack.length > 0);
 
 /** Lo que tiene que pasar después de deshacer o rehacer; lo registra main.ts para evitar dependencias circulares. */
 const hooks = { afterHistory: () => {}, syncUndo: (_canUndo: boolean, _canRedo: boolean) => {}, cancelCrop: () => {} };

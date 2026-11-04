@@ -10,7 +10,6 @@ import { runJob } from './pixeljobs';
 import type { PixelJob, PixelResult } from './pixels';
 import { MOD } from './platform';
 import { dirty } from './render';
-import { sampleCanvas } from './sample';
 import { DEFAULT_EXPORT, DEFAULT_LAYOUT, posterGeo, S, st, V } from './state';
 import { s2mm } from './view';
 import { renderBar } from './ui/contextbar';
@@ -41,7 +40,7 @@ export function newLayer(img: HTMLCanvasElement, name: string, extra: Partial<La
   return {
     id: st.nextId++, name, img, orig: img, cx: g.W / 2, cy: g.H / 2, w: g.W, h: (g.W * img.height) / img.width,
     rot: 0, flipX: false, flipY: false, crop: { x0: 0, y0: 0, x1: 1, y1: 1 },
-    pdf: null, page: 1, pages: 1, isSample: false, src: null as Source | null, fit: null, hidden: false, ...extra,
+    pdf: null, page: 1, pages: 1, src: null as Source | null, fit: null, hidden: false, ...extra,
   };
 }
 /** Coloca una imagen nueva ajustada al póster. Si va desplazada (varias a la vez), queda como colocada a mano. */
@@ -53,7 +52,7 @@ export function addLayer(l: Layer, { factor = 1, offset = 0 } = {}) {
   select(l);
 }
 export const cloneLayer = (l: Layer, extra: Partial<Layer> = {}): Layer =>
-  ({ ...l, id: st.nextId++, crop: { ...l.crop }, isSample: false, fit: l.fit && { ...l.fit }, ...extra });
+  ({ ...l, id: st.nextId++, crop: { ...l.crop }, fit: l.fit && { ...l.fit }, ...extra });
 /** La imagen se movió o cambió de tamaño a mano: ya no se reajusta al cambiar la hoja. */
 export const markManual = (l: Layer) => { l.fit = null; };
 
@@ -80,11 +79,6 @@ export function select(l: Layer | null) {
 }
 export function afterChange() { renderList(); syncSel(); dirty(); scheduleSave(); }
 
-/** Imagen de ejemplo, para que el lienzo no arranque vacío (no se guarda). */
-export function addSample() {
-  addLayer(newLayer(sampleCanvas(), 'Vuela alto', { isSample: true }), { factor: 0.94 });
-  select(null);
-}
 /**
  * Empieza un póster nuevo: quita las imágenes, vuelve a los ajustes iniciales y borra el trabajo guardado
  * (útil en un ordenador compartido). Se puede deshacer mientras la pestaña siga abierta.
@@ -98,8 +92,8 @@ export function newPoster() {
   Object.assign(S, DEFAULT_LAYOUT, DEFAULT_EXPORT);
   syncExportUI();
   layoutChanged();
-  addSample();
-  scheduleSave(); // solo queda la imagen de ejemplo: el guardado borra lo almacenado
+  renderList(); // sin imágenes: aparece la pantalla de inicio
+  scheduleSave(); // póster vacío: el guardado borra lo almacenado
   toast('Póster nuevo. Se borró el trabajo guardado en este navegador.', 7000, { label: 'Deshacer', fn: undo });
 }
 export function afterHistory() {

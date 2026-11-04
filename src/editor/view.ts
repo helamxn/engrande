@@ -1,6 +1,5 @@
 /** Vista del lienzo: conversión pantalla ↔ mm, zoom, encuadre y tamaño. */
 import { clamp } from './geometry';
-import { $ } from './dom';
 import { dockMQ } from './platform';
 import { posterGeo, V, view } from './state';
 import { dirty } from './render';
@@ -9,14 +8,13 @@ import type { Pt } from './types';
 export const s2mm = (p: Pt): Pt => ({ x: (p.x - V.ox) / V.k, y: (p.y - V.oy) / V.k });
 export const mm2s = (p: Pt): Pt => ({ x: p.x * V.k + V.ox, y: p.y * V.k + V.oy });
 
-/** Encaja el póster entero. Deja sitio abajo para la barra acoplada y arriba para la etiqueta "Imagen de ejemplo". */
+/** Encaja el póster entero. Deja sitio abajo para la barra acoplada (móvil). */
 export function fitView() {
   const g = posterGeo(), { CW, CH } = view, pad = CW < 500 ? 18 : 40;
   const bottom = dockMQ?.matches ? 64 : 0;
-  const top = $('#sampleBadge').hidden ? 0 : 30;
-  V.k = Math.min((CW - 2 * pad) / g.W, (CH - 2 * pad - bottom - top) / g.H);
+  V.k = Math.min((CW - 2 * pad) / g.W, (CH - 2 * pad - bottom) / g.H);
   V.ox = (CW - g.W * V.k) / 2;
-  V.oy = top + (CH - bottom - top - g.H * V.k) / 2;
+  V.oy = (CH - bottom - g.H * V.k) / 2;
   V.fitted = true;
   syncZoomLabel();
   dirty();

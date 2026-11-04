@@ -40,8 +40,31 @@ const icon = 'size-[17px]';
       aria-label="Vista previa del póster"
       class="absolute inset-0 block size-full touch-none select-none [-webkit-touch-callout:none]"
     ></canvas>
-    <div id="sampleBadge" class="pointer-events-none absolute top-2.5 left-2.5 rounded-full border border-line bg-panel px-2.5 py-1 text-[.78rem] text-muted">
-      Imagen de ejemplo · agrega la tuya
+    <!-- pantalla de inicio: solo con el póster vacío -->
+    <div id="empty" class="absolute inset-0 grid place-items-center overflow-y-auto p-4">
+      <div class="flex w-full max-w-[400px] flex-col items-center gap-3 rounded-2xl border-2 border-dashed border-line bg-panel/90 px-5 py-6 text-center">
+        <Icon name="addImage" class="size-9 text-accent" />
+        <div>
+          <h2 class="m-0 text-[1.1rem] font-bold">Empieza con una imagen o un PDF</h2>
+          <p class="mt-1 mb-0 text-[.86rem] text-muted">Arrástralo aquí, pégalo con Ctrl+V (⌘V en Mac) o elígelo.</p>
+        </div>
+        <button type="button" class="btn btn-primary" data-addfile>
+          <Icon name="addImage" />
+          Elegir imagen
+        </button>
+        <ol class="m-0 mt-1 grid w-full list-none gap-2 p-0 text-left text-[.84rem] text-muted xs:grid-cols-3 xs:gap-3">
+          {[
+            ['Elige la imagen', 'Foto, dibujo o PDF.'],
+            ['Ajusta el tamaño', 'Hojas, papel y margen en el panel.'],
+            ['Descarga e imprime', 'El PDF por hojas, al 100 %.'],
+          ].map(([t, d], i) => (
+            <li class="flex gap-2 xs:flex-col xs:gap-1">
+              <span class="grid size-6 flex-none place-items-center rounded-full bg-accent-soft text-[.78rem] font-bold text-accent">{i + 1}</span>
+              <span><b class="block text-fg">{t}</b>{d}</span>
+            </li>
+          ))}
+        </ol>
+      </div>
     </div>
     <div
       id="hint"
