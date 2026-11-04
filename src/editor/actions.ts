@@ -1,11 +1,13 @@
 /** Acciones del editor: selección, capas, modos de herramienta, recorte y edición de píxeles. */
 import { MAX_SIDE } from './constants';
-import { $, toast } from './dom';
+import { $, hideToast, toast } from './dom';
 import {
   applyFit, conformCrop, cropCenter, keepCenter, mmToLocal, natRatio, rotateLayer, unstretch,
 } from './geometry';
 import { pushUndo, snap, takeSnap, restoreSnap, undo } from './history';
-import { markCanvasChanged, scheduleSave } from './io/persist';
+import { canvasRevision, markCanvasChanged, scheduleSave } from './io/persist';
+import { runJob } from './pixeljobs';
+import type { PixelJob, PixelResult } from './pixels';
 import { MOD } from './platform';
 import { dirty } from './render';
 import { sampleCanvas } from './sample';
@@ -229,87 +231,68 @@ export function paint(l: Layer, a: Pt, b: Pt) {
   dirty();
 }
 
-/** Vuelve transparentes los píxeles parecidos a ref (con borde suave). contig: solo la zona conectada a las semillas. */
-export function removeColor(l: Layer, seeds: number[], ref: readonly [number, number, number], tol: number, contig: boolean) {
-  const c = l.img.getContext('2d', { willReadFrequently: true })!, w = l.img.width, h = l.img.height;
-  const id = c.getImageData(0, 0, w, h), d = id.data;
-  const t2 = tol * tol, softT = tol * 1.35, soft2 = softT * softT;
-  let removed = 0;
-  const handle = (i: number) => {
-    const o = i * 4;
-    if (d[o + 3] === 0) return true;
-    const dr = d[o]! - ref[0], dg = d[o + 1]! - ref[1], db = d[o + 2]! - ref[2], q = dr * dr + dg * dg + db * db;
-    if (q <= t2) { d[o + 3] = 0; removed++; return true; }
-    if (q < soft2) d[o + 3] = Math.round((d[o + 3]! * (Math.sqrt(q) - tol)) / (softT - tol));
-    return false;
-  };
-  if (!contig) { for (let i = 0, n = w * h; i < n; i++) handle(i); }
-  else {
-    const vis = new Uint8Array(w * h), stack = new Int32Array(w * h);
-    let sp = 0;
-    for (const s of seeds) if (!vis[s]) { vis[s] = 1; stack[sp++] = s; }
-    while (sp) {
-      const i = stack[--sp]!;
-      if (!handle(i)) continue;
-      const x = i % w;
-      if (x > 0 && !vis[i - 1]) { vis[i - 1] = 1; stack[sp++] = i - 1; }
-      if (x < w - 1 && !vis[i + 1]) { vis[i + 1] = 1; stack[sp++] = i + 1; }
-      if (i >= w && !vis[i - w]) { vis[i - w] = 1; stack[sp++] = i - w; }
-      if (i < w * h - w && !vis[i + w]) { vis[i + w] = 1; stack[sp++] = i + w; }
+/* ---------- quitar fondo y varita (en un worker) ---------- */
+let pixelBusy = false;
+/**
+ * Ejecuta la tarea en el worker y, si borró algo, la aplica como un paso de deshacer sobre un lienzo nuevo
+ * (el anterior queda en el historial). Si mientras tanto la imagen cambió, el resultado se descarta.
+ */
+async function applyPixelJob(l: Layer, job: PixelJob, busyMsg: string): Promise<PixelResult | null> {
+  if (pixelBusy) { toast('Espera a que termine el proceso anterior…'); return null; }
+  pixelBusy = true;
+  const src = l.img, rev = canvasRevision(src), cv = $('#cv');
+  // el aviso solo aparece si tarda (en tareas rápidas evita un parpadeo)
+  const slow = setTimeout(() => toast(busyMsg, 0), 150);
+  document.body.classList.add('busy');
+  cv.setAttribute('aria-busy', 'true');
+  try {
+    const ctx = src.getContext('2d', { willReadFrequently: true })!;
+    const r = await runJob(() => ctx.getImageData(0, 0, src.width, src.height), job);
+    if (l.img !== src || canvasRevision(src) !== rev || !st.layers.includes(l)) {
+      toast('La imagen cambió mientras se procesaba. Vuelve a intentarlo.');
+      return null;
     }
+    if (r.removed) {
+      const s0 = takeSnap();
+      const out = document.createElement('canvas');
+      out.width = r.w; out.height = r.h;
+      out.getContext('2d', { willReadFrequently: true })!.putImageData(new ImageData(new Uint8ClampedArray(r.data), r.w, r.h), 0, 0);
+      l.img = out;
+      pushUndo(s0); // solo se guarda el paso si borró algo (así no se pierde "rehacer")
+      afterChange();
+    }
+    return r;
+  } catch (err) {
+    console.error(err);
+    toast('No se pudo procesar la imagen.');
+    return null;
+  } finally {
+    clearTimeout(slow);
+    pixelBusy = false;
+    document.body.classList.remove('busy');
+    cv.removeAttribute('aria-busy');
   }
-  c.putImageData(id, 0, 0);
-  markCanvasChanged(l.img);
-  dirty();
-  return removed;
 }
-/** Prueba la edición sobre una copia y solo la guarda en el historial si borró algo (así no se pierde "rehacer"). */
-function tryRemove(l: Layer, run: () => number) {
-  const before = l.img, s0 = takeSnap();
-  l.img = cloneCanvas(before);
-  const n = run();
-  if (n) pushUndo(s0); else { l.img = before; dirty(); }
-  return n;
-}
-export function wandAt(p: Pt) {
+export async function wandAt(p: Pt) {
   const l = st.sel;
   if (!l) return;
   const q = mmToPx(l, s2mm(p)), x = Math.floor(q.x), y = Math.floor(q.y), w = l.img.width;
   if (x < 0 || y < 0 || x >= w || y >= l.img.height) { toast('Toca dentro de la imagen seleccionada'); return; }
   const px = l.img.getContext('2d', { willReadFrequently: true })!.getImageData(x, y, 1, 1).data;
   if (px[3] === 0) { toast('Esa zona ya está vacía'); return; }
-  const n = tryRemove(l, () => removeColor(l, [y * w + x], [px[0]!, px[1]!, px[2]!], S.tol, S.contig));
-  if (!n) toast('Nada que borrar con esta tolerancia. Súbela un poco.');
-  renderList();
+  const r = await applyPixelJob(l, { kind: 'wand', seeds: [y * w + x], ref: [px[0]!, px[1]!, px[2]!], tol: S.tol, contig: S.contig }, 'Borrando color…');
+  if (r && !r.removed) toast('Nada que borrar con esta tolerancia. Súbela un poco.');
+  else if (r) hideToast();
 }
 /** Quita el fondo uniforme tomando como referencia el color mediano de las cuatro esquinas. */
-export function autoBackground() {
+export async function autoBackground() {
   const l = st.sel;
   if (!l) return;
-  const w = l.img.width, h = l.img.height, d = l.img.getContext('2d', { willReadFrequently: true })!.getImageData(0, 0, w, h).data;
-  const samples: [number[], number[], number[]] = [[], [], []], patch = Math.max(3, Math.round(Math.min(w, h) * 0.01));
-  for (const [cx, cy] of [[0, 0], [w - patch, 0], [0, h - patch], [w - patch, h - patch]] as const) {
-    for (let y = cy; y < cy + patch; y++) for (let x = cx; x < cx + patch; x++) {
-      const o = (y * w + x) * 4;
-      if (d[o + 3]! > 200) { samples[0].push(d[o]!); samples[1].push(d[o + 1]!); samples[2].push(d[o + 2]!); }
-    }
-  }
-  if (!samples[0].length) { toast('Los bordes ya están transparentes'); return; }
-  const med = (a: number[]) => { a.sort((p, q) => p - q); return a[a.length >> 1]!; };
-  const ref = [med(samples[0]), med(samples[1]), med(samples[2])] as const;
-  const t2 = S.tol * S.tol, seeds: number[] = [];
-  const near = (i: number) => {
-    const o = i * 4;
-    if (d[o + 3] === 0) return true;
-    const a = d[o]! - ref[0], b = d[o + 1]! - ref[1], e = d[o + 2]! - ref[2];
-    return a * a + b * b + e * e <= t2;
-  };
-  for (let x = 0; x < w; x++) { if (near(x)) seeds.push(x); if (near((h - 1) * w + x)) seeds.push((h - 1) * w + x); }
-  for (let y = 0; y < h; y++) { if (near(y * w)) seeds.push(y * w); if (near(y * w + w - 1)) seeds.push(y * w + w - 1); }
-  if (!seeds.length) { toast('No encontré un fondo uniforme. Prueba con la varita.'); return; }
-  const n = tryRemove(l, () => removeColor(l, seeds, ref, S.tol, true));
-  toast(n ? 'Fondo quitado. Retoca con la Varita o el Borrador si hace falta.' : 'No se borró nada. Sube la tolerancia en la Varita.');
-  renderList();
+  const r = await applyPixelJob(l, { kind: 'auto', tol: S.tol }, 'Quitando el fondo…');
+  if (!r) return;
+  if (r.error === 'transparent') toast('Los bordes ya están transparentes');
+  else if (r.error === 'nouniform') toast('No encontré un fondo uniforme. Prueba con la varita.');
+  else toast(r.removed ? 'Fondo quitado. Retoca con la Varita o el Borrador si hace falta.' : 'No se borró nada. Sube la tolerancia en la Varita.');
 }
 export function resetOriginal(l: Layer) {
   beginPixelEdit(l);

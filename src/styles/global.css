@@ -63,6 +63,8 @@
   button, input, select { font: inherit; color: inherit; }
   [hidden] { display: none !important; }
   :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* mientras el worker quita el fondo o aplica la varita */
+  body.busy #cv { cursor: progress !important; }
 }
 
 /*
