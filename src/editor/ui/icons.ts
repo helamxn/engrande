@@ -4,6 +4,15 @@
  * los componentes .astro (Icon.astro). Son constantes del código, no datos del usuario:
  * es seguro insertarlos con innerHTML.
  */
+import alignBottom from 'lucide-static/icons/align-end-horizontal.svg?raw';
+import alignHCenter from 'lucide-static/icons/align-center-vertical.svg?raw';
+import alignLeft from 'lucide-static/icons/align-start-vertical.svg?raw';
+import alignRight from 'lucide-static/icons/align-end-vertical.svg?raw';
+import alignTop from 'lucide-static/icons/align-start-horizontal.svg?raw';
+import alignVCenter from 'lucide-static/icons/align-center-horizontal.svg?raw';
+import distributeH from 'lucide-static/icons/align-horizontal-distribute-center.svg?raw';
+import distributeV from 'lucide-static/icons/align-vertical-distribute-center.svg?raw';
+import selectBox from 'lucide-static/icons/square-dashed-mouse-pointer.svg?raw';
 import arrowDown from 'lucide-static/icons/arrow-down.svg?raw';
 import arrowUp from 'lucide-static/icons/arrow-up.svg?raw';
 import check from 'lucide-static/icons/check.svg?raw';
@@ -60,6 +69,8 @@ const RAW = {
   plus, minus, keyboard, panelClose: panelRightClose, panelOpen: panelRightOpen,
   // menú contextual (flechas de submenú e iconos de las opciones principales)
   chevronRight, chevronLeft, copy, paste: clipboardPaste, layers, scaling, history, fitAll: maximize, zoomInLens, zoomOutLens,
+  // varias imágenes: alinear, repartir y seleccionar
+  alignLeft, alignHCenter, alignRight, alignTop, alignVCenter, alignBottom, distributeH, distributeV, selectBox,
 } as const;
 
 export type IconName = keyof typeof RAW;

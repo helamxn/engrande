@@ -74,9 +74,60 @@ export function cropPtsMM(l: LayerGeom): Pt[] {
   const k = l.crop;
   return ([[k.x0, k.y0], [k.x1, k.y0], [k.x1, k.y1], [k.x0, k.y1]] as const).map(([u, v]) => localToMM(l, u, v));
 }
-export function bboxMM(l: LayerGeom) {
+export function bboxMM(l: LayerGeom): Box {
   const p = cropPtsMM(l), xs = p.map((q) => q.x), ys = p.map((q) => q.y);
   return { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) };
+}
+
+/* ---------- varias imágenes: caja común, alinear y distribuir ---------- */
+export interface Box { x0: number; y0: number; x1: number; y1: number }
+export type AlignEdge = 'left' | 'hcenter' | 'right' | 'top' | 'vcenter' | 'bottom';
+
+export function unionBox(bs: Box[]): Box {
+  return {
+    x0: Math.min(...bs.map((b) => b.x0)), y0: Math.min(...bs.map((b) => b.y0)),
+    x1: Math.max(...bs.map((b) => b.x1)), y1: Math.max(...bs.map((b) => b.y1)),
+  };
+}
+/** La caja a está entera dentro de b (selección con recuadro). */
+export const boxInside = (a: Box, b: Box) => a.x0 >= b.x0 && a.y0 >= b.y0 && a.x1 <= b.x1 && a.y1 <= b.y1;
+
+/**
+ * Desplazamiento de cada caja para alinearla con un borde o el centro de la caja de referencia
+ * (por defecto, la caja común de todas, como en Figma: la que ya está en ese borde no se mueve).
+ */
+export function alignShifts(bs: Box[], edge: AlignEdge, to: Box = unionBox(bs)): Pt[] {
+  return bs.map((b) => {
+    switch (edge) {
+      case 'left': return { x: to.x0 - b.x0, y: 0 };
+      case 'right': return { x: to.x1 - b.x1, y: 0 };
+      case 'hcenter': return { x: (to.x0 + to.x1) / 2 - (b.x0 + b.x1) / 2, y: 0 };
+      case 'top': return { x: 0, y: to.y0 - b.y0 };
+      case 'bottom': return { x: 0, y: to.y1 - b.y1 };
+      case 'vcenter': return { x: 0, y: (to.y0 + to.y1) / 2 - (b.y0 + b.y1) / 2 };
+    }
+  });
+}
+
+/**
+ * Reparte las cajas con el mismo espacio entre una y la siguiente (en x o en y). La primera y la última no se mueven;
+ * el orden es el de su posición. Con menos de tres no hay nada que repartir.
+ */
+export function distributeShifts(bs: Box[], axis: 'x' | 'y'): Pt[] {
+  const out = bs.map(() => ({ x: 0, y: 0 }));
+  if (bs.length < 3) return out;
+  const a0 = axis === 'x' ? 'x0' : 'y0', a1 = axis === 'x' ? 'x1' : 'y1';
+  const order = bs.map((_, i) => i).sort((i, j) => bs[i]![a0] - bs[j]![a0] || bs[i]![a1] - bs[j]![a1]);
+  const first = bs[order[0]!]!, span = Math.max(...bs.map((b) => b[a1])) - first[a0];
+  const sizes = bs.reduce((s, b) => s + (b[a1] - b[a0]), 0);
+  const gap = (span - sizes) / (bs.length - 1);
+  let pos = first[a0];
+  for (const i of order) {
+    const b = bs[i]!, d = pos - b[a0];
+    out[i] = axis === 'x' ? { x: d, y: 0 } : { x: 0, y: d };
+    pos += b[a1] - b[a0] + gap;
+  }
+  return out;
 }
 export function inside(l: LayerGeom, m: Pt) {
   const q = mmToLocal(l, m), k = l.crop;

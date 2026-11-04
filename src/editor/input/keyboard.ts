@@ -1,6 +1,7 @@
 /** Atajos de teclado. */
 import {
-  afterChange, applyCrop, cancelCrop, copyLayer, duplicateLayer, enterCrop, flip, markManual, removeLayer, reorder, rotate90, select, setMode,
+  afterChange, applyCrop, cancelCrop, copySelected, duplicateSelected, enterCrop, flip, removeSelected, reorder, rotate90,
+  select, selectAll, selected, setMode, shiftSelected,
 } from '../actions';
 import { redo, snap, undo } from '../history';
 import { S, st } from '../state';
@@ -25,8 +26,10 @@ export function initKeyboard() {
     if (mod && k === '0') { e.preventDefault(); fitView(); return; }
     // Ctrl+\ como en Figma (en teclado español, la tecla ç ocupa esa posición)
     if (mod && (e.code === 'Backslash' || e.key === '\\')) { e.preventDefault(); togglePanel(); return; }
-    if (mod && k === 'd' && sel) { e.preventDefault(); duplicateLayer(sel); return; }
-    if (mod && k === 'c' && sel) { e.preventDefault(); copyLayer(sel); return; }
+    const any = selected().length > 0;
+    if (mod && k === 'a') { e.preventDefault(); if (S.mode === 'crop') applyCrop(); selectAll(); return; }
+    if (mod && k === 'd' && any) { e.preventDefault(); duplicateSelected(); return; }
+    if (mod && k === 'c' && any) { e.preventDefault(); copySelected(); return; }
     if (mod && (e.key === ']' || e.code === 'BracketRight') && sel) { e.preventDefault(); reorder(sel, e.shiftKey ? 'front' : 1); return; }
     if (mod && (e.key === '[' || e.code === 'BracketLeft') && sel) { e.preventDefault(); reorder(sel, e.shiftKey ? 'back' : -1); return; }
     if (e.key === 'Enter' && S.mode === 'crop') { e.preventDefault(); applyCrop(); return; }
@@ -35,18 +38,15 @@ export function initKeyboard() {
       return;
     }
     if (mod || e.altKey) return;
-    if ((e.key === 'Delete' || e.key === 'Backspace') && sel) { e.preventDefault(); removeLayer(sel); return; }
-    if (sel && e.key.startsWith('Arrow') && S.mode === 'move') {
+    if ((e.key === 'Delete' || e.key === 'Backspace') && any) { e.preventDefault(); removeSelected(); return; }
+    if (any && e.key.startsWith('Arrow') && S.mode === 'move') {
       e.preventDefault();
-      const now = performance.now();
-      if (!(e.repeat || (nudge.l === sel && now - nudge.t < 800))) snap();
-      nudge = { l: sel, t: now };
+      // la misma selección (una imagen o el grupo) cuenta como una serie
+      const key = sel ?? st.group[0], now = performance.now();
+      if (!(e.repeat || (nudge.l === key && now - nudge.t < 800))) snap();
+      nudge = { l: key, t: now };
       const d = e.shiftKey ? 10 : 1;
-      if (e.key === 'ArrowLeft') sel.cx -= d;
-      if (e.key === 'ArrowRight') sel.cx += d;
-      if (e.key === 'ArrowUp') sel.cy -= d;
-      if (e.key === 'ArrowDown') sel.cy += d;
-      markManual(sel);
+      shiftSelected(e.key === 'ArrowLeft' ? -d : e.key === 'ArrowRight' ? d : 0, e.key === 'ArrowUp' ? -d : e.key === 'ArrowDown' ? d : 0);
       afterChange();
       return;
     }

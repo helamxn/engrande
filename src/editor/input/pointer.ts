@@ -1,10 +1,11 @@
 /** Ratón, táctil y lápiz sobre el lienzo: seleccionar, mover, escalar, girar, recortar, pintar y gestos. */
 import {
-  applyCrop, beginPixelEdit, cloneLayer, enterCrop, markManual, paint, select, setMode, wandAt,
+  applyCrop, beginPixelEdit, cloneSelectedInPlace, enterCrop, isSelected, markManual, paint, select, selected, selectMany,
+  setMode, toggleInSelection, wandAt,
 } from '../actions';
 import {
-  applyCropDrag, applyScale, cropCenter, inside, insideImage, mmToLocal, normDeg, panInFrame, rotateLayer, scaleLayer,
-  startScale, zoomInFrame,
+  applyCropDrag, applyScale, bboxMM, boxInside, cropCenter, inside, insideImage, mmToLocal, normDeg, panInFrame,
+  rotateLayer, scaleLayer, startScale, zoomInFrame,
 } from '../geometry';
 import { commitPending, setPending, snap, takeSnap, undo } from '../history';
 import { scheduleSave } from '../io/persist';
@@ -12,14 +13,17 @@ import { lastPointerType, setLastPointer } from '../platform';
 import { boxHandles, dirty, handleCursor, nearest } from '../render';
 import { S, st, V } from '../state';
 import { panBy, s2mm, zoomAt } from '../view';
-import { closeMenu, emptyMenu, layerMenu, openMenu } from '../ui/menu';
+import { closeMenu, emptyMenu, groupMenu, layerMenu, openMenu } from '../ui/menu';
 import { renderList, syncSel } from '../ui/panel';
 import type { CropDrag, Layer, LayerGeom, Pt, ScaleDrag } from '../types';
 
 type Drag =
   | { t: 'none' }
   | { t: 'pan'; last: Pt }
-  | { t: 'move'; m0: Pt; c0: Pt }
+  /** Mover la imagen o todas las seleccionadas: posición inicial de cada una. */
+  | { t: 'move'; m0: Pt; items: { l: Layer; x: number; y: number }[] }
+  /** Recuadro de selección (ratón o lápiz sobre el fondo). add: con Shift/Ctrl se suma a lo que ya había. */
+  | { t: 'marquee'; a: Pt; add: boolean; base: Layer[]; moved: boolean }
   | { t: 'rot'; cc: Pt; a0: number; r0: number }
   /** Recortar: la imagen se arrastra bajo el marco de recorte, que queda fijo. */
   | { t: 'frame'; m0: Pt; start: LayerGeom }
@@ -65,6 +69,22 @@ function gInfo(mode: Gesture['mode']): Gesture {
   return { cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2, d: Math.max(1, Math.hypot(b.x - a.x, b.y - a.y)), a: Math.atan2(b.y - a.y, b.x - a.x), mode };
 }
 const clearLP = () => { if (lpTimer) clearTimeout(lpTimer); lpTimer = null; };
+const startMove = (m: Pt): Drag => ({ t: 'move', m0: m, items: selected().map((l) => ({ l, x: l.cx, y: l.cy })) });
+
+/** Imágenes visibles que caben enteras en el recuadro (como en Excalidraw: así un fondo grande no se cuela). */
+function inMarquee(a: Pt, b: Pt): Layer[] {
+  const p = s2mm(a), q = s2mm(b);
+  const box = { x0: Math.min(p.x, q.x), y0: Math.min(p.y, q.y), x1: Math.max(p.x, q.x), y1: Math.max(p.y, q.y) };
+  return st.layers.filter((l) => !l.hidden && boxInside(bboxMM(l), box));
+}
+/** Menú de una imagen: si forma parte de un grupo, el del grupo; si no, se selecciona sola. */
+function menuFor(h: Layer) {
+  if (st.group.length > 1 && st.group.includes(h)) return groupMenu();
+  // táctil: lo que estaba seleccionado se ofrece para «añadir a la selección» (no hay Shift ni Ctrl)
+  const prev = selected().filter((l) => l !== h);
+  if (h !== st.sel) select(h);
+  return layerMenu(h, prev);
+}
 
 export function initPointer(cv: HTMLCanvasElement) {
   /** Cambia el cursor solo si es distinto (asignar el mismo valor en cada movimiento también cuesta). */
@@ -104,10 +124,9 @@ export function initPointer(cv: HTMLCanvasElement) {
         if (drag?.t === 'paint') undo();
         drag = null; setPending(null);
         const h = hitLayer(p);
-        if (h && h !== st.sel) select(h);
-        if (!h && st.sel) select(null);
+        const items = h ? menuFor(h) : (select(null), emptyMenu());
         const r = cv.getBoundingClientRect();
-        openMenu(r.left + p.x, r.top + p.y, h ? layerMenu(h) : emptyMenu());
+        openMenu(r.left + p.x, r.top + p.y, items);
         dirty();
       }, 550);
     }
@@ -124,18 +143,22 @@ export function initPointer(cv: HTMLCanvasElement) {
           return;
         }
       }
-      const hit = hitLayer(p);
-      if (hit) {
-        let target = hit;
-        if (e.altKey) {
-          snap();
-          target = cloneLayer(hit, { name: hit.name + ' (copia)' });
-          st.layers.splice(st.layers.indexOf(hit) + 1, 0, target);
-          select(target);
-        } else { if (hit !== sel) select(hit); setPending(takeSnap()); }
-        drag = { t: 'move', m0: m, c0: { x: target.cx, y: target.cy } };
+      const hit = hitLayer(p), multi = e.shiftKey || e.ctrlKey || e.metaKey;
+      if (hit && multi) {
+        // Shift o Ctrl + clic: añade o quita; si queda seleccionada, se puede arrastrar todo junto
+        toggleInSelection(hit);
+        if (isSelected(hit)) { setPending(takeSnap()); drag = startMove(m); } else drag = { t: 'none' };
+      } else if (hit) {
+        if (!isSelected(hit)) select(hit);
+        if (e.altKey) { snap(); cloneSelectedInPlace(); } // Alt + arrastrar: mueve una copia
+        else setPending(takeSnap());
+        drag = startMove(m);
         cv.style.cursor = 'grabbing';
-      } else { if (sel) select(null); drag = { t: 'pan', last: p }; }
+      } else if (e.pointerType !== 'touch') {
+        // ratón o lápiz sobre el fondo: recuadro de selección (la vista se mueve con Espacio, la rueda o el botón central)
+        drag = { t: 'marquee', a: p, add: multi, base: multi ? selected() : [], moved: false };
+        if (!multi && selected().length) select(null);
+      } else { if (selected().length) select(null); drag = { t: 'pan', last: p }; }
     } else if (S.mode === 'crop' && sel) {
       const h = nearest(boxHandles(sel, false), p, R);
       if (h && h.id !== 'rot') { drag = { t: 'crop', id: h.id, k0: { ...sel.crop }, ratio0: (sel.w * (sel.crop.x1 - sel.crop.x0)) / (sel.h * (sel.crop.y1 - sel.crop.y0)) }; return; }
@@ -202,13 +225,20 @@ export function initPointer(cv: HTMLCanvasElement) {
     switch (drag.t) {
       case 'pan': panBy(p.x - drag.last.x, p.y - drag.last.y); drag.last = p; break;
       case 'move': {
-        if (!sel) break;
         commitPending();
-        markManual(sel);
         let dx = m.x - drag.m0.x, dy = m.y - drag.m0.y;
         if (e.shiftKey) { if (Math.abs(dx) > Math.abs(dy)) dy = 0; else dx = 0; }
-        sel.cx = drag.c0.x + dx; sel.cy = drag.c0.y + dy;
+        for (const it of drag.items) { it.l.cx = it.x + dx; it.l.cy = it.y + dy; markManual(it.l); }
         syncSel(); break;
+      }
+      case 'marquee': {
+        if (!drag.moved && Math.hypot(p.x - drag.a.x, p.y - drag.a.y) < 4) break;
+        drag.moved = true;
+        st.marquee = { a: drag.a, b: p };
+        // la selección se actualiza en vivo, solo cuando cambia
+        const next = [...new Set([...drag.base, ...inMarquee(drag.a, p)])], cur = selected();
+        if (next.length !== cur.length || next.some((l) => !cur.includes(l))) selectMany(next);
+        break;
       }
       case 'scale': if (sel) { commitPending(); markManual(sel); applyScale(sel, drag, m, e.shiftKey, e.altKey); syncSel(); } break;
       case 'rot': {
@@ -239,6 +269,7 @@ export function initPointer(cv: HTMLCanvasElement) {
     clearLP();
     if (!ptrs.has(e.pointerId)) return;
     const p = pos(e), sel = st.sel;
+    if (drag?.t === 'marquee') { st.marquee = null; if (drag.moved) cv.style.cursor = 'default'; }
     if (drag?.t === 'tap' && !drag.moved && e.type === 'pointerup') {
       if (sel && inside(sel, s2mm(p))) wandAt(p);
       else { const hit = hitLayer(p); if (hit) select(hit); else setMode('move'); }
@@ -285,7 +316,7 @@ export function initPointer(cv: HTMLCanvasElement) {
     if (lastPointerType() !== 'mouse') return; // en táctil el menú lo abre "mantener pulsado"
     const h = hitLayer(pos(e));
     if (S.mode === 'crop') applyCrop();
-    if (h) { if (h !== st.sel) select(h); openMenu(e.clientX, e.clientY, layerMenu(h)); }
-    else { if (st.sel) select(null); openMenu(e.clientX, e.clientY, emptyMenu()); }
+    if (h) openMenu(e.clientX, e.clientY, menuFor(h));
+    else { if (selected().length) select(null); openMenu(e.clientX, e.clientY, emptyMenu()); }
   });
 }

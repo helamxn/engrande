@@ -1,7 +1,7 @@
 /** Dibujo del lienzo: póster, imágenes, franjas de solape, nombres de hoja y tiradores. */
 import { cm } from './format';
 import {
-  HANDLES, cropCenter, cropPtsMM, displaySide, handleLocal, localToMM, rad, rowName, visH, visW,
+  HANDLES, bboxMM, cropCenter, cropPtsMM, displaySide, handleLocal, localToMM, rad, rowName, unionBox, visH, visW,
 } from './geometry';
 import { canvasRevision } from './io/persist';
 import { C, posterGeo, S, st, V, view } from './state';
@@ -157,8 +157,9 @@ function handleDot(h: Handle, s: number) {
   if (side) ctx.roundRect(h.x - s / 2, h.y - s / 2, s, s, s / 2); else ctx.rect(h.x - s / 2, h.y - s / 2, s, s);
   ctx.fill(); ctx.stroke();
 }
-function sizeLabel(l: Layer, txt: string) {
-  const pts = cropPts(l), maxY = Math.max(...pts.map((p) => p.y)), cx = pts.reduce((a, p) => a + p.x, 0) / 4;
+function sizeLabel(l: Layer | Pt[], txt: string) {
+  const pts = Array.isArray(l) ? l : cropPts(l), maxY = Math.max(...pts.map((p) => p.y));
+  const cx = Array.isArray(l) ? (Math.min(...pts.map((p) => p.x)) + Math.max(...pts.map((p) => p.x))) / 2 : pts.reduce((a, p) => a + p.x, 0) / 4;
   ctx.font = '500 11.5px "IBM Plex Mono", ui-monospace, monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   // dentro de la zona libre (no debajo de las islas flotantes)
   const { ins } = view, w = ctx.measureText(txt).width + 16, y = Math.min(maxY + 20, view.CH - ins.b - 14);
@@ -225,7 +226,7 @@ export function render() {
 
   // selección y tiradores
   if (S.mode === 'move') {
-    if (st.hoverL && st.hoverL !== sel) {
+    if (st.hoverL && st.hoverL !== sel && !st.group.includes(st.hoverL)) {
       ctx.strokeStyle = C.accent!; ctx.globalAlpha = 0.55; ctx.lineWidth = 1; poly(cropPts(st.hoverL)); ctx.stroke(); ctx.globalAlpha = 1;
     }
     if (sel?.hidden) {
@@ -239,6 +240,20 @@ export function render() {
       hs.forEach((h) => { if (!(small && h.id.length === 1)) handleDot(h, 9); });
       ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(rot.x, rot.y, 6, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
       sizeLabel(sel, dims(sel));
+    } else if (st.group.length > 1) {
+      // varias: el contorno de cada una y la caja común discontinua (sin tiradores: escalar y girar el grupo es otra fase)
+      ctx.strokeStyle = C.accent!; ctx.lineWidth = 1.5;
+      for (const l of st.group) { poly(cropPts(l)); ctx.stroke(); }
+      const u = unionBox(st.group.map((l) => bboxMM(l)));
+      const a = mm2s({ x: u.x0, y: u.y0 }), b = mm2s({ x: u.x1, y: u.y1 });
+      const box = [a, { x: b.x, y: a.y }, b, { x: a.x, y: b.y }];
+      ctx.lineWidth = 1; ctx.setLineDash([5, 4]); poly(box.map((p) => ({ x: p.x + 0.5, y: p.y + 0.5 }))); ctx.stroke(); ctx.setLineDash([]);
+      sizeLabel(box, `${st.group.length} imágenes · ${cm(u.x1 - u.x0)} × ${cm(u.y1 - u.y0)} cm`);
+    }
+    if (st.marquee) {
+      const { a, b } = st.marquee, x = Math.min(a.x, b.x), y = Math.min(a.y, b.y), w = Math.abs(b.x - a.x), h = Math.abs(b.y - a.y);
+      ctx.fillStyle = C.accent!; ctx.globalAlpha = 0.08; ctx.fillRect(x, y, w, h); ctx.globalAlpha = 1;
+      ctx.strokeStyle = C.accent!; ctx.lineWidth = 1; ctx.strokeRect(Math.round(x) + 0.5, Math.round(y) + 0.5, Math.round(w), Math.round(h));
     }
   } else if (cropping) {
     const pts = cropPts(sel);

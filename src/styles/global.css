@@ -243,6 +243,7 @@
     &.primary { @apply bg-accent text-accent-ink; &:hover { filter: brightness(1.08); } }
     &.danger { @apply text-bad; }
     &.ratio { @apply px-[7px] font-mono text-[.8rem] font-medium; }
+    &:disabled { @apply cursor-default bg-transparent opacity-35; }
   }
 
   /* menú contextual */

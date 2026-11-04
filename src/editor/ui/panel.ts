@@ -1,6 +1,6 @@
 /** Panel lateral: pestañas, ajustes de hojas, propiedades de la imagen, lista de imágenes, exportación y lectura. */
 import {
-  afterChange, centerSel, duplicateLayer, fitSel, markManual, removeLayer, reorder, select, toggleHidden, unstretchSel,
+  afterChange, centerSel, duplicateLayer, fitSel, markManual, removeLayer, reorder, select, toggleHidden, toggleInSelection, unstretchSel,
 } from '../actions';
 import { MAX_COLS_ROWS, PRESETS } from '../constants';
 import { $, $$, toast } from '../dom';
@@ -10,13 +10,13 @@ import {
   rotateLayer, scaleLayer, visH, visW,
 } from '../geometry';
 import { snap } from '../history';
-import { ALT, HI_AREA, isTouch } from '../platform';
+import { ALT, dockMQ, HI_AREA, isTouch } from '../platform';
 import { C, posterGeo, S, st } from '../state';
 import { fitView } from '../view';
 import { renderPdfPage } from '../io/pdf';
 import { canvasRevision, scheduleSave } from '../io/persist';
 import { ICON } from './icons';
-import { layerMenu, openMenu } from './menu';
+import { groupMenu, layerMenu, openMenu } from './menu';
 import type { Geo, Layer, LayoutSettings, Orient, Paper } from '../types';
 
 /* ---------- pestañas (patrón ARIA tabs) ---------- */
@@ -86,6 +86,10 @@ function setField(id: string, v: string | number) {
 export function syncSel() {
   const sel = st.sel;
   document.body.classList.toggle('no-sel', !sel);
+  const n = st.group.length;
+  $('#selNote').textContent = n > 1
+    ? `${n} imágenes seleccionadas. Arrastra una para moverlas juntas; para alinearlas o repartirlas usa la barra ${dockMQ?.matches ? 'de abajo' : 'sobre el lienzo'}.`
+    : 'Toca una imagen en el lienzo o en la lista para ver su tamaño y posición.';
   if (sel) {
     const b = bboxMM(sel);
     setField('#pW', fmt1(visW(sel) / 10)); setField('#pH', fmt1(visH(sel) / 10));
@@ -157,11 +161,18 @@ export function renderList() {
   const n = st.layers.length;
   [...st.layers].reverse().forEach((l) => {
     const li = document.createElement('li');
-    li.className = 'layer' + (l === st.sel ? ' on' : '') + (l.hidden ? ' off' : '');
+    const on = l === st.sel || st.group.includes(l);
+    li.className = 'layer' + (on ? ' on' : '') + (l.hidden ? ' off' : '');
     const b = document.createElement('button');
     b.type = 'button'; b.className = 'layer-main';
-    b.addEventListener('click', () => select(l));
-    b.addEventListener('contextmenu', (e) => { e.preventDefault(); select(l); openMenu(e.clientX, e.clientY, layerMenu(l)); });
+    b.setAttribute('aria-pressed', String(on));
+    // Shift o Ctrl + clic en la lista también suma o quita de la selección
+    b.addEventListener('click', (e) => { if ((e.shiftKey || e.ctrlKey || e.metaKey) && !l.hidden) toggleInSelection(l); else select(l); });
+    b.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      if (st.group.length > 1 && st.group.includes(l)) { openMenu(e.clientX, e.clientY, groupMenu()); return; }
+      select(l); openMenu(e.clientX, e.clientY, layerMenu(l));
+    });
     const tc = thumbFor(l);
     // el nombre del archivo es dato del usuario: siempre con textContent
     const nm = document.createElement('span'); nm.textContent = l.name;
@@ -197,7 +208,8 @@ export function renderList() {
 export function updateReadout() {
   const g = posterGeo(), sel = st.sel;
   // las imágenes ocultas no se imprimen: no cuentan para la calidad
-  const t = sel ?? st.layers.reduce<Layer | null>((a, l) => (l.hidden ? a : !a || pppOf(l, HI_AREA) < pppOf(a, HI_AREA) ? l : a), null);
+  const pool = st.group.length > 1 ? st.group : st.layers;
+  const t = sel ?? pool.reduce<Layer | null>((a, l) => (l.hidden ? a : !a || pppOf(l, HI_AREA) < pppOf(a, HI_AREA) ? l : a), null);
   const out = $('#readout');
   out.textContent = '';
   const item = (label: string, value: string) => {
@@ -212,7 +224,8 @@ export function updateReadout() {
   out.appendChild(sheets);
   if (t) {
     const ppp = pppOf(t, HI_AREA), q = qualityOf(ppp);
-    const s = item(sel ? 'Seleccionada' : st.layers.length > 1 ? 'Peor imagen' : 'Imagen', `${ppp} ppp`);
+    const label = sel ? 'Seleccionada' : st.group.length > 1 ? `Peor de ${st.group.length} seleccionadas` : st.layers.length > 1 ? 'Peor imagen' : 'Imagen';
+    const s = item(label, `${ppp} ppp`);
     const pill = document.createElement('span');
     pill.className = `pill q-${q}`;
     pill.textContent = q === 'good' ? 'buena' : q === 'warn' ? 'aceptable' : 'baja';
@@ -227,9 +240,12 @@ export function updateHint() {
   const t = isTouch(), sel = st.sel;
   const H: Record<string, string> = {
     move: !st.layers.length ? 'Agrega una imagen para empezar'
+      : st.group.length > 1 ? (t
+        ? `${st.group.length} seleccionadas · arrastra una para moverlas juntas · toca fuera para soltar`
+        : `${st.group.length} seleccionadas · arrastra para moverlas juntas · Shift o Ctrl + clic: añadir o quitar · Esc: soltar`)
       : sel?.hidden ? 'Imagen oculta: no se imprime · muéstrala con el ojo de la lista'
       : sel ? (t ? 'Arrastra para mover · pellizca sobre la imagen para escalar y girar · toca fuera para soltar' : 'Esquinas: escalar · lados: estirar · punto superior: girar · clic fuera para soltar')
-        : (t ? 'Toca una imagen para seleccionarla · mantén pulsado para más opciones' : 'Clic en una imagen para seleccionarla · clic derecho para más opciones'),
+        : (t ? 'Toca una imagen para seleccionarla · mantén pulsado para más opciones' : 'Clic en una imagen para seleccionarla · arrastra en el fondo para elegir varias · clic derecho: más opciones'),
     crop: t
       ? 'Arrastra la imagen para encuadrarla · pellizca para ampliarla · bordes: tamaño del recorte'
       : `Arrastra la imagen para encuadrarla · rueda: ampliarla · bordes: tamaño del recorte (Shift: proporción, ${ALT}: desde el centro) · Enter aplica`,

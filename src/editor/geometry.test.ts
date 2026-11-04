@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  applyCropDrag, applyFit, applyScale, bboxMM, conformCrop, cropCenter, cropPtsMM, fitLayer, geo, hasCutMarks, inside,
+  alignShifts, applyCropDrag, applyFit, boxInside, distributeShifts, unionBox, applyScale, bboxMM, conformCrop, cropCenter, cropPtsMM, fitLayer, geo, hasCutMarks, inside,
   displaySide, flipOnScreen, isStretched, localToMM, markLen, mmToLocal, normDeg, panInFrame, pppOf, relayout, rotateLayer, srcDims, startScale,
   unstretch, visH, visW, zoomInFrame,
 } from './geometry';
@@ -264,5 +264,50 @@ describe('espejo respecto a la pantalla (flipOnScreen)', () => {
     flipOnScreen(l, 'x'); flipOnScreen(l, 'x');
     close(l.cx, before.cx); close(l.cy, before.cy); close(l.rot, before.rot);
     expect(l.flipX).toBe(false);
+  });
+});
+
+describe('alinear y distribuir varias imágenes', () => {
+  const B = (x0: number, y0: number, x1: number, y1: number) => ({ x0, y0, x1, y1 });
+  const apply = (bs: ReturnType<typeof B>[], ds: { x: number; y: number }[]) =>
+    bs.map((b, i) => B(b.x0 + ds[i]!.x, b.y0 + ds[i]!.y, b.x1 + ds[i]!.x, b.y1 + ds[i]!.y));
+  const boxes = [B(10, 10, 30, 20), B(50, 40, 60, 80), B(100, 0, 140, 10)];
+
+  it('caja común y contención', () => {
+    expect(unionBox(boxes)).toEqual(B(10, 0, 140, 80));
+    expect(boxInside(B(12, 12, 20, 18), boxes[0]!)).toBe(true);
+    expect(boxInside(B(5, 12, 20, 18), boxes[0]!)).toBe(false);
+  });
+
+  it('alinea bordes y centros con la caja común', () => {
+    expect(apply(boxes, alignShifts(boxes, 'left')).map((b) => b.x0)).toEqual([10, 10, 10]);
+    expect(apply(boxes, alignShifts(boxes, 'right')).map((b) => b.x1)).toEqual([140, 140, 140]);
+    expect(apply(boxes, alignShifts(boxes, 'bottom')).map((b) => b.y1)).toEqual([80, 80, 80]);
+    expect(apply(boxes, alignShifts(boxes, 'vcenter')).map((b) => (b.y0 + b.y1) / 2)).toEqual([40, 40, 40]);
+    // alinear en horizontal no mueve en vertical
+    expect(alignShifts(boxes, 'hcenter').every((d) => d.y === 0)).toBe(true);
+  });
+
+  it('alinea con otra caja de referencia (el póster)', () => {
+    const r = apply([boxes[0]!], alignShifts([boxes[0]!], 'hcenter', B(0, 0, 200, 100)))[0]!;
+    expect((r.x0 + r.x1) / 2).toBe(100);
+  });
+
+  it('distribuye con el mismo espacio y deja quietas la primera y la última', () => {
+    const out = apply(boxes, distributeShifts(boxes, 'x'));
+    expect(out[0]).toEqual(boxes[0]);
+    expect(out[2]).toEqual(boxes[2]);
+    expect(out[1]!.x0 - out[0]!.x1).toBeCloseTo(out[2]!.x0 - out[1]!.x1, 9);
+    expect(distributeShifts(boxes, 'y').every((d) => d.x === 0)).toBe(true);
+  });
+
+  it('distribuye según la posición, no el orden de la lista', () => {
+    const shuffled = [boxes[2]!, boxes[0]!, boxes[1]!];
+    const out = apply(shuffled, distributeShifts(shuffled, 'x'));
+    expect(out[2]!.x0 - out[1]!.x1).toBeCloseTo(out[0]!.x0 - out[2]!.x1, 9);
+  });
+
+  it('con menos de tres no reparte nada', () => {
+    expect(distributeShifts(boxes.slice(0, 2), 'x')).toEqual([{ x: 0, y: 0 }, { x: 0, y: 0 }]);
   });
 });

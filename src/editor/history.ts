@@ -24,6 +24,7 @@ export function takeSnap(): Snapshot {
   return {
     layers: st.layers.slice(),
     sel: st.sel,
+    group: st.group.slice(),
     props: st.layers.map((l) => ({
       l, cx: l.cx, cy: l.cy, w: l.w, h: l.h, rot: l.rot, flipX: l.flipX, flipY: l.flipY,
       crop: { ...l.crop }, img: l.img, orig: l.orig, page: l.page, fit: l.fit && { ...l.fit }, hidden: l.hidden,
@@ -42,6 +43,8 @@ export function restoreSnap(s: Snapshot) {
   }
   Object.assign(S, s.layout);
   st.sel = s.sel && st.layers.includes(s.sel) ? s.sel : null;
+  const g = (s.group ?? []).filter((l) => st.layers.includes(l));
+  st.group = g.length > 1 ? g : [];
 }
 
 const sync = () => hooks.syncUndo(undoStack.length > 0, redoStack.length > 0);
@@ -118,7 +121,7 @@ function liveRefs(): LiveRefs {
   const canvases = new Set<object>(), docs = new Set<object>();
   const add = (l: LayerRefs) => { canvases.add(l.img); canvases.add(l.orig); if (l.pdf) docs.add(l.pdf); };
   st.layers.forEach(add);
-  if (st.clip) add(st.clip);
+  st.clip?.forEach(add);
   for (const s of [...undoStack, ...redoStack, ...(pending ? [pending] : [])]) {
     for (const p of s.props) { canvases.add(p.img); canvases.add(p.orig); if (p.l.pdf) docs.add(p.l.pdf); }
     for (const l of s.layers) if (l.pdf) docs.add(l.pdf);

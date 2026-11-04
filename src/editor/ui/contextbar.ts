@@ -1,15 +1,17 @@
 /** Barra de herramientas que flota junto a la imagen seleccionada (o acoplada abajo en móvil). */
 import {
-  applyCrop, autoBackground, cancelCrop, enterCrop, flip, removeLayer, rotate90, setCropRatio, setMode,
+  alignSelected, applyCrop, autoBackground, cancelCrop, distributeSelected, duplicateSelected, enterCrop, flip,
+  removeLayer, removeSelected, rotate90, setCropRatio, setMode,
 } from '../actions';
+import type { AlignEdge } from '../geometry';
 import { RATIOS } from '../constants';
 import { $ } from '../dom';
-import { DELK, dockMQ } from '../platform';
+import { DELK, dockMQ, MOD } from '../platform';
 import { cropPts, dirty } from '../render';
 import { S, st, view } from '../state';
 import { isGesturing } from '../input/pointer';
 import { ICON, type IconName } from './icons';
-import { layerMenu, openMenu } from './menu';
+import { groupMenu, layerMenu, openMenu } from './menu';
 import { updateHint } from './panel';
 
 let bar: HTMLElement;
@@ -26,10 +28,31 @@ function tb(icon: IconName | null, label: string, act: string, title = label, cl
 }
 const SEP = '<span class="sep"></span>';
 
+/** Barra de varias imágenes: alinear entre sí, repartir (3 o más), duplicar y quitar. */
+function groupBar() {
+  const n = st.group.length, dis = n < 3 ? ' disabled' : '';
+  const al = (icon: IconName, edge: AlignEdge, t: string) =>
+    `<button type="button" class="tb" data-act="align" data-e="${edge}" title="${t}" aria-label="${t}">${ICON[icon]}</button>`;
+  const ds = (icon: IconName, axis: 'x' | 'y', t: string) =>
+    `<button type="button" class="tb" data-act="dist" data-a="${axis}" title="${t}" aria-label="${t}"${dis}>${ICON[icon]}</button>`;
+  return `<span class="mini"><b class="text-fg">${n}</b> imágenes</span>${SEP}`
+    + al('alignLeft', 'left', 'Alinear a la izquierda') + al('alignHCenter', 'hcenter', 'Alinear al centro (horizontal)')
+    + al('alignRight', 'right', 'Alinear a la derecha') + al('alignTop', 'top', 'Alinear arriba')
+    + al('alignVCenter', 'vcenter', 'Alinear al centro (vertical)') + al('alignBottom', 'bottom', 'Alinear abajo')
+    + SEP + ds('distributeH', 'x', n < 3 ? 'Repartir en horizontal (3 o más imágenes)' : 'Repartir en horizontal')
+    + ds('distributeV', 'y', n < 3 ? 'Repartir en vertical (3 o más imágenes)' : 'Repartir en vertical')
+    + SEP + tb('dup', 'Duplicar', 'dupGroup', `Duplicar (${MOD}D)`, '', true)
+    + tb('more', 'Más', 'more', 'Más opciones (clic derecho)', '', true)
+    + tb('del', 'Quitar', 'delGroup', `Quitar del póster (${DELK})`, 'danger', true);
+}
+
 export function renderBar() {
-  if (!st.sel || st.sel.hidden) { bar.hidden = true; $('#hint').hidden = false; updateHint(); return; }
+  const group = st.group.length > 1 && S.mode === 'move';
+  if (!group && (!st.sel || st.sel.hidden)) { bar.hidden = true; $('#hint').hidden = false; updateHint(); return; }
   let h = '';
-  if (S.mode === 'move') {
+  if (group) {
+    h = groupBar();
+  } else if (S.mode === 'move') {
     h = tb('crop', 'Recortar', 'crop', 'Recortar (doble clic)') + tb('bg', 'Quitar fondo', 'autobg')
       + tb('erase', 'Borrador', 'erase', 'Borrador (E)') + tb('wand', 'Varita', 'wand', 'Varita (W)')
       + SEP + tb('rot', 'Girar', 'rotR', 'Girar 90°', '', true) + tb('flip', 'Espejo', 'flipX', 'Espejo horizontal', '', true)
@@ -67,13 +90,13 @@ export function renderBar() {
 
 export function positionBar() {
   const sel = st.sel;
-  if (!bar || bar.hidden || !sel) return;
+  if (!bar || bar.hidden || (!sel && st.group.length < 2)) return;
   const docked = !!dockMQ?.matches;
   if (bar.classList.contains('dock') !== docked) { bar.classList.toggle('dock', docked); barSize = null; }
   bar.classList.toggle('ghost', isGesturing());
   $('#hint').hidden = docked;
   if (docked) { bar.style.left = ''; bar.style.top = ''; return; }
-  const pts = cropPts(sel), xs = pts.map((p) => p.x), ys = pts.map((p) => p.y);
+  const pts = sel ? cropPts(sel) : st.group.flatMap(cropPts), xs = pts.map((p) => p.x), ys = pts.map((p) => p.y);
   const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
   barSize ??= { w: bar.offsetWidth, h: bar.offsetHeight };
   const bw = barSize.w, bh = barSize.h;
@@ -93,7 +116,18 @@ export function initContextBar() {
   bar.addEventListener('click', (e) => {
     const b = (e.target as Element).closest<HTMLElement>('[data-act]');
     const sel = st.sel;
-    if (!b || !sel) return;
+    if (!b) return;
+    if (!sel) {
+      // barra del grupo
+      switch (b.dataset.act) {
+        case 'align': alignSelected(b.dataset.e as AlignEdge); break;
+        case 'dist': distributeSelected(b.dataset.a === 'y' ? 'y' : 'x'); break;
+        case 'dupGroup': duplicateSelected(); break;
+        case 'delGroup': removeSelected(); break;
+        case 'more': { const r = b.getBoundingClientRect(); openMenu(r.left, r.bottom + 4, groupMenu()); break; }
+      }
+      return;
+    }
     switch (b.dataset.act) {
       case 'crop': enterCrop(); break;
       case 'autobg': autoBackground(); break;

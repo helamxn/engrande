@@ -7,8 +7,9 @@
  * - Táctil: los submenús no se abren al lado (no caben); el menú pasa a mostrar su contenido con «Atrás».
  */
 import {
-  copyLayer, duplicateLayer, enterCrop, fitSel, centerSel, flip, newPoster, pasteLayer, removeLayer, reorder,
-  resetOriginal, rotate90, select, setMode, toggleHidden, unstretchSel, autoBackground,
+  alignSelected, copyLayer, copySelected, distributeSelected, duplicateLayer, duplicateSelected, enterCrop, fitSel,
+  centerSel, flip, newPoster, pasteLayer, removeLayer, removeSelected, reorder, resetOriginal, rotate90, select,
+  selectAll, selectMany, setMode, toggleHidden, unstretchSel, autoBackground,
 } from '../actions';
 import { $, toast } from '../dom';
 import { isStretched } from '../geometry';
@@ -27,7 +28,7 @@ const isSub = (it: ActionItem | SubmenuItem): it is SubmenuItem => 'submenu' in 
 
 /* ---------- contenido ---------- */
 /** "Pegar" primero intenta una imagen del portapapeles del sistema (como Ctrl+V); si no hay, la copiada en Pliego. */
-const canPaste = () => !!st.clip || !!navigator.clipboard?.read;
+const canPaste = () => !!st.clip?.length || !!navigator.clipboard?.read;
 async function pasteAny() {
   try {
     if (navigator.clipboard?.read) {
@@ -47,10 +48,16 @@ async function pasteAny() {
  * Lo que nunca aplica se oculta en vez de desactivarse: "Orden" con una sola imagen y "Quitar deformación"
  * si no está deformada. "Pegar" sí aparece desactivado, porque ese estado informa.
  */
-export function layerMenu(l: Layer): MenuItem[] {
+export function layerMenu(l: Layer, prev: Layer[] = []): MenuItem[] {
   const i = st.layers.indexOf(l), top = i === st.layers.length - 1, bottom = i === 0;
   const locked = l.hidden; // oculta: no se puede editar hasta mostrarla
+  // en táctil no hay Shift ni Ctrl: mantener pulsada otra imagen ofrece sumarla a lo que estaba seleccionado
+  const addTo = prev.filter((x) => !x.hidden && x !== l);
   return [
+    ...(addTo.length && !l.hidden ? [
+      { label: `Añadir a la selección (${addTo.length + 1})`, icon: 'selectBox', fn: () => selectMany([...addTo, l]) } satisfies ActionItem,
+      '-' as const,
+    ] : []),
     { label: 'Recortar', icon: 'crop', kbd: isTouch() ? 'Doble toque' : 'Doble clic', fn: () => { select(l); enterCrop(); }, disabled: locked },
     { label: 'Quitar fondo', icon: 'bg', fn: () => { select(l); autoBackground(); }, disabled: locked },
     {
@@ -94,9 +101,41 @@ export function layerMenu(l: Layer): MenuItem[] {
     { label: 'Quitar del póster', icon: 'del', kbd: DELK, fn: () => removeLayer(l), danger: true },
   ];
 }
+/** Menú de varias imágenes seleccionadas. */
+export function groupMenu(): MenuItem[] {
+  const n = st.group.length;
+  return [
+    { head: `${n} imágenes` },
+    { label: 'Copiar', icon: 'copy', kbd: MOD + 'C', fn: copySelected },
+    { label: 'Duplicar', icon: 'dup', kbd: MOD + 'D', fn: duplicateSelected },
+    '-',
+    {
+      label: 'Alinear', icon: 'alignLeft', submenu: [
+        { label: 'A la izquierda', fn: () => alignSelected('left') },
+        { label: 'Al centro (horizontal)', fn: () => alignSelected('hcenter') },
+        { label: 'A la derecha', fn: () => alignSelected('right') },
+        '-',
+        { label: 'Arriba', fn: () => alignSelected('top') },
+        { label: 'Al centro (vertical)', fn: () => alignSelected('vcenter') },
+        { label: 'Abajo', fn: () => alignSelected('bottom') },
+      ],
+    },
+    {
+      label: 'Repartir', icon: 'distributeH', disabled: n < 3, submenu: [
+        { label: 'En horizontal', fn: () => distributeSelected('x') },
+        { label: 'En vertical', fn: () => distributeSelected('y') },
+      ],
+    },
+    '-',
+    { label: 'Soltar la selección', icon: 'x', kbd: 'Esc', fn: () => select(null) },
+    { label: `Quitar ${n} del póster`, icon: 'del', kbd: DELK, fn: removeSelected, danger: true },
+  ];
+}
 export function emptyMenu(): MenuItem[] {
+  const visible = st.layers.filter((l) => !l.hidden).length;
   return [
     { label: 'Pegar', icon: 'paste', kbd: MOD + 'V', fn: () => void pasteAny(), disabled: !canPaste() },
+    { label: 'Seleccionar todas', icon: 'selectBox', kbd: MOD + 'A', fn: selectAll, disabled: visible < 1 },
     { label: 'Agregar imagen…', icon: 'addImage', fn: () => $<HTMLInputElement>('#file').click() },
     { label: 'Nuevo póster', icon: 'newPoster', fn: newPoster },
     '-',

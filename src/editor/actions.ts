@@ -2,7 +2,8 @@
 import { MAX_SIDE } from './constants';
 import { $, hideToast, toast } from './dom';
 import {
-  applyFit, conformCrop, cropCenter, flipOnScreen, keepCenter, mmToLocal, natRatio, rotateLayer, unstretch,
+  alignShifts, applyFit, bboxMM, conformCrop, cropCenter, distributeShifts, flipOnScreen, keepCenter, mmToLocal,
+  natRatio, rotateLayer, unstretch, type AlignEdge,
 } from './geometry';
 import { pushUndo, snap, takeSnap, restoreSnap, undo } from './history';
 import { canvasRevision, markCanvasChanged, scheduleSave } from './io/persist';
@@ -66,6 +67,7 @@ export function toggleHidden(l: Layer) {
   snap();
   l.hidden = !l.hidden;
   if (l.hidden && st.sel === l) select(null);
+  else if (l.hidden && st.group.includes(l)) selectMany(st.group.filter((x) => x !== l));
   afterChange();
   toast(l.hidden ? `“${l.name}” oculta: no se imprimirá` : `“${l.name}” visible de nuevo`);
 }
@@ -73,11 +75,106 @@ export function toggleHidden(l: Layer) {
 export function select(l: Layer | null) {
   if (S.mode === 'crop' && l !== st.sel) applyCrop();
   st.sel = l;
+  st.group = [];
   st.hoverL = null;
   if (!l && S.mode !== 'move') setMode('move');
   renderList(); syncSel(); renderBar(); dirty();
 }
 export function afterChange() { renderList(); syncSel(); dirty(); scheduleSave(); }
+
+/* ---------- selección de varias imágenes ---------- */
+/** Lo seleccionado: la imagen sola, las del grupo o nada. */
+export const selected = (): Layer[] => (st.sel ? [st.sel] : st.group);
+export const isSelected = (l: Layer) => st.sel === l || st.group.includes(l);
+
+/**
+ * Selecciona varias imágenes a la vez. Con una sola equivale a select(); con dos o más forma un grupo
+ * (st.sel queda en null). Las ocultas no se pueden seleccionar desde el lienzo y se descartan; se guardan
+ * en el orden del póster (de atrás adelante).
+ */
+export function selectMany(ls: Layer[]) {
+  const set = new Set(ls);
+  const g = st.layers.filter((l) => set.has(l) && !l.hidden);
+  if (g.length < 2) { select(g[0] ?? null); return; }
+  if (S.mode === 'crop') applyCrop();
+  if (S.mode !== 'move') setMode('move');
+  st.sel = null;
+  st.group = g;
+  st.hoverL = null;
+  renderList(); syncSel(); renderBar(); dirty();
+}
+/** Shift o Ctrl + clic: añade la imagen a la selección o la quita. */
+export function toggleInSelection(l: Layer) {
+  const cur = selected();
+  selectMany(cur.includes(l) ? cur.filter((x) => x !== l) : [...cur, l]);
+}
+export const selectAll = () => selectMany(st.layers);
+
+/** Desplaza todas las seleccionadas (ya con su paso de deshacer tomado). */
+export function shiftSelected(dx: number, dy: number) {
+  for (const l of selected()) { l.cx += dx; l.cy += dy; markManual(l); }
+}
+
+export function removeSelected() {
+  const ls = selected();
+  if (ls.length < 2) { if (ls[0]) removeLayer(ls[0]); return; }
+  snap();
+  st.layers = st.layers.filter((x) => !ls.includes(x));
+  select(null);
+  scheduleSave();
+  toast(`${ls.length} imágenes quitadas · ${MOD}Z para deshacer`);
+}
+export function duplicateSelected() {
+  const ls = selected();
+  if (ls.length < 2) { if (ls[0]) duplicateLayer(ls[0]); return; }
+  snap();
+  const copies = ls.map((l) => {
+    const d = cloneLayer(l, { name: l.name + ' (copia)', fit: null });
+    d.cx += 10; d.cy += 10;
+    st.layers.splice(st.layers.indexOf(l) + 1, 0, d);
+    return d;
+  });
+  selectMany(copies);
+  scheduleSave();
+}
+/** Duplica en el mismo sitio (Alt + arrastrar) y devuelve las copias, ya seleccionadas. */
+export function cloneSelectedInPlace(): Layer[] {
+  const ls = selected();
+  const copies = ls.map((l) => {
+    const d = cloneLayer(l, { name: l.name + ' (copia)', fit: null });
+    st.layers.splice(st.layers.indexOf(l) + 1, 0, d);
+    return d;
+  });
+  selectMany(copies);
+  return copies;
+}
+export function copySelected() {
+  const ls = selected();
+  if (!ls.length) return;
+  st.clip = ls.map((l) => cloneLayer(l));
+  st.clipN = 0;
+  toast(ls.length > 1 ? `${ls.length} imágenes copiadas` : 'Imagen copiada');
+}
+
+/** Alinea las seleccionadas entre sí (con su caja común). */
+export function alignSelected(edge: AlignEdge) {
+  const ls = selected();
+  if (ls.length < 2) return;
+  const ds = alignShifts(ls.map((l) => bboxMM(l)), edge);
+  if (ds.every((d) => Math.abs(d.x) < 1e-6 && Math.abs(d.y) < 1e-6)) { toast('Ya están alineadas'); return; }
+  snap();
+  ls.forEach((l, i) => { l.cx += ds[i]!.x; l.cy += ds[i]!.y; markManual(l); });
+  afterChange();
+}
+/** Reparte las seleccionadas (3 o más) con el mismo espacio entre ellas. */
+export function distributeSelected(axis: 'x' | 'y') {
+  const ls = selected();
+  if (ls.length < 3) { toast('Para repartir hacen falta al menos 3 imágenes'); return; }
+  const ds = distributeShifts(ls.map((l) => bboxMM(l)), axis);
+  snap();
+  ls.forEach((l, i) => { l.cx += ds[i]!.x; l.cy += ds[i]!.y; markManual(l); });
+  afterChange();
+}
 
 /**
  * Empieza un póster nuevo: quita las imágenes, vuelve a los ajustes iniciales y borra el trabajo guardado
@@ -89,6 +186,7 @@ export function newPoster() {
   snap();
   st.layers = [];
   st.sel = null;
+  st.group = [];
   Object.assign(S, DEFAULT_LAYOUT, DEFAULT_EXPORT);
   syncExportUI();
   layoutChanged();
@@ -108,7 +206,9 @@ export function removeLayer(l: Layer) {
   if (S.mode === 'crop') applyCrop();
   snap();
   st.layers = st.layers.filter((x) => x !== l);
-  if (st.sel === l) select(null); else afterChange();
+  if (st.sel === l) select(null);
+  else if (st.group.includes(l)) { selectMany(st.group.filter((x) => x !== l)); scheduleSave(); }
+  else afterChange();
   toast(`“${l.name}” quitada · ${MOD}Z para deshacer`);
 }
 export function reorder(l: Layer, to: 'front' | 'back' | number) {
@@ -127,17 +227,21 @@ export function duplicateLayer(l: Layer) {
   st.layers.splice(st.layers.indexOf(l) + 1, 0, d);
   select(d);
 }
-export function copyLayer(l: Layer) { st.clip = { ...cloneLayer(l), pasteN: 0 }; toast('Imagen copiada'); }
+export function copyLayer(l: Layer) { st.clip = [cloneLayer(l)]; st.clipN = 0; toast('Imagen copiada'); }
+/** Pega lo copiado en Pliego (una o varias imágenes), cada vez un poco más desplazado. */
 export function pasteLayer() {
   const clip = st.clip;
-  if (!clip) return false;
+  if (!clip?.length) return false;
   snap();
-  clip.pasteN = (clip.pasteN ?? 0) + 1;
-  const d = cloneLayer(clip, { name: clip.name, fit: null });
-  delete d.pasteN;
-  d.cx += 10 * clip.pasteN; d.cy += 10 * clip.pasteN;
-  st.layers.push(d);
-  select(d);
+  const n = ++st.clipN;
+  const ds = clip.map((c) => {
+    const d = cloneLayer(c, { name: c.name, fit: null });
+    d.cx += 10 * n; d.cy += 10 * n;
+    st.layers.push(d);
+    return d;
+  });
+  selectMany(ds);
+  scheduleSave();
   return true;
 }
 /** Envuelve una transformación de la imagen seleccionada con su paso de deshacer. */

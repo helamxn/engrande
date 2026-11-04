@@ -14,9 +14,17 @@ export const S: Settings = {
 export const st = {
   layers: [] as Layer[],
   sel: null as Layer | null,
+  /**
+   * Selección de varias imágenes (2 o más). Cuando hay grupo, sel es null: así todo lo que trabaja con una sola
+   * imagen (barra, recorte, borrador, propiedades) queda sin efecto. Ver selected() en actions.ts.
+   */
+  group: [] as Layer[],
+  /** Recuadro de selección mientras se arrastra (px de pantalla). */
+  marquee: null as { a: Pt; b: Pt } | null,
   nextId: 1,
-  /** Imagen copiada con Ctrl+C dentro de Pliego. */
-  clip: null as Layer | null,
+  /** Imágenes copiadas con Ctrl+C dentro de Pliego, y cuántas veces se pegaron (cada pegado se desplaza un poco más). */
+  clip: null as Layer[] | null,
+  clipN: 0,
   /** Posición del puntero (círculo del pincel). */
   hover: null as Pt | null,
   /** Imagen bajo el ratón (se resalta). */

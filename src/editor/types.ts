@@ -50,7 +50,6 @@ export interface Layer extends LayerGeom {
   fit: Fit;
   /** Oculta: no se dibuja, no se exporta y no se puede tocar en el lienzo. */
   hidden: boolean;
-  pasteN?: number;
 }
 
 export interface Settings {
@@ -101,6 +100,7 @@ export type LayoutSettings = Pick<Settings, 'paper' | 'orient' | 'cols' | 'rows'
 export interface Snapshot {
   layers: Layer[];
   sel: Layer | null;
+  group: Layer[];
   props: LayerProps[];
   layout: LayoutSettings;
 }
