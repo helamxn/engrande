@@ -7,6 +7,7 @@ import {
   startScale, zoomInFrame,
 } from '../geometry';
 import { commitPending, setPending, snap, takeSnap, undo } from '../history';
+import { scheduleSave } from '../io/persist';
 import { lastPointerType, setLastPointer } from '../platform';
 import { boxHandles, dirty, handleCursor, nearest } from '../render';
 import { S, st, V } from '../state';
@@ -238,7 +239,7 @@ export function initPointer(cv: HTMLCanvasElement) {
       if (sel && inside(sel, s2mm(p))) wandAt(p);
       else { const hit = hitLayer(p); if (hit) select(hit); else setMode('move'); }
     }
-    if (drag && ['paint', 'scale', 'crop', 'frame', 'move', 'rot'].includes(drag.t)) { renderList(); syncSel(); }
+    if ((drag && ['paint', 'scale', 'crop', 'frame', 'move', 'rot'].includes(drag.t)) || gest?.mode === 'layer') { renderList(); syncSel(); scheduleSave(); }
     if (drag?.t === 'frame' && e.pointerType === 'mouse') cv.style.cursor = 'grab';
     ptrs.delete(e.pointerId);
     if (ptrs.size < 2) { if (gest) renderList(); gest = null; }

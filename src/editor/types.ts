@@ -34,7 +34,7 @@ export type Fit = { mode: FitMode; scale: number } | null;
 export type Source =
   | { kind: 'img'; blob: Blob; w: number; h: number }
   | { kind: 'svg'; blob: Blob }
-  | { kind: 'pdf' };
+  | { kind: 'pdf'; blob: Blob };
 
 export interface Layer extends LayerGeom {
   id: number;

@@ -4,13 +4,15 @@ import { $, toast } from './dom';
 import {
   applyFit, conformCrop, cropCenter, keepCenter, mmToLocal, natRatio, rotateLayer, unstretch,
 } from './geometry';
-import { pushUndo, snap, takeSnap, restoreSnap } from './history';
+import { pushUndo, snap, takeSnap, restoreSnap, undo } from './history';
+import { markCanvasChanged, scheduleSave } from './io/persist';
 import { MOD } from './platform';
 import { dirty } from './render';
-import { posterGeo, S, st, V } from './state';
+import { sampleCanvas } from './sample';
+import { DEFAULT_EXPORT, DEFAULT_LAYOUT, posterGeo, S, st, V } from './state';
 import { s2mm } from './view';
 import { renderBar } from './ui/contextbar';
-import { layoutRestored, renderList, syncSel } from './ui/panel';
+import { layoutChanged, layoutRestored, renderList, syncExportUI, syncSel } from './ui/panel';
 import type { FitMode, Layer, LayerProps, Mode, Pt, Snapshot, Source } from './types';
 
 /* ---------- lienzos ---------- */
@@ -60,11 +62,36 @@ export function select(l: Layer | null) {
   if (!l && S.mode !== 'move') setMode('move');
   renderList(); syncSel(); renderBar(); dirty();
 }
-export function afterChange() { renderList(); syncSel(); dirty(); }
+export function afterChange() { renderList(); syncSel(); dirty(); scheduleSave(); }
+
+/** Imagen de ejemplo, para que el lienzo no arranque vacío (no se guarda). */
+export function addSample() {
+  addLayer(newLayer(sampleCanvas(), 'Vuela alto', { isSample: true }), { factor: 0.94 });
+  select(null);
+}
+/**
+ * Empieza un póster nuevo: quita las imágenes, vuelve a los ajustes iniciales y borra el trabajo guardado
+ * (útil en un ordenador compartido). Se puede deshacer mientras la pestaña siga abierta.
+ */
+export function newPoster() {
+  if (S.mode === 'crop') cancelCrop();
+  if (S.mode !== 'move') setMode('move');
+  snap();
+  st.layers = [];
+  st.sel = null;
+  Object.assign(S, DEFAULT_LAYOUT, DEFAULT_EXPORT);
+  syncExportUI();
+  layoutChanged();
+  addSample();
+  scheduleSave(); // solo queda la imagen de ejemplo: el guardado borra lo almacenado
+  toast('Póster nuevo. Se borró el trabajo guardado en este navegador.', 7000, { label: 'Deshacer', fn: undo });
+}
 export function afterHistory() {
   if (!st.sel && S.mode !== 'move') setMode('move');
   layoutRestored();
+  syncExportUI();
   renderList(); syncSel(); renderBar(); dirty();
+  scheduleSave();
 }
 
 export function removeLayer(l: Layer) {
@@ -182,6 +209,7 @@ export function paint(l: Layer, a: Pt, b: Pt) {
     for (let i = 0; i <= n; i++) { const x = pa.x + ((pb.x - pa.x) * i) / n, y = pa.y + ((pb.y - pa.y) * i) / n; c.moveTo(x + r, y); c.arc(x, y, r, 0, Math.PI * 2); }
     c.clip(); c.clearRect(0, 0, l.img.width, l.img.height); c.drawImage(l.orig, 0, 0); c.restore();
   }
+  markCanvasChanged(l.img);
   dirty();
 }
 
@@ -215,6 +243,7 @@ export function removeColor(l: Layer, seeds: number[], ref: readonly [number, nu
     }
   }
   c.putImageData(id, 0, 0);
+  markCanvasChanged(l.img);
   dirty();
   return removed;
 }
@@ -270,6 +299,7 @@ export function resetOriginal(l: Layer) {
   beginPixelEdit(l);
   const c = l.img.getContext('2d')!;
   c.clearRect(0, 0, l.img.width, l.img.height); c.drawImage(l.orig, 0, 0);
+  markCanvasChanged(l.img);
   keepCenter(l, (x) => { x.crop = { x0: 0, y0: 0, x1: 1, y1: 1 }; x.h = x.w * natRatio(x); x.flipX = false; x.flipY = false; });
   markManual(l);
   afterChange();

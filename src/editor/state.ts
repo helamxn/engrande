@@ -1,9 +1,13 @@
 /** Estado compartido del editor. Un único objeto mutable: lo leen el render, la interfaz y la entrada. */
 import { geo } from './geometry';
-import type { Layer, Pt, Settings } from './types';
+import type { Layer, LayoutSettings, Pt, Settings } from './types';
+
+/** Ajustes de un póster nuevo (los que se guardan y se restablecen con "Nuevo póster"). */
+export const DEFAULT_LAYOUT: LayoutSettings = { paper: 'A4', orient: 'portrait', cols: 2, rows: 2, margin: 6, overlap: 10 };
+export const DEFAULT_EXPORT: Pick<Settings, 'dpi' | 'marks' | 'guide'> = { dpi: 150, marks: true, guide: true };
 
 export const S: Settings = {
-  paper: 'A4', orient: 'portrait', cols: 2, rows: 2, margin: 6, overlap: 10, marks: true, guide: true, dpi: 150,
+  ...DEFAULT_LAYOUT, ...DEFAULT_EXPORT,
   mode: 'move', brush: 24, brushMode: 'erase', tol: 40, contig: true, cropRatio: null, cropRatioKey: 'null', lock: true,
 };
 

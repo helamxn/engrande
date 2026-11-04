@@ -1,6 +1,6 @@
 /** Menú contextual (clic derecho, mantener pulsado o botón "Más"). */
 import {
-  copyLayer, duplicateLayer, enterCrop, fitSel, centerSel, flip, pasteLayer, removeLayer, reorder,
+  copyLayer, duplicateLayer, enterCrop, fitSel, centerSel, flip, newPoster, pasteLayer, removeLayer, reorder,
   resetOriginal, rotate90, select, setMode, unstretchSel, autoBackground,
 } from '../actions';
 import { $, toast } from '../dom';
@@ -70,6 +70,7 @@ export function emptyMenu(): MenuItem[] {
   return [
     { label: 'Pegar', kbd: MOD + 'V', fn: () => void pasteAny(), disabled: !canPaste() },
     { label: 'Agregar imagen…', fn: () => $<HTMLInputElement>('#file').click() },
+    { label: 'Nuevo póster', fn: newPoster },
     '-',
     { label: 'Ver todo el póster', kbd: MOD + '0', fn: fitView },
     { label: 'Acercar', kbd: '+', fn: () => zoomCenter(1.4) },

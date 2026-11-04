@@ -1,18 +1,18 @@
-/** Arranque del editor: conecta módulos, eventos y la imagen de ejemplo. */
-import { addLayer, afterHistory, cancelCrop, newLayer, pasteLayer, select } from './actions';
-import { $ } from './dom';
+/** Arranque del editor: conecta módulos y eventos, y restaura el póster guardado (o pone la imagen de ejemplo). */
+import { addSample, afterHistory, cancelCrop, newPoster, pasteLayer, select } from './actions';
+import { $, toast } from './dom';
 import { hasUnexported, redo, setHistoryHooks, undo } from './history';
 import { exportSingle, exportTiles } from './io/export';
 import { handlePaste, initLoad } from './io/load';
+import { flushSave, initPersistence, isWorkSafe, restoreProject } from './io/persist';
 import { initKeyboard } from './input/keyboard';
 import { initPointer } from './input/pointer';
 import { dockMQ } from './platform';
 import { initRender, readColors } from './render';
-import { sampleCanvas } from './sample';
 import { st, V } from './state';
 import { initContextBar } from './ui/contextbar';
 import { initMenu } from './ui/menu';
-import { initPanel, updateHint } from './ui/panel';
+import { initPanel, layoutRestored, renderList, syncExportUI, updateHint } from './ui/panel';
 import { fitView, resize, zoomCenter } from './view';
 
 export function startEditor() {
@@ -25,6 +25,7 @@ export function startEditor() {
   initPointer(cv);
   initKeyboard();
   initLoad();
+  initPersistence();
 
   setHistoryHooks({
     afterHistory,
@@ -40,6 +41,7 @@ export function startEditor() {
   $('#exportTiles').addEventListener('click', () => void exportTiles());
   $('#exportSingle').addEventListener('click', () => void exportSingle());
   $('#quickExport').addEventListener('click', () => void exportTiles());
+  $('#newPoster').addEventListener('click', newPoster);
   document.addEventListener('paste', (e) => handlePaste(e, pasteLayer));
 
   // tema: el canvas necesita releer los colores al cambiar entre claro y oscuro
@@ -49,18 +51,33 @@ export function startEditor() {
   new ResizeObserver(() => resize(stage, cv)).observe(stage);
   dockMQ?.addEventListener('change', () => { if (V.fitted) fitView(); });
 
-  // aviso al cerrar o recargar si hay trabajo sin exportar
-  addEventListener('beforeunload', (e) => { if (hasUnexported()) e.preventDefault(); });
+  // Al cerrar o recargar: si el trabajo ya está guardado en el navegador no hace falta avisar.
+  // Si queda un guardado pendiente se intenta terminar; si el guardado no está disponible o falló, se avisa.
+  addEventListener('beforeunload', (e) => {
+    if (isWorkSafe()) return;
+    void flushSave();
+    if (hasUnexported()) e.preventDefault();
+  });
 
   readColors();
   updateHint();
 
   // la imagen de ejemplo usa la fuente Archivo: se espera a que cargue
-  document.fonts.load('800 160px "Archivo Variable"').catch(() => {}).finally(() => {
-    if (!st.layers.length) {
-      addLayer(newLayer(sampleCanvas(), 'Vuela alto', { isSample: true }), { factor: 0.94 });
+  const fontReady = document.fonts.load('800 160px "Archivo Variable"').catch(() => {});
+  void (async () => {
+    // se restaura sin preguntar: solo hay una versión del trabajo, no hay nada que elegir
+    const restored = await restoreProject().catch((err) => { console.error(err); return null; });
+    await fontReady;
+    if (restored && st.layers.length) {
+      syncExportUI();
+      layoutRestored();
       select(null);
+      renderList();
+      if (restored.failed.length) toast(`No se pudo recuperar: ${restored.failed.join(', ')}.`, 8000);
+      else toast('Se recuperó tu póster.', 6000, { label: 'Empezar de nuevo', fn: newPoster });
+    } else {
+      addSample();
     }
     resize(stage, cv);
-  });
+  })();
 }

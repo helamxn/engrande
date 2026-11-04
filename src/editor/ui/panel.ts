@@ -15,6 +15,7 @@ import { dirty } from '../render';
 import { C, posterGeo, S, st } from '../state';
 import { fitView } from '../view';
 import { renderPdfPage } from '../io/pdf';
+import { scheduleSave } from '../io/persist';
 import { ICON } from './icons';
 import { layerMenu, openMenu } from './menu';
 import type { Geo, Layer, LayoutSettings, Orient, Paper } from '../types';
@@ -36,6 +37,14 @@ export function layoutChanged() {
   if (prevG) relayout(st.layers, prevG, g);
   prevG = g;
   syncLayoutUI(); syncSel(); renderList(); fitView();
+  scheduleSave();
+}
+/** Calidad, marcas y guía (se guardan con el póster). */
+export function syncExportUI() {
+  for (const x of $$('[data-dpi]')) x.setAttribute('aria-pressed', String(Number(x.dataset.dpi) === S.dpi));
+  $<HTMLInputElement>('#marks').checked = S.marks;
+  $<HTMLInputElement>('#guide').checked = S.guide;
+  syncLayoutUI();
 }
 /** Tras deshacer o rehacer: la distribución ya viene restaurada junto con las imágenes, solo se sincroniza la interfaz. */
 export function layoutRestored() {
@@ -268,12 +277,9 @@ export function initPanel() {
   });
 
   // exportar
-  for (const b of $$('[data-dpi]')) b.addEventListener('click', () => {
-    S.dpi = Number(b.dataset.dpi);
-    for (const x of $$('[data-dpi]')) x.setAttribute('aria-pressed', String(x === b));
-  });
-  $<HTMLInputElement>('#marks').addEventListener('change', (e) => { S.marks = (e.target as HTMLInputElement).checked; });
-  $<HTMLInputElement>('#guide').addEventListener('change', (e) => { S.guide = (e.target as HTMLInputElement).checked; syncLayoutUI(); });
+  for (const b of $$('[data-dpi]')) b.addEventListener('click', () => { S.dpi = Number(b.dataset.dpi); syncExportUI(); scheduleSave(); });
+  $<HTMLInputElement>('#marks').addEventListener('change', (e) => { S.marks = (e.target as HTMLInputElement).checked; scheduleSave(); });
+  $<HTMLInputElement>('#guide').addEventListener('change', (e) => { S.guide = (e.target as HTMLInputElement).checked; syncLayoutUI(); scheduleSave(); });
 
   // atajos
   const keys = $('#keys');

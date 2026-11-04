@@ -37,7 +37,7 @@ async function fileToLayer(f: File): Promise<Layer | null> {
 
   if (isPdf) {
     const doc = await openPdf(await f.arrayBuffer());
-    return newLayer(await renderPdfPage(doc, 1), name, { pdf: doc, pages: doc.numPages, src: { kind: 'pdf' } });
+    return newLayer(await renderPdfPage(doc, 1), name, { pdf: doc, pages: doc.numPages, src: { kind: 'pdf', blob: f } });
   }
   const im = await fileToImage(f);
   if (isSvg) {

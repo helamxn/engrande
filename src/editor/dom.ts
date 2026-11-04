@@ -10,10 +10,19 @@ export const $$ = <T extends Element = HTMLElement>(sel: string, root: ParentNod
 export const tick = () => new Promise<void>((r) => setTimeout(r, 0));
 
 let toastT: ReturnType<typeof setTimeout> | undefined;
-/** Aviso flotante. ms = 0 lo deja visible (progreso). */
-export function toast(msg: string, ms = 3200) {
+export interface ToastAction { label: string; fn: () => void }
+/** Aviso flotante. ms = 0 lo deja visible (progreso). action: botón opcional dentro del aviso. */
+export function toast(msg: string, ms = 3200, action?: ToastAction) {
   const t = $('#toast');
   t.textContent = msg;
+  if (action) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'ml-3 cursor-pointer border-0 bg-transparent p-0 font-bold text-inherit underline underline-offset-2';
+    b.textContent = action.label;
+    b.addEventListener('click', () => { t.hidden = true; action.fn(); });
+    t.appendChild(b);
+  }
   t.hidden = false;
   clearTimeout(toastT);
   if (ms) toastT = setTimeout(() => (t.hidden = true), ms);

@@ -215,7 +215,7 @@ describe('resolución', () => {
     close(d.w * d.h, 8e6, 1);
   });
   it('trata PDF y SVG como vectoriales (hasta el área máxima)', () => {
-    const d = srcDims(layer({ src: { kind: 'pdf' } }), 8e6);
+    const d = srcDims(layer({ src: { kind: 'pdf', blob: {} as Blob } }), 8e6);
     close(d.w * d.h, 8e6, 1); close(d.w / d.h, 2);
   });
 });
