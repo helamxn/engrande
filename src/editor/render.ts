@@ -4,7 +4,7 @@ import {
   HANDLES, bboxMM, cropCenter, cropPtsMM, displaySide, handleLocal, localToMM, rad, rowName, unionBox, visH, visW,
 } from './geometry';
 import { canvasRevision } from './io/persist';
-import { C, posterGeo, S, st, V, view } from './state';
+import { C, posterGeo, S, sheetsVisible, st, V, view } from './state';
 import { mm2s } from './view';
 import { positionBar } from './ui/contextbar';
 import { renderList } from './ui/panel';
@@ -177,52 +177,57 @@ export function render() {
   // mesa de trabajo y papel
   ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = C.desk!; ctx.fillRect(0, 0, cv.width, cv.height);
   drawDots();
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  const tl = mm2s({ x: 0, y: 0 }), pwS = g.W * V.k, phS = g.H * V.k;
-  ctx.save(); ctx.shadowColor = 'rgba(0,0,0,.22)'; ctx.shadowBlur = 14; ctx.shadowOffsetY = 3;
-  ctx.fillStyle = '#ffffff'; ctx.fillRect(tl.x, tl.y, pwS, phS); ctx.restore();
-  if (editing && checker) { ctx.save(); ctx.translate(tl.x, tl.y); ctx.fillStyle = checker; ctx.fillRect(0, 0, pwS, phS); ctx.restore(); }
+  // el papel y las hojas solo cuando el usuario ya hizo algo (cargar una imagen o elegir la distribución):
+  // antes, un tamaño que nadie eligió sobra; solo se ven la mesa de puntos y la pantalla de inicio
+  if (sheetsVisible()) {
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const tl = mm2s({ x: 0, y: 0 }), pwS = g.W * V.k, phS = g.H * V.k;
+    ctx.save(); ctx.shadowColor = 'rgba(0,0,0,.22)'; ctx.shadowBlur = 14; ctx.shadowOffsetY = 3;
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(tl.x, tl.y, pwS, phS); ctx.restore();
+    if (editing && checker) { ctx.save(); ctx.translate(tl.x, tl.y); ctx.fillStyle = checker; ctx.fillRect(0, 0, pwS, phS); ctx.restore(); }
 
-  // imágenes: atenuadas fuera del póster, completas dentro
-  ctx.setTransform(dpr * V.k, 0, 0, dpr * V.k, dpr * V.ox, dpr * V.oy);
-  if (!editing) {
-    ctx.globalAlpha = 0.25; drawAll(ctx, displaySource);
-    if (cropping) { ctx.globalAlpha = 0.35; drawLayer(ctx, sel, false, displaySource(sel)); }
-    ctx.globalAlpha = 1;
-  }
-  ctx.save(); ctx.beginPath(); ctx.rect(0, 0, g.W, g.H); ctx.clip();
-  if (!editing) { ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, g.W, g.H); }
-  for (const l of st.layers) {
-    if (l.hidden) continue;
-    const src = displaySource(l);
-    if (cropping && l === sel) { ctx.globalAlpha = 0.35; drawLayer(ctx, l, false, src); ctx.globalAlpha = 1; }
-    drawLayer(ctx, l, true, src);
-  }
-  ctx.restore();
+    // imágenes: atenuadas fuera del póster, completas dentro
+    ctx.setTransform(dpr * V.k, 0, 0, dpr * V.k, dpr * V.ox, dpr * V.oy);
+    if (!editing) {
+      ctx.globalAlpha = 0.25; drawAll(ctx, displaySource);
+      if (cropping) { ctx.globalAlpha = 0.35; drawLayer(ctx, sel, false, displaySource(sel)); }
+      ctx.globalAlpha = 1;
+    }
+    ctx.save(); ctx.beginPath(); ctx.rect(0, 0, g.W, g.H); ctx.clip();
+    if (!editing) { ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, g.W, g.H); }
+    for (const l of st.layers) {
+      if (l.hidden) continue;
+      const src = displaySource(l);
+      if (cropping && l === sel) { ctx.globalAlpha = 0.35; drawLayer(ctx, l, false, src); ctx.globalAlpha = 1; }
+      drawLayer(ctx, l, true, src);
+    }
+    ctx.restore();
 
-  // franjas de solape y líneas discontinuas
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.fillStyle = C.mark!; ctx.globalAlpha = 0.13;
-  for (let c = 1; c < S.cols; c++) { const a = mm2s({ x: c * (g.tw - g.ov), y: 0 }); ctx.fillRect(a.x, a.y, g.ov * V.k, phS); }
-  for (let r = 1; r < S.rows; r++) { const a = mm2s({ x: 0, y: r * (g.th - g.ov) }); ctx.fillRect(a.x, a.y, pwS, g.ov * V.k); }
-  ctx.globalAlpha = 1; ctx.strokeStyle = C.mark!; ctx.lineWidth = 1; ctx.setLineDash([5, 4]); ctx.beginPath();
-  for (let c = 1; c < S.cols; c++) for (const x of [c * (g.tw - g.ov), c * (g.tw - g.ov) + g.ov]) {
-    const X = Math.round(mm2s({ x, y: 0 }).x) + 0.5; ctx.moveTo(X, tl.y); ctx.lineTo(X, tl.y + phS);
-  }
-  for (let r = 1; r < S.rows; r++) for (const y of [r * (g.th - g.ov), r * (g.th - g.ov) + g.ov]) {
-    const Y = Math.round(mm2s({ x: 0, y }).y) + 0.5; ctx.moveTo(tl.x, Y); ctx.lineTo(tl.x + pwS, Y);
-  }
-  ctx.stroke(); ctx.setLineDash([]);
+    // franjas de solape y líneas discontinuas
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.fillStyle = C.mark!; ctx.globalAlpha = 0.13;
+    for (let c = 1; c < S.cols; c++) { const a = mm2s({ x: c * (g.tw - g.ov), y: 0 }); ctx.fillRect(a.x, a.y, g.ov * V.k, phS); }
+    for (let r = 1; r < S.rows; r++) { const a = mm2s({ x: 0, y: r * (g.th - g.ov) }); ctx.fillRect(a.x, a.y, pwS, g.ov * V.k); }
+    ctx.globalAlpha = 1; ctx.strokeStyle = C.mark!; ctx.lineWidth = 1; ctx.setLineDash([5, 4]); ctx.beginPath();
+    for (let c = 1; c < S.cols; c++) for (const x of [c * (g.tw - g.ov), c * (g.tw - g.ov) + g.ov]) {
+      const X = Math.round(mm2s({ x, y: 0 }).x) + 0.5; ctx.moveTo(X, tl.y); ctx.lineTo(X, tl.y + phS);
+    }
+    for (let r = 1; r < S.rows; r++) for (const y of [r * (g.th - g.ov), r * (g.th - g.ov) + g.ov]) {
+      const Y = Math.round(mm2s({ x: 0, y }).y) + 0.5; ctx.moveTo(tl.x, Y); ctx.lineTo(tl.x + pwS, Y);
+    }
+    ctx.stroke(); ctx.setLineDash([]);
 
-  // nombre de cada hoja (A1, A2…)
-  if (g.tw * V.k > 44 && g.th * V.k > 30) {
-    ctx.font = '500 11px "IBM Plex Mono", ui-monospace, monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    for (let r = 0; r < S.rows; r++) for (let c = 0; c < S.cols; c++) {
-      const p = mm2s({ x: c * (g.tw - g.ov) + g.tw / 2, y: r * (g.th - g.ov) }), y = p.y + 16;
-      ctx.fillStyle = 'rgba(255,255,255,.86)'; ctx.beginPath(); ctx.roundRect(p.x - 17, y - 9, 34, 18, 9); ctx.fill();
-      ctx.fillStyle = C.mark!; ctx.fillText(rowName(r) + (c + 1), p.x, y + 0.5);
+    // nombre de cada hoja (A1, A2…)
+    if (g.tw * V.k > 44 && g.th * V.k > 30) {
+      ctx.font = '500 11px "IBM Plex Mono", ui-monospace, monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      for (let r = 0; r < S.rows; r++) for (let c = 0; c < S.cols; c++) {
+        const p = mm2s({ x: c * (g.tw - g.ov) + g.tw / 2, y: r * (g.th - g.ov) }), y = p.y + 16;
+        ctx.fillStyle = 'rgba(255,255,255,.86)'; ctx.beginPath(); ctx.roundRect(p.x - 17, y - 9, 34, 18, 9); ctx.fill();
+        ctx.fillStyle = C.mark!; ctx.fillText(rowName(r) + (c + 1), p.x, y + 0.5);
+      }
     }
   }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
   // selección y tiradores
   if (S.mode === 'move') {

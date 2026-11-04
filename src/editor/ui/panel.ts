@@ -15,6 +15,7 @@ import { C, posterGeo, S, st } from '../state';
 import { fitView } from '../view';
 import { renderPdfPage } from '../io/pdf';
 import { canvasRevision, scheduleSave } from '../io/persist';
+import { getPref } from '../prefs';
 import { ICON } from './icons';
 import { groupMenu, layerMenu, openMenu } from './menu';
 import type { Geo, Layer, LayoutSettings, Orient, Paper } from '../types';
@@ -64,6 +65,7 @@ function editLayout<K extends keyof LayoutSettings>(key: K, value: LayoutSetting
   if (!(coalesce && lastLayoutEdit.key === key && now - lastLayoutEdit.t < 1000)) snap();
   lastLayoutEdit = { key, t: now };
   (S as LayoutSettings)[key] = value;
+  st.sheetsOn = true; // el usuario eligió la hoja: desde ahora se ven aunque el póster esté vacío
   layoutChanged();
 }
 export function syncLayoutUI() {
@@ -199,8 +201,20 @@ export function renderList() {
     ol.appendChild(li);
   });
   $('#layerCount').textContent = String(n);
-  // pantalla de inicio: solo con el póster vacío (sustituye a la antigua imagen de ejemplo)
+  // pantalla de inicio, solo con el póster vacío: la guía completa la primera vez; después (o si ya eligió
+  // las hojas), un aviso ligero que no tapa el póster
   $('#empty').hidden = n > 0;
+  const lite = st.sheetsOn || getPref('onboarded') === '1';
+  $('#emptyFull').hidden = lite;
+  $('#emptyLite').hidden = !lite;
+  // sin nada que imprimir no se puede descargar (las ocultas no se imprimen)
+  const printable = st.layers.some((l) => !l.hidden);
+  for (const id of ['#quickExport', '#exportTiles', '#exportSingle']) {
+    const b = $<HTMLButtonElement>(id);
+    b.disabled = !printable;
+    if (!printable) b.title = n ? 'Todas las imágenes están ocultas' : 'Agrega una imagen primero';
+    else b.removeAttribute('title');
+  }
   updateHint();
 }
 
@@ -281,7 +295,7 @@ export function initPanel() {
     b.dataset.c = String(c); b.dataset.r = String(r);
     b.addEventListener('click', () => {
       if (S.cols === c && S.rows === r) return;
-      snap(); S.cols = c; S.rows = r; layoutChanged();
+      snap(); S.cols = c; S.rows = r; st.sheetsOn = true; layoutChanged();
     });
     presets.appendChild(b);
   }

@@ -5,9 +5,9 @@
  */
 import { $ } from '../dom';
 import { deskMQ } from '../platform';
+import { getPref, setPref } from '../prefs';
 import { setInsets } from '../view';
 
-const KEY = 'pliego.panel';
 let free: HTMLElement;
 
 /** Márgenes que tapan las islas, en px desde cada borde del lienzo. En móvil no hay islas: todo libre. */
@@ -41,7 +41,7 @@ export function togglePanel(on = isPanelOff()) {
   document.body.classList.toggle('panel-off', !on);
   $('#panelHide').setAttribute('aria-expanded', String(on));
   $('#panelShow').setAttribute('aria-expanded', String(on));
-  try { localStorage.setItem(KEY, on ? 'on' : 'off'); } catch { /* sin almacenamiento: no se recuerda */ }
+  setPref('panel', on ? 'on' : 'off');
   // el foco no se pierde con el botón que desaparece: pasa al que lo sustituye
   if (active === $('#panelHide') || active === $('#panelShow') || (!on && $('#panel').contains(active))) {
     $<HTMLButtonElement>(on ? '#panelHide' : '#panelShow').focus();
@@ -51,8 +51,7 @@ export function togglePanel(on = isPanelOff()) {
 
 export function initLayout() {
   free = $('#free');
-  let off = false;
-  try { off = localStorage.getItem(KEY) === 'off'; } catch { /* sin almacenamiento */ }
+  const off = getPref('panel') === 'off';
   document.body.classList.toggle('panel-off', off);
   $('#panelHide').setAttribute('aria-expanded', String(!off));
   $('#panelShow').setAttribute('aria-expanded', String(!off));

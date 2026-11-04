@@ -19,6 +19,11 @@ export const st = {
    * imagen (barra, recorte, borrador, propiedades) queda sin efecto. Ver selected() en actions.ts.
    */
   group: [] as Layer[],
+  /**
+   * El usuario ya hizo algo en este póster (cargó una imagen o cambió la distribución): desde entonces se ven
+   * las hojas aunque se quede vacío. Un póster nuevo empieza sin hojas a la vista.
+   */
+  sheetsOn: false,
   /** Recuadro de selección mientras se arrastra (px de pantalla). */
   marquee: null as { a: Pt; b: Pt } | null,
   nextId: 1,
@@ -44,3 +49,5 @@ export const view = { dpr: 1, CW: 0, CH: 0, ins: { t: 0, r: 0, b: 0, l: 0 } };
 export const C: Record<string, string> = {};
 
 export const posterGeo = () => geo(S);
+/** Se dibujan el papel y las hojas: hay imágenes o el usuario ya eligió la distribución. */
+export const sheetsVisible = () => st.layers.length > 0 || st.sheetsOn;

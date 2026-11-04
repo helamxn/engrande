@@ -8,6 +8,7 @@ import { flushSave, initPersistence, isWorkSafe, restoreProject } from './io/per
 import { initKeyboard } from './input/keyboard';
 import { initPointer } from './input/pointer';
 import { dockMQ, isMac, MOD } from './platform';
+import { setPref } from './prefs';
 import { initRender, readColors } from './render';
 import { st, V } from './state';
 import { initContextBar } from './ui/contextbar';
@@ -74,19 +75,22 @@ export function startEditor() {
   readColors();
   updateHint();
 
+  // estado vacío listo desde el principio (pantalla de inicio, lectura, exportar desactivado): no depende de que
+  // el guardado del navegador responda, que puede tardar o no estar disponible
+  renderList();
+  syncSel();
+
   void (async () => {
     // se restaura sin preguntar: solo hay una versión del trabajo, no hay nada que elegir
     const restored = await restoreProject().catch((err) => { console.error(err); return null; });
     if (restored && st.layers.length) {
+      setPref('onboarded', '1'); // ya trabajó con imágenes en este navegador
       syncExportUI();
       layoutRestored();
       select(null);
       renderList();
       if (restored.failed.length) toast(`No se pudo recuperar: ${restored.failed.join(', ')}.`, 8000);
       else toast('Se recuperó tu póster.', 6000, { label: 'Empezar de nuevo', fn: newPoster });
-    } else {
-      renderList(); // sin póster guardado: pantalla de inicio
-      syncSel(); // tamaño del póster y hojas en la lectura
     }
     resize(stage, cv);
   })();

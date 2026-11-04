@@ -9,7 +9,7 @@ import { pushUndo, snap, takeSnap, restoreSnap, undo } from './history';
 import { canvasRevision, markCanvasChanged, scheduleSave } from './io/persist';
 import { runJob } from './pixeljobs';
 import type { PixelJob, PixelResult } from './pixels';
-import { MOD } from './platform';
+import { setPref } from './prefs';
 import { dirty } from './render';
 import { DEFAULT_EXPORT, DEFAULT_LAYOUT, posterGeo, S, st, V } from './state';
 import { s2mm } from './view';
@@ -47,6 +47,8 @@ export function newLayer(img: HTMLCanvasElement, name: string, extra: Partial<La
 /** Coloca una imagen nueva ajustada al póster. Si va desplazada (varias a la vez), queda como colocada a mano. */
 export function addLayer(l: Layer, { factor = 1, offset = 0 } = {}) {
   st.layers.push(l);
+  st.sheetsOn = true;
+  setPref('onboarded', '1'); // ya cargó una imagen alguna vez: no se vuelve a mostrar la guía de inicio
   const fit = { mode: 'contain' as const, scale: factor };
   applyFit(l, fit, posterGeo());
   if (offset) { l.cx += offset; l.cy += offset; l.fit = null; } else l.fit = fit;
@@ -122,7 +124,7 @@ export function removeSelected() {
   st.layers = st.layers.filter((x) => !ls.includes(x));
   select(null);
   scheduleSave();
-  toast(`${ls.length} imágenes quitadas · ${MOD}Z para deshacer`);
+  toast(`${ls.length} imágenes quitadas del póster`, 6000, { label: 'Deshacer', fn: undo });
 }
 export function duplicateSelected() {
   const ls = selected();
@@ -187,10 +189,12 @@ export function newPoster() {
   st.layers = [];
   st.sel = null;
   st.group = [];
+  st.sheetsOn = false; // vuelve al estado inicial: sin hojas hasta que el usuario haga algo
   Object.assign(S, DEFAULT_LAYOUT, DEFAULT_EXPORT);
   syncExportUI();
   layoutChanged();
   renderList(); // sin imágenes: aparece la pantalla de inicio
+  renderBar(); // sin selección: se oculta la barra de la imagen
   scheduleSave(); // póster vacío: el guardado borra lo almacenado
   toast('Póster nuevo. Se borró el trabajo guardado en este navegador.', 7000, { label: 'Deshacer', fn: undo });
 }
@@ -209,7 +213,7 @@ export function removeLayer(l: Layer) {
   if (st.sel === l) select(null);
   else if (st.group.includes(l)) { selectMany(st.group.filter((x) => x !== l)); scheduleSave(); }
   else afterChange();
-  toast(`“${l.name}” quitada · ${MOD}Z para deshacer`);
+  toast(`“${l.name}” quitada del póster`, 6000, { label: 'Deshacer', fn: undo });
 }
 export function reorder(l: Layer, to: 'front' | 'back' | number) {
   const i = st.layers.indexOf(l);
