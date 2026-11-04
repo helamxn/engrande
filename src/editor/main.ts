@@ -2,7 +2,7 @@
 import { addSample, afterHistory, cancelCrop, newPoster, pasteLayer, select } from './actions';
 import { $, toast } from './dom';
 import { hasUnexported, redo, setHistoryHooks, undo } from './history';
-import { exportSingle, exportTiles } from './io/export';
+import { exportMarginTest, exportSingle, exportTiles } from './io/export';
 import { handlePaste, initLoad } from './io/load';
 import { flushSave, initPersistence, isWorkSafe, restoreProject } from './io/persist';
 import { initKeyboard } from './input/keyboard';
@@ -41,6 +41,7 @@ export function startEditor() {
   $('#exportTiles').addEventListener('click', () => void exportTiles());
   $('#exportSingle').addEventListener('click', () => void exportSingle());
   $('#quickExport').addEventListener('click', () => void exportTiles());
+  $('#marginTest').addEventListener('click', () => void exportMarginTest());
   $('#newPoster').addEventListener('click', newPoster);
   document.addEventListener('paste', (e) => handlePaste(e, pasteLayer));
 

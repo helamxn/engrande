@@ -6,6 +6,7 @@ import { hasCutMarks, markLen, rowName, srcDims } from '../geometry';
 import { markExported } from '../history';
 import { HI_AREA, SINGLE_AREA } from '../platform';
 import { drawAll } from '../render';
+import { PAPERS } from '../constants';
 import { posterGeo, S, st } from '../state';
 import { loadImg } from './load';
 import { renderPdfPage } from './pdf';
@@ -22,7 +23,7 @@ const setStatus = (t: string) => { $('#status').textContent = t; if (t) toast(t,
 /** Progreso visible aunque la pestaña Exportar esté cerrada. */
 const progress = (t: string) => { $('#status').textContent = t; toast(t, 0); };
 function setBusy(b: boolean) {
-  for (const s of ['#exportTiles', '#exportSingle', '#quickExport']) $<HTMLButtonElement>(s).disabled = b;
+  for (const s of ['#exportTiles', '#exportSingle', '#quickExport', '#marginTest']) $<HTMLButtonElement>(s).disabled = b;
   $('#qeLabel').textContent = b ? 'Generando…' : 'Descargar PDF';
 }
 function canExport() {
@@ -101,18 +102,18 @@ function guidePage(pdf: JsPDF, g: Geo) {
   const dashed = S.marks ? 'sobre la línea discontinua' : `a ${Math.round(g.ov)} mm del borde de la vecina`;
   const steps = g.ov > 0
     ? [
-      '1. Imprime al 100 % (tamaño real). Desactiva "Ajustar a la página".',
+      '1. Imprime al 100 % (tamaño real) y sin "Ajustar a la página". La regla de abajo debe medir 10 cm.',
       `2. En cada hoja, recorta el borde izquierdo y el superior ${by}`,
       '    (excepto la columna 1 y la fila A, que se quedan con su margen o lo recortas al final).',
       `3. Pon cada hoja encima de su vecina, con el borde recortado ${dashed}, y pega.`,
       '4. Arma fila por fila: A1, A2, A3... y luego une las filas entre sí.',
     ]
     : [
-      '1. Imprime al 100 % (tamaño real). Desactiva "Ajustar a la página".',
+      '1. Imprime al 100 % (tamaño real) y sin "Ajustar a la página". La regla de abajo debe medir 10 cm.',
       `2. Recorta los cuatro bordes de cada hoja ${by}.`,
       '3. Une las hojas borde con borde y pégalas con cinta por detrás, siguiendo las letras y números.',
     ];
-  const stepsH = steps.length * 5 + 6, top = m + 18, ah = g.ph - top - m - stepsH;
+  const stepsH = steps.length * 5 + 6 + RULER_H, top = m + 18, ah = g.ph - top - m - stepsH;
   const s = Math.min(aw / g.W, ah / g.H), w = g.W * s, h = g.H * s, x = (g.pw - w) / 2, y = top;
   pdf.addImage(jpg(renderRegion(0, 0, g.W, g.H, Math.min(150, (1500 * 25.4) / g.W))), 'JPEG', x, y, w, h);
   pdf.setDrawColor(194, 26, 90); pdf.setLineWidth(0.35); pdf.rect(x, y, w, h);
@@ -127,6 +128,37 @@ function guidePage(pdf: JsPDF, g: Geo) {
   }
   pdf.setFont('helvetica', 'normal'); pdf.setFontSize(9.5); pdf.setTextColor(40, 50, 60);
   steps.forEach((t, i) => pdf.text(t, m, y + h + 9 + i * 5));
+  ruler(pdf, m, y + h + 9 + steps.length * 5 + 6, true);
+}
+
+/* ---------- calibración ---------- */
+/** Espacio que se reserva en la guía para la regla con su texto (mm), para que no invada el margen inferior. */
+const RULER_H = 21;
+/**
+ * Regla de 10 cm con marcas cada milímetro. Si al imprimir no mide 10 cm, la impresora reescaló la página
+ * (el fallo más común al imprimir pósters por hojas: las hojas ya no encajan). y es la línea de la regla.
+ */
+function ruler(pdf: JsPDF, x: number, y: number, withText: boolean) {
+  pdf.setDrawColor(25, 25, 25); pdf.setLineWidth(0.2); pdf.setLineDashPattern([], 0);
+  pdf.line(x, y, x + 100, y);
+  for (let i = 0; i <= 100; i++) pdf.line(x + i, y, x + i, y + (i % 10 === 0 ? 3 : i % 5 === 0 ? 2 : 1.2));
+  pdf.setFont('helvetica', 'normal'); pdf.setTextColor(25, 25, 25); pdf.setFontSize(6);
+  for (let c = 0; c <= 10; c++) pdf.text(String(c), x + c * 10, y + 3.6, { align: 'center', baseline: 'top' });
+  pdf.text('cm', x + 103, y + 3.6, { baseline: 'top' });
+  if (withText) {
+    pdf.setFontSize(7.5);
+    pdf.text('Esta regla debe medir exactamente 10 cm. Si mide menos, la impresora reescaló: imprime al 100 %.', x, y - 2.2);
+  }
+}
+/**
+ * Regla en la hoja A1, dentro de la franja de solape que tapará la hoja de abajo (se imprime seguro y no se
+ * ve en el póster armado). Solo si la franja cabe; la guía de armado la lleva siempre.
+ */
+function sheetRuler(pdf: JsPDF, g: Geo) {
+  if (S.rows < 2 || g.ov < 9 || g.tw < 180) return;
+  const x = g.m + g.tw - 108, y = g.m + g.th - g.ov + 1;
+  pdf.setFillColor(255, 255, 255); pdf.roundedRect(x - 2, y - 0.5, 110, 8, 1, 1, 'F');
+  ruler(pdf, x, y + 1, false);
 }
 
 /**
@@ -152,13 +184,13 @@ function sheetLabel(pdf: JsPDF, g: Geo, r: number, c: number, i: number, N: numb
 }
 
 /* ---------- descarga ---------- */
-function saveFile(blob: Blob, filename: string, note = '') {
+function saveFile(blob: Blob, filename: string, note = '', poster = true) {
   try {
     const url = URL.createObjectURL(blob), a = document.createElement('a');
     a.href = url; a.download = filename; a.rel = 'noopener';
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 60000);
-    markExported();
+    if (poster) markExported();
     setStatus('PDF descargado: ' + filename + note);
   } catch (err) {
     console.error(err);
@@ -192,6 +224,7 @@ export async function exportTiles() {
         pdf.setLineDashPattern([], 0);
       }
       sheetLabel(pdf, g, r, c, i, N);
+      if (r === 0 && c === 0) sheetRuler(pdf, g);
     }
     progress('Generando archivo…'); await tick();
     saveFile(pdf.output('blob'), `pliego-${S.cols}x${S.rows}-${S.paper}.pdf`);
@@ -219,5 +252,58 @@ export async function exportSingle() {
   } catch (err) {
     console.error(err);
     setStatus('Algo falló al crear el PDF.');
+  } finally { setBusy(false); }
+}
+
+/**
+ * Hoja de prueba de márgenes: en cada borde, una escalera de rayas a 1–15 mm del borde del papel.
+ * El usuario la imprime, mira cuál es la primera raya que salió completa en cada borde y pone el mayor
+ * de esos números como «Margen sin imprimir». Así el margen se ajusta a SU impresora, no a una media.
+ */
+export async function exportMarginTest() {
+  setBusy(true);
+  try {
+    progress('Preparando la hoja de prueba…');
+    const { jsPDF } = await jspdf();
+    let [pw, ph] = PAPERS[S.paper];
+    if (S.orient === 'landscape') [pw, ph] = [ph, pw];
+    const pdf = new jsPDF({ unit: 'mm', format: [pw, ph], orientation: pw > ph ? 'landscape' : 'portrait', compress: true });
+    const steps = [1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 15];
+    const seg = 7, gap = 5, span = steps.length * (seg + gap) - gap, lab = 19;
+    pdf.setDrawColor(20, 20, 20); pdf.setLineWidth(0.35); pdf.setLineDashPattern([], 0);
+    pdf.setFont('helvetica', 'bold'); pdf.setFontSize(7); pdf.setTextColor(20, 20, 20);
+    const x0 = (pw - span) / 2, y0 = (ph - span) / 2;
+    steps.forEach((d, i) => {
+      const x = x0 + i * (seg + gap), y = y0 + i * (seg + gap), n = String(d);
+      pdf.line(x, d, x + seg, d); pdf.text(n, x + seg / 2, lab, { align: 'center', baseline: 'middle' });                 // arriba
+      pdf.line(x, ph - d, x + seg, ph - d); pdf.text(n, x + seg / 2, ph - lab, { align: 'center', baseline: 'middle' }); // abajo
+      pdf.line(d, y, d, y + seg); pdf.text(n, lab, y + seg / 2, { align: 'center', baseline: 'middle' });                 // izquierda
+      pdf.line(pw - d, y, pw - d, y + seg); pdf.text(n, pw - lab, y + seg / 2, { align: 'center', baseline: 'middle' }); // derecha
+    });
+    // instrucciones y regla en el centro
+    const cx = 30, w = pw - 60;
+    let y = ph / 2 - 34;
+    pdf.setFont('helvetica', 'bold'); pdf.setFontSize(16); pdf.text('Hoja de prueba de márgenes', pw / 2, y, { align: 'center' });
+    pdf.setFont('helvetica', 'normal'); pdf.setFontSize(9); pdf.setTextColor(60, 60, 60);
+    y += 6;
+    pdf.text(`Papel ${S.paper} ${S.orient === 'portrait' ? 'vertical' : 'horizontal'} · los números indican milímetros desde el borde del papel`, pw / 2, y, { align: 'center' });
+    pdf.setTextColor(20, 20, 20); pdf.setFontSize(9.5);
+    y += 9;
+    for (const t of [
+      '1. Imprime esta hoja al 100 % (tamaño real), sin "Ajustar a la página".',
+      '2. Mide la regla de abajo: debe medir exactamente 10 cm.',
+      '3. En cada uno de los cuatro bordes, busca la primera raya que se imprimió completa y anota su número.',
+      '4. En Pliego, pon el número más alto de los cuatro como "Margen sin imprimir" (pestaña Hojas).',
+    ]) {
+      const lines = pdf.splitTextToSize(t, w) as string[];
+      pdf.text(lines, cx, y);
+      y += lines.length * 4.6 + 1.4;
+    }
+    ruler(pdf, pw / 2 - 50, y + 8, true);
+    progress('Generando archivo…'); await tick();
+    saveFile(pdf.output('blob'), `pliego-prueba-margenes-${S.paper}-${S.orient === 'portrait' ? 'vertical' : 'horizontal'}.pdf`, '', false);
+  } catch (err) {
+    console.error(err);
+    setStatus('No se pudo crear la hoja de prueba.');
   } finally { setBusy(false); }
 }

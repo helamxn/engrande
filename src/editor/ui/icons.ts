@@ -29,6 +29,7 @@ import maximize from 'lucide-static/icons/maximize.svg?raw';
 import minus from 'lucide-static/icons/minus.svg?raw';
 import paintbrush from 'lucide-static/icons/paintbrush.svg?raw';
 import plus from 'lucide-static/icons/plus.svg?raw';
+import printer from 'lucide-static/icons/printer.svg?raw';
 import redo from 'lucide-static/icons/redo-2.svg?raw';
 import rotateCw from 'lucide-static/icons/rotate-cw.svg?raw';
 import scaling from 'lucide-static/icons/scaling.svg?raw';
@@ -52,7 +53,7 @@ const RAW = {
   // lista de imágenes
   up: arrowUp, down: arrowDown, dup: copyPlus, eye, eyeOff,
   // cabecera y herramientas
-  newPoster: filePlus, addImage: imagePlus, download, undo, redo, zoomIn: plus, zoomOut: minus, lock, lockOpen,
+  newPoster: filePlus, addImage: imagePlus, download, undo, redo, zoomIn: plus, zoomOut: minus, lock, lockOpen, printer,
   // menú contextual (flechas de submenú e iconos de las opciones principales)
   chevronRight, chevronLeft, copy, paste: clipboardPaste, layers, scaling, history, fitAll: maximize, zoomInLens, zoomOutLens,
 } as const;

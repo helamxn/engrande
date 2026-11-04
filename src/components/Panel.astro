@@ -70,7 +70,11 @@ const tabs = [
     <div class={field}>
       <label class="lbl" for="margin">Margen sin imprimir <output id="marginOut">6 mm</output></label>
       <input type="range" id="margin" min="0" max="15" step="1" value="6" />
-      <p class="note">La mayoría de impresoras caseras no imprimen los últimos 4–6 mm del borde.</p>
+      <p class="note">La mayoría de impresoras caseras no imprimen los últimos 4–6 mm del borde. Para saber cuánto deja la tuya, imprime una hoja de prueba (una sola página).</p>
+      <button type="button" class="btn self-start" id="marginTest">
+        <Icon name="printer" />
+        Hoja de prueba de márgenes
+      </button>
     </div>
     <div class={field}>
       <label class="lbl" for="overlap">Solape para pegar <output id="overlapOut">10 mm</output></label>
