@@ -7,7 +7,7 @@ import { handlePaste, initLoad } from './io/load';
 import { flushSave, initPersistence, isWorkSafe, restoreProject } from './io/persist';
 import { initKeyboard } from './input/keyboard';
 import { initPointer } from './input/pointer';
-import { dockMQ } from './platform';
+import { dockMQ, isMac, MOD } from './platform';
 import { initRender, readColors } from './render';
 import { st, V } from './state';
 import { initContextBar } from './ui/contextbar';
@@ -17,7 +17,14 @@ import { initShortcuts } from './ui/shortcuts';
 import { initPanel, layoutRestored, renderList, syncExportUI, syncSel, updateHint } from './ui/panel';
 import { fitView, resize, zoomCenter } from './view';
 
+/** Los títulos del marcado dicen «Ctrl+»; en Mac se muestran con ⌘ (el editor acepta las dos teclas). */
+function macTitles() {
+  if (!isMac) return;
+  document.querySelectorAll<HTMLElement>('[title*="Ctrl+"]').forEach((el) => { el.title = el.title.replaceAll('Ctrl+', MOD); });
+}
+
 export function startEditor() {
+  macTitles();
   const cv = $<HTMLCanvasElement>('#cv'), stage = $('#stage');
 
   initRender(cv);
