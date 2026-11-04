@@ -1,6 +1,6 @@
 /** Exportación a PDF: por hojas (con guía de armado, marcas y solapes) o en una sola hoja grande. */
 import type { jsPDF as JsPDF } from 'jspdf';
-import { $, tick, toast } from '../dom';
+import { $, freeCanvas, tick, toast } from '../dom';
 import { cm } from '../format';
 import { hasCutMarks, markLen, rowName, srcDims } from '../geometry';
 import { markExported } from '../history';
@@ -44,7 +44,8 @@ function renderRegion(x0: number, y0: number, wmm: number, hmm: number, dpi: num
   drawAll(x, hi);
   return c;
 }
-const jpg = (c: HTMLCanvasElement) => c.toDataURL('image/jpeg', 0.92);
+/** Codifica en JPEG y libera el lienzo enseguida (con tamaño 0 Safari devuelve la memoria sin esperar). */
+const jpg = (c: HTMLCanvasElement) => { const d = c.toDataURL('image/jpeg', 0.92); freeCanvas(c); return d; };
 
 /**
  * Prepara, solo para exportar, una versión de cada imagen a la resolución que pide el PDF (sin pasar del
@@ -72,6 +73,7 @@ async function hiSources(dpi: number): Promise<HiMap> {
       const x = c.getContext('2d')!;
       x.imageSmoothingEnabled = true; x.imageSmoothingQuality = 'high';
       x.drawImage(base, 0, 0, tw, th);
+      if (base instanceof HTMLCanvasElement) freeCanvas(base); // la página del PDF a alta resolución ya no hace falta
       if (url) URL.revokeObjectURL(url);
       if (img !== l.orig) { x.globalCompositeOperation = 'destination-in'; x.drawImage(img, 0, 0, tw, th); }
       out.set(img, c);
@@ -201,13 +203,14 @@ function saveFile(blob: Blob, filename: string, note = '', poster = true) {
 export async function exportTiles() {
   if (!canExport()) return;
   setBusy(true);
+  let hi: HiMap | undefined;
   try {
     const g = posterGeo(), N = S.cols * S.rows, o = g.pw > g.ph ? 'landscape' : 'portrait';
     progress('Preparando el generador de PDF…');
     const { jsPDF } = await jspdf();
     const pdf = new jsPDF({ unit: 'mm', format: [g.pw, g.ph], orientation: o, compress: true });
     progress('Preparando imágenes en alta resolución…'); await tick();
-    const hi = await hiSources(S.dpi);
+    hi = await hiSources(S.dpi);
     let first = true;
     if (S.guide) { guidePage(pdf, g); first = false; }
     let i = 0;
@@ -231,18 +234,19 @@ export async function exportTiles() {
   } catch (err) {
     console.error(err);
     setStatus('Algo falló al crear el PDF. Prueba con menos calidad.');
-  } finally { setBusy(false); }
+  } finally { hi?.forEach(freeCanvas); setBusy(false); }
 }
 
 export async function exportSingle() {
   if (!canExport()) return;
   setBusy(true);
+  let hi: HiMap | undefined;
   try {
     const g = posterGeo(), maxDpi = 25.4 * Math.sqrt(SINGLE_AREA / (g.W * g.H)), dpi = Math.min(S.dpi, maxDpi);
     progress('Preparando el generador de PDF…');
     const { jsPDF } = await jspdf();
     progress('Preparando póster completo…'); await tick();
-    const hi = await hiSources(dpi);
+    hi = await hiSources(dpi);
     const pdf = new jsPDF({ unit: 'mm', format: [g.W, g.H], orientation: g.W > g.H ? 'landscape' : 'portrait', compress: true });
     pdf.addImage(jpg(renderRegion(0, 0, g.W, g.H, dpi, hi)), 'JPEG', 0, 0, g.W, g.H, undefined, 'FAST');
     progress('Generando archivo…'); await tick();
@@ -252,7 +256,7 @@ export async function exportSingle() {
   } catch (err) {
     console.error(err);
     setStatus('Algo falló al crear el PDF.');
-  } finally { setBusy(false); }
+  } finally { hi?.forEach(freeCanvas); setBusy(false); }
 }
 
 /**

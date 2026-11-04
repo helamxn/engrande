@@ -9,6 +9,12 @@ export const $$ = <T extends Element = HTMLElement>(sel: string, root: ParentNod
 
 export const tick = () => new Promise<void>((r) => setTimeout(r, 0));
 
+/**
+ * Libera la memoria de un lienzo que ya no se va a usar. Con tamaño 0 el navegador la devuelve al momento;
+ * Safari, si no, la retiene hasta que pasa el recolector de basura y puede alcanzar su límite de canvas.
+ */
+export const freeCanvas = (c: HTMLCanvasElement) => { c.width = 0; c.height = 0; };
+
 let toastT: ReturnType<typeof setTimeout> | undefined;
 export interface ToastAction { label: string; fn: () => void }
 /** Aviso flotante. ms = 0 lo deja visible (progreso). action: botón opcional dentro del aviso. */

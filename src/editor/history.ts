@@ -49,10 +49,12 @@ const sync = () => hooks.syncUndo(undoStack.length > 0, redoStack.length > 0);
 export function pushUndo(s: Snapshot) {
   changes++;
   undoStack.push(s);
-  if (undoStack.length > UNDO_MAX) undoStack.shift();
-  redoStack.length = 0;
+  const dropped: Snapshot[] = [];
+  if (undoStack.length > UNDO_MAX) dropped.push(undoStack.shift()!);
+  dropped.push(...redoStack.splice(0)); // un cambio nuevo invalida lo que se podía rehacer
   const live = new Set<object>(st.layers.flatMap((l) => [l.img, l.orig]));
-  trimStack(undoStack, live, PIX_BUDGET);
+  dropped.push(...trimStack(undoStack, live, PIX_BUDGET));
+  releaseUnused(dropped, liveRefs());
   sync();
 }
 export const snap = () => pushUndo(takeSnap());
@@ -85,11 +87,12 @@ export function redo() {
  * Cada edición de píxeles guarda un lienzo completo. Si los lienzos que solo retiene el historial superan
  * el presupuesto, se descartan los pasos más viejos (siempre queda al menos uno).
  */
-export function trimStack(
-  stack: { props: { img: { width: number; height: number }; orig: { width: number; height: number } }[] }[],
+export function trimStack<T extends { props: { img: { width: number; height: number }; orig: { width: number; height: number } }[] }>(
+  stack: T[],
   live: Set<object>,
   budget: number,
-) {
+): T[] {
+  const dropped: T[] = [];
   while (stack.length > 1) {
     const seen = new Set<object>();
     let bytes = 0;
@@ -97,6 +100,55 @@ export function trimStack(
       if (!live.has(c) && !seen.has(c)) { seen.add(c); bytes += c.width * c.height * 4; }
     }
     if (bytes <= budget) break;
-    stack.shift();
+    dropped.push(stack.shift()!);
   }
+  return dropped;
+}
+
+/* ---------- liberar memoria ---------- */
+interface CanvasLike { width: number; height: number }
+/** Documento de pdf.js: se cierra con loadingTask.destroy(). */
+interface DocLike { loadingTask: { destroy(): unknown } }
+interface LayerRefs { img: CanvasLike; orig: CanvasLike; pdf: DocLike | null }
+interface SnapRefs { layers: LayerRefs[]; props: { l: LayerRefs; img: CanvasLike; orig: CanvasLike }[] }
+export interface LiveRefs { canvases: Set<object>; docs: Set<object> }
+
+/** Lienzos y documentos PDF que siguen en uso: los del póster, los de la imagen copiada y los del historial. */
+function liveRefs(): LiveRefs {
+  const canvases = new Set<object>(), docs = new Set<object>();
+  const add = (l: LayerRefs) => { canvases.add(l.img); canvases.add(l.orig); if (l.pdf) docs.add(l.pdf); };
+  st.layers.forEach(add);
+  if (st.clip) add(st.clip);
+  for (const s of [...undoStack, ...redoStack, ...(pending ? [pending] : [])]) {
+    for (const p of s.props) { canvases.add(p.img); canvases.add(p.orig); if (p.l.pdf) docs.add(p.l.pdf); }
+    for (const l of s.layers) if (l.pdf) docs.add(l.pdf);
+  }
+  return { canvases, docs };
+}
+
+const released = new WeakSet<object>();
+/**
+ * Libera lo que solo usaban los pasos de historial descartados:
+ * - lienzos: se dejan a tamaño 0, que devuelve su memoria al momento (Safari la retiene hasta que pasa el
+ *   recolector de basura y puede llegar a su límite de memoria de canvas);
+ * - documentos PDF: se cierran (loadingTask.destroy), porque pdf.js los mantiene cargados en su worker.
+ * Nunca toca nada que siga en el póster, en el historial o en la imagen copiada.
+ */
+export function releaseUnused(dropped: SnapRefs[], live: LiveRefs) {
+  let canvases = 0, docs = 0;
+  for (const s of dropped) {
+    for (const p of s.props) {
+      for (const c of [p.img, p.orig]) {
+        if (live.canvases.has(c) || released.has(c)) continue;
+        released.add(c); c.width = 0; c.height = 0; canvases++;
+      }
+    }
+    for (const l of [...s.layers, ...s.props.map((p) => p.l)]) {
+      const doc = l.pdf;
+      if (!doc || live.docs.has(doc) || released.has(doc)) continue;
+      released.add(doc); docs++;
+      void Promise.resolve(doc.loadingTask.destroy()).catch(() => {});
+    }
+  }
+  return { canvases, docs };
 }

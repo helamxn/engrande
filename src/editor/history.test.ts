@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { trimStack } from './history';
+import { describe, expect, it, vi } from 'vitest';
+import { releaseUnused, trimStack } from './history';
 
 const canvas = (w: number, h: number) => ({ width: w, height: h });
 const step = (...imgs: { width: number; height: number }[]) => ({ props: imgs.map((img) => ({ img, orig: img })) });
@@ -36,5 +36,42 @@ describe('trimStack (límite de memoria del historial)', () => {
     const stack = [step(canvas(5000, 5000))];
     trimStack(stack, new Set(), 1);
     expect(stack).toHaveLength(1);
+  });
+});
+
+describe('trimStack devuelve los pasos descartados', () => {
+  it('para poder liberar su memoria', () => {
+    const a = step(canvas(1000, 1000)), b = step(canvas(1000, 1000)), c = step(canvas(1000, 1000));
+    const stack = [a, b, c];
+    expect(trimStack(stack, new Set(), 9e6)).toEqual([a]);
+  });
+});
+
+describe('releaseUnused (liberar lienzos y PDF del historial descartado)', () => {
+  const doc = () => ({ loadingTask: { destroy: vi.fn(() => Promise.resolve()) } });
+  const layer = (img: { width: number; height: number }, pdf: ReturnType<typeof doc> | null = null) => ({ img, orig: img, pdf });
+  const snapOf = (...ls: ReturnType<typeof layer>[]) => ({ layers: ls, props: ls.map((l) => ({ l, img: l.img, orig: l.orig })) });
+
+  it('deja a tamaño 0 los lienzos que ya no usa nadie y respeta los que siguen en uso', () => {
+    const dead = canvas(800, 600), alive = canvas(800, 600);
+    const r = releaseUnused([snapOf(layer(dead), layer(alive))], { canvases: new Set([alive]), docs: new Set() });
+    expect(r.canvases).toBe(1);
+    expect(dead).toEqual({ width: 0, height: 0 });
+    expect(alive).toEqual({ width: 800, height: 600 });
+  });
+
+  it('cierra los PDF que ya no usa nadie, una sola vez, y no toca los que siguen en uso', () => {
+    const deadDoc = doc(), liveDoc = doc();
+    const s1 = snapOf(layer(canvas(10, 10), deadDoc)), s2 = snapOf(layer(canvas(10, 10), deadDoc), layer(canvas(10, 10), liveDoc));
+    const r = releaseUnused([s1, s2], { canvases: new Set(), docs: new Set([liveDoc]) });
+    expect(r.docs).toBe(1);
+    expect(deadDoc.loadingTask.destroy).toHaveBeenCalledTimes(1);
+    expect(liveDoc.loadingTask.destroy).not.toHaveBeenCalled();
+  });
+
+  it('un lienzo compartido entre un paso descartado y uno vivo no se libera', () => {
+    const shared = canvas(500, 500);
+    releaseUnused([snapOf(layer(shared))], { canvases: new Set([shared]), docs: new Set() });
+    expect(shared.width).toBe(500);
   });
 });
