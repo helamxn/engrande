@@ -249,7 +249,8 @@
 
   /* barra contextual */
   .ctxbar {
-    @apply absolute z-[5] flex max-w-[calc(100%-16px)] items-center gap-0.5 rounded-[10px] border border-line bg-panel p-1 shadow-pop transition-opacity duration-100;
+    @apply absolute z-[5] flex max-w-[calc(100%-16px)] items-center gap-0.5 overflow-x-auto rounded-[10px] border border-line bg-panel p-1 shadow-pop transition-opacity duration-100;
+    scrollbar-width: none;
     &.ghost { @apply pointer-events-none opacity-0; }
     & .sep { @apply mx-[3px] my-1 w-px flex-none self-stretch bg-line; }
     & .mini {
@@ -260,11 +261,14 @@
     & input[type="range"] { @apply h-6 w-[104px]; }
     & input[type="checkbox"] { @apply size-4; accent-color: var(--accent); }
     &:not(.dock) .tb .opt { @apply hidden; }
+    /* acoplada abajo (móvil): centrada y del ancho de su contenido, botones iguales de 48 px de alto */
     &.dock {
-      @apply inset-x-2 bottom-2 overflow-x-auto;
-      scrollbar-width: none;
-      & .tb { @apply min-h-12 min-w-[52px] flex-col gap-0.5 px-[9px] py-[5px] text-[.7rem]; }
-      & .tb.ratio { @apply text-[.82rem]; }
+      @apply bottom-2 left-1/2 w-max max-w-[calc(100%-16px)] -translate-x-1/2 justify-center;
+      & .tb { @apply min-h-12 min-w-14 flex-col gap-0.5 px-2 py-[5px] text-[.7rem]; }
+      & input[type="range"] { @apply w-[72px]; }
+      & .mini output { @apply min-w-[2.6em]; }
+      /* Girar, Voltear y similares solo si hay sitio; si no, están en «Más» */
+      @media (width < 30rem) { & .dw { @apply hidden; } }
     }
   }
   .tb {

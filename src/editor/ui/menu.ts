@@ -107,6 +107,25 @@ export function layerMenu(l: Layer, prev: Layer[] = []): MenuItem[] {
   ];
 }
 /** Menú de varias imágenes seleccionadas. */
+/** Alinear las seleccionadas (submenú del grupo y botón «Alinear» de la barra en móvil). */
+export const alignMenu = (): MenuItem[] => [
+  { label: 'A la izquierda', fn: () => alignSelected('left') },
+  { label: 'Al centro (horizontal)', fn: () => alignSelected('hcenter') },
+  { label: 'A la derecha', fn: () => alignSelected('right') },
+  '-',
+  { label: 'Arriba', fn: () => alignSelected('top') },
+  { label: 'Al centro (vertical)', fn: () => alignSelected('vcenter') },
+  { label: 'Abajo', fn: () => alignSelected('bottom') },
+];
+/** Repartir las seleccionadas (3 o más). */
+export const distributeMenu = (): MenuItem[] => [
+  { label: 'En horizontal', fn: () => distributeSelected('x') },
+  { label: 'En vertical', fn: () => distributeSelected('y') },
+];
+/** Proporción del recorte (botón «Proporción» de la barra en móvil); la elegida lleva una marca. */
+export const ratioMenu = (ratios: ReadonlyArray<readonly [string, unknown]>, current: string, pick: (key: string) => void): MenuItem[] =>
+  ratios.map(([t, r]) => ({ label: t, icon: String(r) === current ? 'check' as const : undefined, fn: () => pick(String(r)) }));
+
 export function groupMenu(): MenuItem[] {
   const n = st.group.length;
   return [
@@ -115,23 +134,8 @@ export function groupMenu(): MenuItem[] {
     { label: 'Cortar', icon: 'cut', kbd: MOD + 'X', fn: cutSelected },
     { label: 'Duplicar', icon: 'dup', kbd: MOD + 'D', fn: duplicateSelected },
     '-',
-    {
-      label: 'Alinear', icon: 'alignLeft', submenu: [
-        { label: 'A la izquierda', fn: () => alignSelected('left') },
-        { label: 'Al centro (horizontal)', fn: () => alignSelected('hcenter') },
-        { label: 'A la derecha', fn: () => alignSelected('right') },
-        '-',
-        { label: 'Arriba', fn: () => alignSelected('top') },
-        { label: 'Al centro (vertical)', fn: () => alignSelected('vcenter') },
-        { label: 'Abajo', fn: () => alignSelected('bottom') },
-      ],
-    },
-    {
-      label: 'Repartir', icon: 'distributeH', disabled: n < 3, submenu: [
-        { label: 'En horizontal', fn: () => distributeSelected('x') },
-        { label: 'En vertical', fn: () => distributeSelected('y') },
-      ],
-    },
+    { label: 'Alinear', icon: 'alignLeft', submenu: alignMenu() },
+    { label: 'Repartir', icon: 'distributeH', disabled: n < 3, submenu: distributeMenu() },
     '-',
     { label: 'Ocultar las ' + n, icon: 'eyeOff', fn: hideSelected },
     { label: 'Bloquear las ' + n, icon: 'lock', fn: lockSelected },

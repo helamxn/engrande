@@ -11,7 +11,7 @@ import { cropPts, dirty } from '../render';
 import { S, st, view } from '../state';
 import { isGesturing } from '../input/pointer';
 import { ICON, type IconName } from './icons';
-import { groupMenu, layerMenu, openMenu } from './menu';
+import { alignMenu, distributeMenu, groupMenu, layerMenu, openMenu, ratioMenu } from './menu';
 import { updateHint } from './panel';
 
 let bar: HTMLElement;
@@ -21,12 +21,50 @@ let bar: HTMLElement;
  */
 let barSize: { w: number; h: number } | null = null;
 
-/** Botón de la barra. opt: la etiqueta solo se ve en la barra acoplada (móvil). */
+/** Botón de la barra. opt: la etiqueta solo se ve en la barra acoplada (móvil). cls «dw»: solo si la barra acoplada tiene sitio. */
 function tb(icon: IconName | null, label: string, act: string, title = label, cls = '', opt = false) {
   const lab = label ? `<span${opt ? ' class="opt"' : ''}>${label}</span>` : '';
   return `<button type="button" class="tb ${cls}" data-act="${act}" title="${title}" aria-label="${title}">${icon ? ICON[icon] : ''}${lab}</button>`;
 }
 const SEP = '<span class="sep"></span>';
+/** Separador que solo se ve junto a botones «dw» (barra acoplada con sitio). */
+const SEP_DW = '<span class="sep dw"></span>';
+
+/**
+ * Barra acoplada abajo (móvil o táctil): no cabe todo en un teléfono y antes hacía scroll sin avisar.
+ * Se queda lo principal a la vista y el resto pasa al menú «Más» (que incluye Quitar, lejos del pulgar);
+ * Girar y Voltear aparecen solo si hay sitio (clase dw, ver global.css).
+ */
+function dockBar(): string {
+  const n = st.group.length;
+  if (n > 1 && S.mode === 'move') {
+    return `<span class="mini"><b class="text-fg">${n}</b> imágenes</span>${SEP}`
+      + tb('alignLeft', 'Alinear', 'alignMenu', 'Alinear')
+      + `<button type="button" class="tb" data-act="distMenu" title="Repartir" aria-label="Repartir"${n < 3 ? ' disabled' : ''}>${ICON.distributeH}<span>Repartir</span></button>`
+      + tb('dup', 'Duplicar', 'dupGroup', 'Duplicar') + tb('more', 'Más', 'more', 'Más opciones');
+  }
+  if (st.sel?.locked) return `<span class="mini">${ICON.lock} Bloqueada</span>${SEP}` + tb('lockOpen', 'Desbloquear', 'unlock') + tb('more', 'Más', 'more', 'Más opciones');
+  switch (S.mode) {
+    case 'move':
+      return tb('crop', 'Recortar', 'crop') + tb('bg', 'Quitar fondo', 'autobg') + tb('erase', 'Borrador', 'erase') + tb('wand', 'Varita', 'wand')
+        + SEP_DW + tb('rot', 'Girar', 'rotR', 'Girar 90°', 'dw') + tb('flip', 'Voltear', 'flipX', 'Voltear en horizontal', 'dw')
+        + SEP + tb('more', 'Más', 'more', 'Más opciones: girar, voltear, duplicar, quitar…');
+    case 'crop': {
+      const cur = RATIOS.find(([, r]) => String(r) === S.cropRatioKey)?.[0] ?? 'Libre';
+      return tb('crop', cur, 'ratioMenu', 'Proporción del recorte') + SEP
+        + tb('x', 'Cancelar', 'cancelCrop') + tb('check', 'Aplicar', 'applyCrop', 'Aplicar', 'primary');
+    }
+    case 'erase':
+      return `<button type="button" class="tb" data-act="bm" data-m="erase" aria-pressed="${S.brushMode === 'erase'}">${ICON.erase}<span>Borrar</span></button>`
+        + `<button type="button" class="tb" data-act="bm" data-m="restore" aria-pressed="${S.brushMode === 'restore'}">${ICON.restore}<span>Restaurar</span></button>`
+        + `${SEP}<label class="mini" aria-label="Tamaño del pincel"><input type="range" id="bBrush" min="4" max="90" value="${S.brush}"><output id="bBrushOut">${S.brush} px</output></label>`
+        + SEP + tb('check', 'Listo', 'done', 'Listo', 'primary');
+    case 'wand':
+      return `<label class="mini" aria-label="Tolerancia"><input type="range" id="bTol" min="5" max="140" value="${S.tol}"><output id="bTolOut">${S.tol}</output></label>`
+        + `<label class="mini"><input type="checkbox" id="bContig" ${S.contig ? 'checked' : ''}> Solo zona</label>`
+        + SEP_DW + tb('bg', 'Quitar fondo', 'autobg', 'Quitar el fondo', 'dw') + SEP + tb('check', 'Listo', 'done', 'Listo', 'primary');
+  }
+}
 
 /** Barra de varias imágenes: alinear entre sí, repartir (3 o más), duplicar y quitar. */
 function groupBar() {
@@ -50,7 +88,9 @@ export function renderBar() {
   const group = st.group.length > 1 && S.mode === 'move';
   if (!group && (!st.sel || st.sel.hidden)) { bar.hidden = true; $('#hint').hidden = false; updateHint(); return; }
   let h = '';
-  if (group) {
+  if (dockMQ?.matches) {
+    h = dockBar();
+  } else if (group) {
     h = groupBar();
   } else if (st.sel?.locked) {
     // bloqueada: nada se puede editar; solo desbloquear o el menú
@@ -100,8 +140,10 @@ export function positionBar() {
   bar.classList.toggle('ghost', isGesturing());
   $('#hint').hidden = docked;
   // acoplada: encima del panel inferior (móvil), que puede estar más o menos abierto
-  if (docked) { bar.style.left = ''; bar.style.top = ''; bar.style.bottom = `${view.ins.b + 8}px`; return; }
+  if (docked) { bar.style.left = ''; bar.style.top = ''; bar.style.bottom = `${view.ins.b + 8}px`; bar.style.maxWidth = ''; return; }
   bar.style.bottom = '';
+  // nunca más ancha que la zona libre (no se mete bajo el panel); si no cupiera, se desplaza por dentro
+  bar.style.maxWidth = `${Math.max(120, view.CW - view.ins.l - view.ins.r - 16)}px`;
   const pts = sel ? cropPts(sel) : st.group.flatMap(cropPts), xs = pts.map((p) => p.x), ys = pts.map((p) => p.y);
   const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
   barSize ??= { w: bar.offsetWidth, h: bar.offsetHeight };
@@ -131,6 +173,8 @@ export function initContextBar() {
         case 'dupGroup': duplicateSelected(); break;
         case 'delGroup': removeSelected(); break;
         case 'more': { const r = b.getBoundingClientRect(); openMenu(r.left, r.bottom + 4, groupMenu()); break; }
+        case 'alignMenu': { const r = b.getBoundingClientRect(); openMenu(r.left, r.top, alignMenu()); break; }
+        case 'distMenu': { const r = b.getBoundingClientRect(); openMenu(r.left, r.top, distributeMenu()); break; }
       }
       return;
     }
@@ -145,6 +189,7 @@ export function initContextBar() {
       case 'more': { const r = b.getBoundingClientRect(); openMenu(r.left, r.bottom + 4, layerMenu(sel)); break; }
       case 'delete': removeLayer(sel); break;
       case 'ratio': setCropRatio(b.dataset.r ?? 'null'); break;
+      case 'ratioMenu': { const r = b.getBoundingClientRect(); openMenu(r.left, r.top, ratioMenu(RATIOS, S.cropRatioKey, setCropRatio)); break; }
       case 'cancelCrop': cancelCrop(); break;
       case 'applyCrop': applyCrop(); break;
       case 'bm': S.brushMode = b.dataset.m === 'restore' ? 'restore' : 'erase'; renderBar(); break;
