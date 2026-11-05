@@ -172,7 +172,29 @@ describe('cambio de distribución (relayout)', () => {
     const l = run(layer({ cx: 140, cy: 220 }), [{}, { orient: 'landscape' }], 'keep');
     expect([l.cx, l.cy, l.w, l.h]).toEqual([140, 220, 200, 100]);
   });
-  it('si se edita la imagen entre cambios, el nuevo diseño pasa a ser la referencia', () => {
+  it('mover en formatos de otra proporción no encoge el diseño (1×1 → 4×4 → 3×2 → 1×1, A3 horizontal)', () => {
+    const mem = newLayoutMemory(), base = { paper: 'A3', orient: 'landscape' } as const;
+    const g11 = geo(settings({ ...base, cols: 1, rows: 1 })), g44 = geo(settings({ ...base, cols: 4, rows: 4 }));
+    const g32 = geo(settings({ ...base, cols: 3, rows: 2 }));
+    const l = layer({ cx: 150, cy: 100 });
+    relayout([l], g11, g44, 'scale', mem);
+    l.cx += 80; // mueve en 4×4
+    relayout([l], g44, g32, 'scale', mem);
+    l.cy += 40; // mueve en 3×2
+    relayout([l], g32, g11, 'scale', mem);
+    close(l.w, 200, 1e-6); close(l.h, 100, 1e-6); // mismo tamaño que al empezar
+    const k44 = Math.min(g44.W / g11.W, g44.H / g11.H), k32 = Math.min(g32.W / g11.W, g32.H / g11.H);
+    close(l.cx, 150 + 80 / k44, 1e-6); close(l.cy, 100 + 40 / k32, 1e-6); // y desplazada lo que se movió, en proporción
+  });
+  it('una imagen agregada en otra distribución entra en el mismo diseño', () => {
+    const mem = newLayoutMemory(), g0 = geo(settings()), g1 = geo(settings({ cols: 4, rows: 4 }));
+    const a = layer({ cx: 100, cy: 100 });
+    relayout([a], g0, g1, 'scale', mem);
+    const b = layer({ cx: a.cx, cy: a.cy, w: a.w, h: a.h }); // una copia agregada en 4×4
+    relayout([a, b], g1, g0, 'scale', mem);
+    same(snapshot(b), snapshot(a));
+  });
+  it('si se edita la imagen entre cambios, al volver queda donde se dejó', () => {
     const mem = newLayoutMemory(), l = layer({ cx: 140, cy: 220 });
     const g0 = geo(settings()), g1 = geo(settings({ cols: 4, rows: 4 }));
     relayout([l], g0, g1, 'scale', mem);

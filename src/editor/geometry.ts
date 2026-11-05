@@ -258,21 +258,28 @@ export function applyFit(l: LayerGeom, fit: NonNullable<Fit>, g: Geo) {
 export type RelayoutMode = 'scale' | 'keep';
 
 /**
- * Memoria entre cambios de hojas, para poder volver exactamente atrás al escalar: el diseño se calcula siempre desde
- * la última versión que editó el usuario (ref), no encadenando escalados (con cambios de proporción, ida y vuelta no
- * daría lo mismo). applied: cómo dejó cada imagen el último cambio; si alguna ya no está así, el usuario la editó y
- * el diseño actual pasa a ser la nueva referencia.
+ * Espacio de diseño fijo (al escalar). El diseño vive en una medida que no cambia: la del póster en el que se empezó
+ * (design.W × design.H). Cada distribución es solo una vista de ese diseño, escalada para caber y centrada.
+ * Lo que el usuario mueve, escala o agrega en cualquier distribución se traduce de vuelta a esa medida, así que los
+ * márgenes que deja un cambio de proporción nunca pasan a formar parte del diseño ni se acumulan reducciones.
+ * applied: cómo dejó cada imagen el último cambio de hojas; si alguna ya no está así, el usuario la editó.
+ * Se reinicia cuando no queda ninguna imagen colocada a mano (p. ej. con «Nuevo») o al pasar a «Mantener tamaño».
  */
 export interface LayoutMemory {
-  ref: { W: number; H: number; geo: Map<object, Transform> } | null;
+  design: { W: number; H: number; geo: Map<object, Transform> } | null;
   applied: Map<object, Transform>;
 }
-export const newLayoutMemory = (): LayoutMemory => ({ ref: null, applied: new Map() });
+export const newLayoutMemory = (): LayoutMemory => ({ design: null, applied: new Map() });
 
 const tfOf = (l: Transform): Transform => ({ cx: l.cx, cy: l.cy, w: l.w, h: l.h, rot: l.rot, flipX: l.flipX, flipY: l.flipY });
 const sameTf = (a: Transform, b: Transform) =>
   Math.abs(a.cx - b.cx) < 1e-6 && Math.abs(a.cy - b.cy) < 1e-6 && Math.abs(a.w - b.w) < 1e-6 && Math.abs(a.h - b.h) < 1e-6
   && Math.abs(a.rot - b.rot) < 1e-6 && a.flipX === b.flipX && a.flipY === b.flipY;
+/** Cómo se ve el diseño en un póster de W × H: escala para caber y desplazamiento para quedar centrado. */
+const viewOf = (d: { W: number; H: number }, g: { W: number; H: number }) => {
+  const k = Math.min(g.W / d.W, g.H / d.H);
+  return { k, ox: (g.W - d.W * k) / 2, oy: (g.H - d.H * k) / 2 };
+};
 
 export function relayout(
   layers: (LayerGeom & { fit: Fit })[], prev: Geo, next: Geo, mode: RelayoutMode = 'scale', mem: LayoutMemory = newLayoutMemory(),
@@ -280,20 +287,27 @@ export function relayout(
   if (prev.W === next.W && prev.H === next.H) return;
   for (const l of layers) if (l.fit) applyFit(l, l.fit, next);
   const manual = layers.filter((l) => !l.fit);
-  if (mode === 'keep') { mem.ref = null; mem.applied.clear(); return; } // misma posición y tamaño en mm
+  if (mode === 'keep' || !manual.length) { mem.design = null; mem.applied.clear(); return; } // keep: misma posición y tamaño en mm
 
-  // ¿sigue valiendo la referencia? Solo si nadie tocó ni añadió imágenes desde el último cambio de hojas.
-  const ref = mem.ref;
-  const valid = !!ref && manual.length === mem.applied.size
-    && manual.every((l) => ref.geo.has(l) && mem.applied.has(l) && sameTf(tfOf(l), mem.applied.get(l)!));
-  const r = valid ? ref! : { W: prev.W, H: prev.H, geo: new Map<object, Transform>(manual.map((l) => [l, tfOf(l)])) };
-  mem.ref = r;
-  mem.applied.clear();
-  const s = Math.min(next.W / r.W, next.H / r.H);
+  // 1) pasar al diseño lo que el usuario cambió (o agregó) en la distribución actual
+  const d = mem.design ?? { W: prev.W, H: prev.H, geo: new Map<object, Transform>() };
+  mem.design = d;
+  const v0 = viewOf(d, prev);
+  const geo = new Map<object, Transform>();
   for (const l of manual) {
-    const g = r.geo.get(l)!;
-    l.cx = next.W / 2 + (g.cx - r.W / 2) * s; l.cy = next.H / 2 + (g.cy - r.H / 2) * s;
-    l.w = g.w * s; l.h = g.h * s;
+    const was = mem.applied.get(l), kept = d.geo.get(l);
+    if (was && kept && sameTf(tfOf(l), was)) { geo.set(l, kept); continue; }
+    geo.set(l, { ...tfOf(l), cx: (l.cx - v0.ox) / v0.k, cy: (l.cy - v0.oy) / v0.k, w: l.w / v0.k, h: l.h / v0.k });
+  }
+  d.geo = geo; // las imágenes quitadas salen del diseño
+
+  // 2) mostrar el diseño en el nuevo póster
+  const v = viewOf(d, next);
+  mem.applied.clear();
+  for (const l of manual) {
+    const g = geo.get(l)!;
+    l.cx = v.ox + g.cx * v.k; l.cy = v.oy + g.cy * v.k; l.w = g.w * v.k; l.h = g.h * v.k;
+    l.rot = g.rot; l.flipX = g.flipX; l.flipY = g.flipY;
     mem.applied.set(l, tfOf(l));
   }
 }
