@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   alignShifts, applyCropDrag, gridLevels, applyFit, boxInside, distributeShifts, unionBox, applyScale, bboxMM, conformCrop, cropCenter, cropPtsMM, fitLayer, geo, hasCutMarks, inside,
-  displaySide, flipOnScreen, isStretched, localToMM, markLen, mmToLocal, normDeg, panInFrame, pppOf, relayout, rotateLayer, srcDims, startScale,
+  displaySide, flipOnScreen, isStretched, localToMM, markLen, mmToLocal, newLayoutMemory, normDeg, panInFrame, pppOf, relayout,
+  rotateLayer, srcDims, startScale, type RelayoutMode,
   unstretch, visH, visW, zoomInFrame,
 } from './geometry';
 import type { Fit, LayerGeom, Settings, Source } from './types';
@@ -119,9 +120,9 @@ describe('recorte', () => {
 
 describe('cambio de distribución (relayout)', () => {
   /** Aplica una secuencia de distribuciones y devuelve la capa. */
-  const run = (l: ReturnType<typeof layer>, seq: Partial<Settings>[]) => {
+  const run = (l: ReturnType<typeof layer>, seq: Partial<Settings>[], mode: RelayoutMode = 'scale', mem = newLayoutMemory()) => {
     let prev = geo(settings(seq[0]));
-    for (const s of seq.slice(1)) { const next = geo(settings(s)); relayout([l], prev, next); prev = next; }
+    for (const s of seq.slice(1)) { const next = geo(settings(s)); relayout([l], prev, next, mode, mem); prev = next; }
     return l;
   };
   const snapshot = (l: ReturnType<typeof layer>) => ({ cx: l.cx, cy: l.cy, w: l.w, h: l.h });
@@ -147,9 +148,39 @@ describe('cambio de distribución (relayout)', () => {
     same(snapshot(run(fitted, seq)), fb);
   });
 
-  it('una imagen colocada a mano conserva su tamaño en cm', () => {
-    const l = run(layer(), [{}, { orient: 'landscape' }]);
-    expect(l.w).toBe(200); expect(l.h).toBe(100);
+  it.each([['escalar', 'scale'], ['mantener', 'keep']] as const)('ida y vuelta también en modo %s', (_, mode) => {
+    const l = layer({ cx: 140, cy: 220 }), before = snapshot(l);
+    same(snapshot(run(l, [{}, { cols: 4, rows: 4 }, { cols: 1, rows: 1 }, {}], mode)), before);
+  });
+  it('escalar: el diseño crece con el póster y queda centrado', () => {
+    const g0 = geo(settings({ cols: 2, rows: 2 })), g1 = geo(settings({ cols: 4, rows: 4 }));
+    const l = layer({ cx: g0.W / 2 + 30, cy: g0.H / 2 - 20 });
+    relayout([l], g0, g1, 'scale', newLayoutMemory());
+    const k = Math.min(g1.W / g0.W, g1.H / g0.H);
+    close(l.w, 200 * k, 1e-6); close(l.h, 100 * k, 1e-6);
+    close(l.cx, g1.W / 2 + 30 * k, 1e-6); close(l.cy, g1.H / 2 - 20 * k, 1e-6);
+  });
+  it('escalar: dos imágenes no se amontonan al reducir el póster (la distancia entre ellas se escala igual)', () => {
+    const g0 = geo(settings({ cols: 4, rows: 4 })), g1 = geo(settings({ cols: 1, rows: 1 }));
+    const a = layer({ cx: 200, cy: 200 }), b = layer({ cx: 200, cy: 600 });
+    relayout([a, b], g0, g1, 'scale', newLayoutMemory());
+    const k = Math.min(g1.W / g0.W, g1.H / g0.H);
+    close(b.cy - a.cy, 400 * k, 1e-6);
+    close(a.h, 100 * k, 1e-6);
+  });
+  it('mantener: conserva el tamaño en cm y la posición desde la esquina', () => {
+    const l = run(layer({ cx: 140, cy: 220 }), [{}, { orient: 'landscape' }], 'keep');
+    expect([l.cx, l.cy, l.w, l.h]).toEqual([140, 220, 200, 100]);
+  });
+  it('si se edita la imagen entre cambios, el nuevo diseño pasa a ser la referencia', () => {
+    const mem = newLayoutMemory(), l = layer({ cx: 140, cy: 220 });
+    const g0 = geo(settings()), g1 = geo(settings({ cols: 4, rows: 4 }));
+    relayout([l], g0, g1, 'scale', mem);
+    l.cx += 50; // el usuario la mueve en el póster grande
+    const moved = snapshot(l);
+    relayout([l], g1, g0, 'scale', mem);
+    relayout([l], g0, g1, 'scale', mem);
+    same(snapshot(l), moved); // vuelve a donde la dejó, no a donde estaba antes de moverla
   });
   it('una imagen ajustada se vuelve a ajustar al nuevo póster', () => {
     const g = geo(settings({ orient: 'landscape' })), l = layer({ fit: { mode: 'contain', scale: 1 } });

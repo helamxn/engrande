@@ -7,7 +7,7 @@ import { MAX_COLS_ROWS, PRESETS } from '../constants';
 import { $, $$, toast } from '../dom';
 import { cm, fmt1, parseNum } from '../format';
 import {
-  applyFit, bboxMM, cropCenter, isStretched, keepCenter, natRatio, normDeg, pppOf, qualityOf, relayout,
+  applyFit, bboxMM, cropCenter, isStretched, keepCenter, natRatio, newLayoutMemory, normDeg, pppOf, qualityOf, relayout,
   rotateLayer, scaleLayer, visH, visW,
 } from '../geometry';
 import { snap } from '../history';
@@ -20,7 +20,8 @@ import { ICON } from './icons';
 import { isPanelOff, openSheet, togglePanel } from './layout';
 import { initListDrag } from './listdrag';
 import { groupMenu, layerMenu, openMenu } from './menu';
-import type { Quality } from '../geometry';
+import type { Quality, RelayoutMode } from '../geometry';
+import { getPref, setPref } from '../prefs';
 import type { Geo, Layer, LayoutSettings, Orient, Paper } from '../types';
 
 /* ---------- pestañas (patrón ARIA tabs) ---------- */
@@ -44,9 +45,21 @@ export function focusName() {
 
 /* ---------- distribución de hojas ---------- */
 let prevG: Geo | null = null;
+/** Al cambiar las hojas: escalar el diseño (por defecto) o mantener el tamaño en cm. Se recuerda en este navegador. */
+let relayoutMode: RelayoutMode = getPref('relayout') === 'keep' ? 'keep' : 'scale';
+/** Diseño de referencia para que ir y volver entre distribuciones deje todo exactamente igual (ver relayout). */
+const layoutMem = newLayoutMemory();
+const RELAYOUT_NOTE: Record<RelayoutMode, string> = {
+  scale: 'Las imágenes crecen o se encogen con el póster, sin deformarse.',
+  keep: 'Las imágenes conservan sus cm y su posición desde la esquina superior izquierda.',
+};
+function syncRelayoutUI() {
+  for (const b of $$('[data-relayout]')) b.setAttribute('aria-pressed', String(b.dataset.relayout === relayoutMode));
+  $('#relayoutNote').textContent = RELAYOUT_NOTE[relayoutMode];
+}
 export function layoutChanged() {
   const g = posterGeo();
-  if (prevG) relayout(st.layers, prevG, g);
+  if (prevG) relayout(st.layers, prevG, g, relayoutMode, layoutMem);
   prevG = g;
   syncLayoutUI(); syncSel(); renderList(); fitView();
   scheduleSave();
@@ -388,6 +401,14 @@ export function initPanel() {
   });
   for (const b of $$('[data-paper]')) b.addEventListener('click', () => editLayout('paper', b.dataset.paper as Paper));
   for (const b of $$('[data-orient]')) b.addEventListener('click', () => editLayout('orient', b.dataset.orient as Orient));
+  for (const b of $$('[data-relayout]')) {
+    b.addEventListener('click', () => {
+      relayoutMode = b.dataset.relayout === 'keep' ? 'keep' : 'scale';
+      setPref('relayout', relayoutMode);
+      syncRelayoutUI();
+    });
+  }
+  syncRelayoutUI();
   $<HTMLInputElement>('#margin').addEventListener('input', (e) => editLayout('margin', +(e.target as HTMLInputElement).value, true));
   $<HTMLInputElement>('#overlap').addEventListener('input', (e) => editLayout('overlap', +(e.target as HTMLInputElement).value, true));
 

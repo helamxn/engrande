@@ -99,6 +99,15 @@ const tabs = [
         <button type="button" data-orient="landscape" aria-pressed="false">Horizontal</button>
       </div>
     </div>
+    <!-- qué pasa con las imágenes colocadas a mano al cambiar hojas, papel, orientación, margen o solape -->
+    <div class={field}>
+      <div class="lbl" id="lblRelayout">Al cambiar las hojas</div>
+      <div class="seg self-start" role="group" aria-labelledby="lblRelayout">
+        <button type="button" data-relayout="scale" aria-pressed="true">Escalar el diseño</button>
+        <button type="button" data-relayout="keep" aria-pressed="false">Mantener tamaño</button>
+      </div>
+      <p class="note" id="relayoutNote">Las imágenes crecen o se encogen con el póster, sin deformarse.</p>
+    </div>
     <div class={field}>
       <label class="lbl" for="margin">Margen sin imprimir <output id="marginOut">6 mm</output></label>
       <input type="range" id="margin" min="0" max="15" step="1" value="6" />

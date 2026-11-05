@@ -248,21 +248,53 @@ export function applyFit(l: LayerGeom, fit: NonNullable<Fit>, g: Geo) {
 }
 
 /**
- * Al cambiar papel, orientación, margen, solape u hojas:
- * - Imagen ajustada o llenada: se vuelve a ajustar al nuevo póster.
- * - Imagen colocada a mano: conserva su tamaño en cm (lo que se imprimirá) y el centro de su zona visible
- *   mantiene su posición relativa en el póster.
- * Las dos reglas son reversibles: volver a la distribución anterior deja la imagen exactamente igual.
- * (Antes se escalaba por min(sx, sy) en cada paso, y la imagen se encogía con cada ida y vuelta.)
+ * Qué hacer con las imágenes colocadas a mano al cambiar papel, orientación, margen, solape u hojas:
+ * - 'scale': escalar el diseño (como redimensionar en Canva). Todo crece o se encoge con el póster, sin deformarse
+ *   y centrado; si cambia la proporción quedan márgenes a los lados o arriba y abajo.
+ * - 'keep': mantener el tamaño en cm y la posición desde la esquina superior izquierda (como Figma con «izquierda y
+ *   arriba»): al quitar hojas lo que sobra queda fuera; al añadirlas aparece espacio libre a la derecha o abajo.
+ * Las imágenes ajustadas o llenadas (Ajustar / Llenar) se vuelven a ajustar al nuevo póster en los dos modos.
  */
-export function relayout(layers: (LayerGeom & { fit: Fit })[], prev: Geo, next: Geo) {
+export type RelayoutMode = 'scale' | 'keep';
+
+/**
+ * Memoria entre cambios de hojas, para poder volver exactamente atrás al escalar: el diseño se calcula siempre desde
+ * la última versión que editó el usuario (ref), no encadenando escalados (con cambios de proporción, ida y vuelta no
+ * daría lo mismo). applied: cómo dejó cada imagen el último cambio; si alguna ya no está así, el usuario la editó y
+ * el diseño actual pasa a ser la nueva referencia.
+ */
+export interface LayoutMemory {
+  ref: { W: number; H: number; geo: Map<object, Transform> } | null;
+  applied: Map<object, Transform>;
+}
+export const newLayoutMemory = (): LayoutMemory => ({ ref: null, applied: new Map() });
+
+const tfOf = (l: Transform): Transform => ({ cx: l.cx, cy: l.cy, w: l.w, h: l.h, rot: l.rot, flipX: l.flipX, flipY: l.flipY });
+const sameTf = (a: Transform, b: Transform) =>
+  Math.abs(a.cx - b.cx) < 1e-6 && Math.abs(a.cy - b.cy) < 1e-6 && Math.abs(a.w - b.w) < 1e-6 && Math.abs(a.h - b.h) < 1e-6
+  && Math.abs(a.rot - b.rot) < 1e-6 && a.flipX === b.flipX && a.flipY === b.flipY;
+
+export function relayout(
+  layers: (LayerGeom & { fit: Fit })[], prev: Geo, next: Geo, mode: RelayoutMode = 'scale', mem: LayoutMemory = newLayoutMemory(),
+) {
   if (prev.W === next.W && prev.H === next.H) return;
-  const sx = next.W / prev.W, sy = next.H / prev.H;
-  for (const l of layers) {
-    if (l.fit) { applyFit(l, l.fit, next); continue; }
-    const c = cropCenter(l);
-    l.cx += c.x * (sx - 1);
-    l.cy += c.y * (sy - 1);
+  for (const l of layers) if (l.fit) applyFit(l, l.fit, next);
+  const manual = layers.filter((l) => !l.fit);
+  if (mode === 'keep') { mem.ref = null; mem.applied.clear(); return; } // misma posición y tamaño en mm
+
+  // ¿sigue valiendo la referencia? Solo si nadie tocó ni añadió imágenes desde el último cambio de hojas.
+  const ref = mem.ref;
+  const valid = !!ref && manual.length === mem.applied.size
+    && manual.every((l) => ref.geo.has(l) && mem.applied.has(l) && sameTf(tfOf(l), mem.applied.get(l)!));
+  const r = valid ? ref! : { W: prev.W, H: prev.H, geo: new Map<object, Transform>(manual.map((l) => [l, tfOf(l)])) };
+  mem.ref = r;
+  mem.applied.clear();
+  const s = Math.min(next.W / r.W, next.H / r.H);
+  for (const l of manual) {
+    const g = r.geo.get(l)!;
+    l.cx = next.W / 2 + (g.cx - r.W / 2) * s; l.cy = next.H / 2 + (g.cy - r.H / 2) * s;
+    l.w = g.w * s; l.h = g.h * s;
+    mem.applied.set(l, tfOf(l));
   }
 }
 
