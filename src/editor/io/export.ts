@@ -20,7 +20,7 @@ const jspdf = () => (lib ??= import('jspdf'));
 
 /* ---------- estado de la interfaz ---------- */
 const setStatus = (t: string) => { $('#status').textContent = t; if (t) toast(t, 5000); };
-/** Progreso visible aunque la pestaña Exportar esté cerrada. */
+/** Progreso visible aunque la pestaña Descargar esté cerrada. */
 const progress = (t: string) => { $('#status').textContent = t; toast(t, 0); };
 function setBusy(b: boolean) {
   for (const s of ['#exportTiles', '#exportSingle', '#quickExport', '#marginTest']) $<HTMLButtonElement>(s).disabled = b;
@@ -104,14 +104,14 @@ function guidePage(pdf: JsPDF, g: Geo) {
   const dashed = S.marks ? 'sobre la línea discontinua' : `a ${Math.round(g.ov)} mm del borde de la vecina`;
   const steps = g.ov > 0
     ? [
-      '1. Imprime al 100 % (tamaño real) y sin "Ajustar a la página". La regla de abajo debe medir 10 cm.',
+      '1. Imprime al 100 % (tamaño real) y sin «Ajustar a la página». La regla de abajo debe medir 10 cm.',
       `2. En cada hoja, recorta el borde izquierdo y el superior ${by}`,
       '    (excepto la columna 1 y la fila A, que se quedan con su margen o lo recortas al final).',
       `3. Pon cada hoja encima de su vecina, con el borde recortado ${dashed}, y pega.`,
       '4. Arma fila por fila: A1, A2, A3... y luego une las filas entre sí.',
     ]
     : [
-      '1. Imprime al 100 % (tamaño real) y sin "Ajustar a la página". La regla de abajo debe medir 10 cm.',
+      '1. Imprime al 100 % (tamaño real) y sin «Ajustar a la página». La regla de abajo debe medir 10 cm.',
       `2. Recorta los cuatro bordes de cada hoja ${by}.`,
       '3. Une las hojas borde con borde y pégalas con cinta por detrás, siguiendo las letras y números.',
     ];
@@ -294,10 +294,10 @@ export async function exportMarginTest() {
     pdf.setTextColor(20, 20, 20); pdf.setFontSize(9.5);
     y += 9;
     for (const t of [
-      '1. Imprime esta hoja al 100 % (tamaño real), sin "Ajustar a la página".',
+      '1. Imprime esta hoja al 100 % (tamaño real), sin «Ajustar a la página».',
       '2. Mide la regla de abajo: debe medir exactamente 10 cm.',
       '3. En cada uno de los cuatro bordes, busca la primera raya que se imprimió completa y anota su número.',
-      '4. En Pliego, pon el número más alto de los cuatro como "Margen sin imprimir" (pestaña Hojas).',
+      '4. En Pliego, pon el número más alto de los cuatro como «Margen sin imprimir» (pestaña Hojas).',
     ]) {
       const lines = pdf.splitTextToSize(t, w) as string[];
       pdf.text(lines, cx, y);

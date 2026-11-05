@@ -57,9 +57,9 @@ export function renderBar() {
     h = `<span class="mini">${ICON.lock} Bloqueada</span>` + SEP + tb('lockOpen', 'Desbloquear', 'unlock')
       + tb('more', 'Más', 'more', 'Más opciones (clic derecho)', '', true);
   } else if (S.mode === 'move') {
-    h = tb('crop', 'Recortar', 'crop', 'Recortar (doble clic)') + tb('bg', 'Quitar fondo', 'autobg')
-      + tb('erase', 'Borrador', 'erase', 'Borrador (E)') + tb('wand', 'Varita', 'wand', 'Varita (W)')
-      + SEP + tb('rot', 'Girar', 'rotR', 'Girar 90°', '', true) + tb('flip', 'Espejo', 'flipX', 'Espejo horizontal', '', true)
+    h = tb('crop', 'Recortar', 'crop', 'Recortar (doble clic)') + tb('bg', 'Quitar fondo', 'autobg', 'Quitar el fondo (si es de un color)')
+      + tb('erase', 'Borrador', 'erase', 'Borrador: borra o recupera a mano (E)') + tb('wand', 'Varita', 'wand', 'Varita: borra un color (W)')
+      + SEP + tb('rot', 'Girar', 'rotR', 'Girar 90° (R)', '', true) + tb('flip', 'Voltear', 'flipX', 'Voltear en horizontal (H)', '', true)
       + SEP + tb('more', 'Más', 'more', 'Más opciones (clic derecho)', '', true) + tb('del', 'Quitar', 'delete', `Quitar del póster (${DELK})`, 'danger', true);
   } else if (S.mode === 'crop') {
     h = RATIOS.map(([t, r]) => `<button type="button" class="tb ratio" data-act="ratio" data-r="${String(r)}" aria-pressed="${S.cropRatioKey === String(r)}">${t}</button>`).join('')
@@ -72,7 +72,7 @@ export function renderBar() {
   } else if (S.mode === 'wand') {
     h = `<label class="mini">Tolerancia <input type="range" id="bTol" min="5" max="140" value="${S.tol}"><output id="bTolOut">${S.tol}</output></label>`
       + `<label class="mini"><input type="checkbox" id="bContig" ${S.contig ? 'checked' : ''}> Solo zona tocada</label>`
-      + SEP + tb('bg', 'Fondo auto', 'autobg', 'Quitar fondo automático') + tb('check', 'Listo', 'done', 'Listo (Esc)', 'primary');
+      + SEP + tb('bg', 'Quitar fondo', 'autobg', 'Quitar el fondo (si es de un color)') + tb('check', 'Listo', 'done', 'Listo (Esc)', 'primary');
   }
   bar.innerHTML = h; // solo constantes y números: sin datos del usuario
   bar.hidden = false;

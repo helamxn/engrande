@@ -33,8 +33,8 @@ async function fileToLayer(f: File): Promise<Layer | null> {
   const isPdf = f.type === 'application/pdf' || /\.pdf$/i.test(fname);
   const isSvg = f.type === 'image/svg+xml' || /\.svg$/i.test(fname);
   const isImg = f.type.startsWith('image/') || /\.(png|jpe?g|webp|gif|bmp|avif)$/i.test(fname);
-  if (!isPdf && !isImg && !isSvg) throw new LoadError(`“${fname}” no es una imagen ni un PDF`);
-  if (f.size > MAX_FILE_BYTES) throw new LoadError(`“${fname}” pesa ${MB(f.size)} MB. El máximo es ${MB(MAX_FILE_BYTES)} MB.`);
+  if (!isPdf && !isImg && !isSvg) throw new LoadError(`«${fname}» no es una imagen ni un PDF`);
+  if (f.size > MAX_FILE_BYTES) throw new LoadError(`«${fname}» pesa ${MB(f.size)} MB. El máximo es ${MB(MAX_FILE_BYTES)} MB.`);
 
   if (isPdf) {
     const doc = await openPdf(await f.arrayBuffer());
@@ -53,7 +53,7 @@ async function fileToLayer(f: File): Promise<Layer | null> {
   }
   const px = im.naturalWidth * im.naturalHeight;
   if (px > LIMITS.maxImagePixels) {
-    throw new LoadError(`“${fname}” tiene ${Math.round(px / 1e6)} megapíxeles. En este equipo el máximo es ${LIMITS.maxImagePixels / 1e6}.`);
+    throw new LoadError(`«${fname}» tiene ${Math.round(px / 1e6)} megapíxeles. En este equipo el máximo es ${LIMITS.maxImagePixels / 1e6}.`);
   }
   // se guarda el archivo original: el lienzo de trabajo es como máximo de MAX_SIDE, pero al exportar se usa la resolución completa
   return newLayer(makeCanvas(im, im.naturalWidth, im.naturalHeight), name, { src: { kind: 'img', blob: f, w: im.naturalWidth, h: im.naturalHeight } });
@@ -75,7 +75,7 @@ export async function loadFiles(list: Iterable<File | null> | ArrayLike<File | n
       added++;
     } catch (err) {
       console.error(err);
-      failed.push(err instanceof LoadError ? err.message : `No se pudo abrir “${f.name || 'el archivo'}”. Prueba con JPG, PNG o PDF.`);
+      failed.push(err instanceof LoadError ? err.message : `No se pudo abrir «${f.name || 'el archivo'}». Prueba con JPG, PNG o PDF.`);
     }
   }
   // los errores se muestran al final para que una carga correcta posterior no los tape

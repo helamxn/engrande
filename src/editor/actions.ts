@@ -71,7 +71,7 @@ export function toggleHidden(l: Layer) {
   if (l.hidden && st.sel === l) select(null);
   else if (l.hidden && st.group.includes(l)) selectMany(st.group.filter((x) => x !== l));
   afterChange();
-  toast(l.hidden ? `“${l.name}” oculta: no se imprimirá` : `“${l.name}” visible de nuevo`);
+  toast(l.hidden ? `«${l.name}» oculta: no se imprimirá` : `«${l.name}» visible de nuevo`);
 }
 
 const LOCKED_MSG = 'La imagen está bloqueada. Desbloquéala con el candado de la lista.';
@@ -84,7 +84,7 @@ export function toggleLocked(l: Layer) {
   l.locked = !l.locked;
   if (l.locked && st.group.includes(l)) selectMany(st.group.filter((x) => x !== l));
   afterChange(); renderBar();
-  toast(l.locked ? `“${l.name}” bloqueada: no se puede mover ni editar en el lienzo` : `“${l.name}” desbloqueada`);
+  toast(l.locked ? `«${l.name}» bloqueada: no se puede mover ni editar en el lienzo` : `«${l.name}» desbloqueada`);
 }
 /** Cambia el nombre (paso de deshacer). Devuelve false si no hay nada que cambiar. */
 export function renameLayer(l: Layer, name: string) {
@@ -112,7 +112,7 @@ export function hideSelected() {
   snap();
   for (const l of ls) l.hidden = true;
   select(null); scheduleSave();
-  toast(ls.length > 1 ? `${ls.length} imágenes ocultas: no se imprimirán` : `“${ls[0]!.name}” oculta: no se imprimirá`, 6000, { label: 'Deshacer', fn: undo });
+  toast(ls.length > 1 ? `${ls.length} imágenes ocultas: no se imprimirán` : `«${ls[0]!.name}» oculta: no se imprimirá`, 6000, { label: 'Deshacer', fn: undo });
 }
 /** Bloquea todas las seleccionadas (un paso de deshacer). Bloqueadas ya no se pueden seleccionar en el lienzo. */
 export function lockSelected() {
@@ -121,7 +121,7 @@ export function lockSelected() {
   snap();
   for (const l of ls) l.locked = true;
   select(null); scheduleSave();
-  toast(ls.length > 1 ? `${ls.length} imágenes bloqueadas` : `“${ls[0]!.name}” bloqueada`, 6000, { label: 'Deshacer', fn: undo });
+  toast(ls.length > 1 ? `${ls.length} imágenes bloqueadas` : `«${ls[0]!.name}» bloqueada`, 6000, { label: 'Deshacer', fn: undo });
 }
 
 export function select(l: Layer | null) {
@@ -208,7 +208,7 @@ export function copySelected() {
   if (!ls.length) return;
   st.clip = ls.map((l) => cloneLayer(l));
   st.clipN = 0;
-  toast(ls.length > 1 ? `${ls.length} imágenes copiadas` : 'Imagen copiada');
+  toast(ls.length > 1 ? `${ls.length} imágenes copiadas` : `«${ls[0]!.name}» copiada`);
 }
 /**
  * Cortar (Ctrl+X): copia lo seleccionado y lo quita del póster en un solo paso de deshacer.
@@ -225,7 +225,7 @@ export function cutSelected() {
   st.layers = st.layers.filter((x) => !ls.includes(x));
   select(null);
   scheduleSave();
-  toast(ls.length > 1 ? `${ls.length} imágenes cortadas` : `“${ls[0]!.name}” cortada`, 6000, { label: 'Deshacer', fn: undo });
+  toast(ls.length > 1 ? `${ls.length} imágenes cortadas` : `«${ls[0]!.name}» cortada`, 6000, { label: 'Deshacer', fn: undo });
 }
 
 /** Alinea las seleccionadas entre sí (con su caja común). */
@@ -283,7 +283,7 @@ export function removeLayer(l: Layer) {
   if (st.sel === l) select(null);
   else if (st.group.includes(l)) { selectMany(st.group.filter((x) => x !== l)); scheduleSave(); }
   else afterChange();
-  toast(`“${l.name}” quitada del póster`, 6000, { label: 'Deshacer', fn: undo });
+  toast(`«${l.name}» quitada del póster`, 6000, { label: 'Deshacer', fn: undo });
 }
 export function reorder(l: Layer, to: 'front' | 'back' | number) {
   const i = st.layers.indexOf(l);
@@ -301,7 +301,7 @@ export function duplicateLayer(l: Layer) {
   st.layers.splice(st.layers.indexOf(l) + 1, 0, d);
   select(d);
 }
-export function copyLayer(l: Layer) { st.clip = [cloneLayer(l)]; st.clipN = 0; toast('Imagen copiada'); }
+export function copyLayer(l: Layer) { st.clip = [cloneLayer(l)]; st.clipN = 0; toast(`«${l.name}» copiada`); }
 /** Pega lo copiado en Pliego (una o varias imágenes), cada vez un poco más desplazado. */
 export function pasteLayer() {
   const clip = st.clip;
@@ -339,7 +339,7 @@ const cursorFor = (m: Mode) => (m === 'wand' ? 'crosshair' : m === 'erase' ? 'no
 export function setMode(m: Mode) {
   if (S.mode === 'crop' && m !== 'crop') applyCrop();
   if (m === 'crop') { enterCrop(); return; }
-  if (m !== 'move' && !st.sel) { toast('Primero toca una imagen'); return; }
+  if (m !== 'move' && !st.sel) { toast('Primero selecciona una imagen'); return; }
   if (m !== 'move' && st.sel?.hidden) { toast('La imagen está oculta. Muéstrala para editarla.'); return; }
   if (m !== 'move' && st.sel?.locked) { toast(LOCKED_MSG); return; }
   S.mode = m;
@@ -503,7 +503,7 @@ export async function wandAt(p: Pt) {
   const l = st.sel;
   if (!l) return;
   const q = mmToPx(l, s2mm(p)), x = Math.floor(q.x), y = Math.floor(q.y), w = l.img.width;
-  if (x < 0 || y < 0 || x >= w || y >= l.img.height) { toast('Toca dentro de la imagen seleccionada'); return; }
+  if (x < 0 || y < 0 || x >= w || y >= l.img.height) { toast('Elige un punto dentro de la imagen seleccionada'); return; }
   const px = l.img.getContext('2d', { willReadFrequently: true })!.getImageData(x, y, 1, 1).data;
   if (px[3] === 0) { toast('Esa zona ya está vacía'); return; }
   const r = await applyPixelJob(l, { kind: 'wand', seeds: [y * w + x], ref: [px[0]!, px[1]!, px[2]!], tol: S.tol, contig: S.contig }, 'Borrando color…');
@@ -518,7 +518,7 @@ export async function autoBackground() {
   if (!r) return;
   if (r.error === 'transparent') toast('Los bordes ya están transparentes');
   else if (r.error === 'nouniform') toast('No encontré un fondo uniforme. Prueba con la varita.');
-  else toast(r.removed ? 'Fondo quitado. Retoca con la Varita o el Borrador si hace falta.' : 'No se borró nada. Sube la tolerancia en la Varita.');
+  else toast(r.removed ? 'Fondo quitado. Si queda algo, retócalo con la varita o el borrador.' : 'No se borró nada. Sube la tolerancia de la varita.');
 }
 export function resetOriginal(l: Layer) {
   if (l.locked) { toast(LOCKED_MSG); return; }

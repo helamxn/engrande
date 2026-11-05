@@ -111,8 +111,8 @@ export function syncSel() {
   $('#lockNote').hidden = !sel?.locked;
   const n = st.group.length;
   $('#selNote').textContent = n > 1
-    ? `${n} imágenes seleccionadas. Arrastra una para moverlas juntas; para alinearlas o repartirlas usa la barra ${dockMQ?.matches ? 'de abajo' : 'sobre el lienzo'}.`
-    : 'Toca una imagen en el lienzo o en la lista para ver su tamaño y posición.';
+    ? `${n} imágenes seleccionadas. Muévelas, escálalas o gíralas juntas en el lienzo; para alinearlas o repartirlas usa la barra ${dockMQ?.matches ? 'de abajo' : 'sobre el lienzo'}.`
+    : 'Selecciona una imagen en el lienzo o en la lista para ver y cambiar su tamaño, posición y opacidad.';
   if (sel) {
     setField('#pName', sel.name);
     const op = Math.round(sel.opacity * 100);
@@ -307,8 +307,10 @@ export function updateReadout() {
   out.appendChild(sheets);
   if (t) {
     const ppp = pppOf(t, HI_AREA), q = qualityOf(ppp);
-    const label = sel ? 'Seleccionada' : st.group.length > 1 ? `Peor de ${st.group.length} seleccionadas` : st.layers.length > 1 ? 'Peor imagen' : 'Imagen';
+    // «Calidad»: la nitidez al tamaño impreso. Con varias, la de la peor (es la que se notará).
+    const label = sel ? 'Calidad de la seleccionada' : st.group.length > 1 ? `Calidad (la peor de ${st.group.length})` : st.layers.length > 1 ? 'Calidad (la peor)' : 'Calidad';
     const s = item(label, `${ppp} ppp`);
+    s.title = 'Puntos por pulgada al tamaño impreso: 150 o más, buena; 100–150, aceptable; menos de 100, se verá pixelada.';
     const pill = document.createElement('span');
     pill.className = `pill q-${q}`;
     pill.textContent = q === 'good' ? 'buena' : q === 'warn' ? 'aceptable' : 'baja';
@@ -326,16 +328,16 @@ export function updateHint() {
   const H: Record<string, string> = {
     move: !st.layers.length ? 'Agrega una imagen para empezar'
       : st.group.length > 1 ? (t
-        ? `${st.group.length} seleccionadas · arrastra para moverlas · pellizca para escalar y girar · toca fuera para soltar`
-        : `${st.group.length} seleccionadas · arrastra para moverlas · esquinas: escalar · círculo: girar · Esc: soltar`)
+        ? `${st.group.length} seleccionadas · arrastra para moverlas · pellizca para escalar y girar · toca fuera para deseleccionar`
+        : `${st.group.length} seleccionadas · arrastra para moverlas · esquinas: escalar · círculo: girar · Esc: deseleccionar`)
       : sel?.hidden ? 'Imagen oculta: no se imprime · muéstrala con el ojo de la lista'
-      : sel ? (t ? 'Arrastra para mover · pellizca sobre la imagen para escalar y girar · toca fuera para soltar' : 'Esquinas: escalar · lados: estirar · punto superior: girar · clic fuera para soltar')
+      : sel ? (t ? 'Arrastra para mover · pellizca sobre la imagen para escalar y girar · toca fuera para deseleccionar' : 'Esquinas: escalar · lados: estirar · círculo: girar · clic fuera para deseleccionar')
         : (t ? 'Toca una imagen para seleccionarla · mantén pulsado para más opciones' : 'Clic en una imagen para seleccionarla · arrastra en el fondo para elegir varias · clic derecho: más opciones'),
     crop: t
       ? 'Arrastra la imagen para encuadrarla · pellizca para ampliarla · bordes: tamaño del recorte'
-      : `Arrastra la imagen para encuadrarla · rueda: ampliarla · bordes: tamaño del recorte (Shift: proporción, ${ALT}: desde el centro) · Enter aplica`,
+      : `Arrastra la imagen para encuadrarla · rueda: ampliarla · bordes: tamaño del recorte (Shift: proporción, ${ALT}: desde el centro) · Enter: aplicar`,
     erase: S.brushMode === 'erase' ? 'Pinta sobre la imagen para borrar' : 'Pinta para recuperar lo borrado',
-    wand: 'Toca un color de la imagen para borrarlo',
+    wand: t ? 'Toca un color de la imagen para borrarlo' : 'Haz clic en un color de la imagen para borrarlo',
   };
   hint.textContent = H[S.mode] ?? '';
   // con el póster vacío la pista sobra: la pantalla de inicio ya explica qué hacer

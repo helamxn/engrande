@@ -57,13 +57,13 @@ export function layerMenu(l: Layer, prev: Layer[] = []): MenuItem[] {
   const addTo = prev.filter((x) => !x.hidden && x !== l);
   return [
     ...(addTo.length && !l.hidden ? [
-      { label: `Añadir a la selección (${addTo.length + 1})`, icon: 'selectBox', fn: () => selectMany([...addTo, l]) } satisfies ActionItem,
+      { label: `Agregar a la selección (${addTo.length + 1})`, icon: 'selectBox', fn: () => selectMany([...addTo, l]) } satisfies ActionItem,
       '-' as const,
     ] : []),
     { label: 'Recortar', icon: 'crop', kbd: isTouch() ? 'Doble toque' : 'Doble clic', fn: () => { select(l); enterCrop(); }, disabled: locked },
     { label: 'Quitar fondo', icon: 'bg', fn: () => { select(l); autoBackground(); }, disabled: locked },
     {
-      label: 'Borrar a mano', icon: 'erase', disabled: locked, submenu: [
+      label: 'Borrar zonas', icon: 'erase', disabled: locked, submenu: [
         { label: 'Borrador', kbd: 'E', fn: () => { select(l); setMode('erase'); } },
         { label: 'Varita', kbd: 'W', fn: () => { select(l); setMode('wand'); } },
       ],
@@ -89,8 +89,8 @@ export function layerMenu(l: Layer, prev: Layer[] = []): MenuItem[] {
       label: 'Girar y voltear', icon: 'rot', disabled: l.locked, submenu: [
         { label: 'Girar 90° a la derecha', kbd: 'R', fn: rotate90(1) },
         { label: 'Girar 90° a la izquierda', kbd: SHIFT + 'R', fn: rotate90(-1) },
-        { label: 'Espejo horizontal', kbd: 'H', fn: flip('x') },
-        { label: 'Espejo vertical', kbd: SHIFT + 'H', fn: flip('y') },
+        { label: 'Voltear en horizontal', kbd: 'H', fn: flip('x') },
+        { label: 'Voltear en vertical', kbd: SHIFT + 'H', fn: flip('y') },
       ],
     },
     {
@@ -136,7 +136,7 @@ export function groupMenu(): MenuItem[] {
     { label: 'Ocultar las ' + n, icon: 'eyeOff', fn: hideSelected },
     { label: 'Bloquear las ' + n, icon: 'lock', fn: lockSelected },
     '-',
-    { label: 'Soltar la selección', icon: 'x', kbd: 'Esc', fn: () => select(null) },
+    { label: 'Deseleccionar', icon: 'x', kbd: 'Esc', fn: () => select(null) },
     { label: `Quitar ${n} del póster`, icon: 'del', kbd: DELK, fn: removeSelected, danger: true },
   ];
 }

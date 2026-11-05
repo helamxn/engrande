@@ -1,12 +1,12 @@
 ---
 import Icon from './Icon.astro';
-/** Panel lateral con tres pestañas: Hojas, Imágenes y Exportar. En escritorio flota a la derecha y se puede plegar. */
+/** Panel lateral con tres pestañas: Hojas, Imágenes y Descargar. En escritorio flota a la derecha y se puede plegar. */
 const pane = 'flex min-h-0 flex-1 flex-col gap-[18px] overflow-x-hidden overflow-y-auto overscroll-contain p-4';
 const field = 'flex flex-col gap-2';
 const tabs = [
   { id: 'sheets', label: 'Hojas' },
   { id: 'image', label: 'Imágenes' },
-  { id: 'export', label: 'Exportar' },
+  { id: 'export', label: 'Descargar' },
 ];
 ---
 
@@ -121,7 +121,7 @@ const tabs = [
 
   <!-- Imágenes -->
   <div class={pane} role="tabpanel" id="pane-image" aria-labelledby="tab-image" data-pane="image" hidden>
-    <p class="sel-note" id="selNote">Toca una imagen en el lienzo o en la lista para ver su tamaño y posición.</p>
+    <p class="sel-note" id="selNote">Selecciona una imagen en el lienzo o en la lista para ver y cambiar su tamaño, posición y opacidad.</p>
     <!-- aviso con la imagen bloqueada: sus medidas no se pueden cambiar hasta desbloquearla -->
     <p class="sel-note !block" id="lockNote" hidden>Imagen bloqueada: no se puede mover ni editar. Desbloquéala con el candado de la lista.</p>
     <!-- varias seleccionadas: lo que se puede cambiar a la vez -->
@@ -186,16 +186,16 @@ const tabs = [
     </button>
   </div>
 
-  <!-- Exportar -->
+  <!-- Descargar -->
   <div class={pane} role="tabpanel" id="pane-export" aria-labelledby="tab-export" data-pane="export" hidden>
     <div class={field}>
-      <div class="lbl" id="lblDpi">Calidad</div>
+      <div class="lbl" id="lblDpi">Resolución del PDF</div>
       <div class="seg self-start" role="group" aria-labelledby="lblDpi">
         <button type="button" data-dpi="150" aria-pressed="true">150 ppp</button>
         <button type="button" data-dpi="200" aria-pressed="false">200 ppp</button>
         <button type="button" data-dpi="300" aria-pressed="false">300 ppp</button>
       </div>
-      <p class="note">150 ppp basta para un póster visto a un metro. 300 ppp genera archivos mucho más pesados.</p>
+      <p class="note">Puntos por pulgada (ppp). 150 basta para un póster que se mira a un metro; 300 da archivos mucho más pesados.</p>
     </div>
     <label class="check"><input type="checkbox" id="marks" checked /><span>Marcas de corte y de solape<small>Esquinas para recortar y línea discontinua donde va la hoja vecina.</small></span></label>
     <label class="check"><input type="checkbox" id="guide" checked /><span>Página de guía de armado<small>Primera página con el mapa de hojas y los pasos.</small></span></label>
@@ -204,7 +204,7 @@ const tabs = [
       <button type="button" class="btn" id="exportSingle">PDF en una sola hoja grande (para imprenta)</button>
       <div class="min-h-[1.2em] font-mono text-[.8rem] text-muted" id="status" aria-live="polite"></div>
     </div>
-    <p class="note">Al imprimir, elige <strong>tamaño real / 100 %</strong> y desactiva “Ajustar a la página”. Si no, las hojas no encajarán.</p>
+    <p class="note">Al imprimir, elige <strong>tamaño real / 100 %</strong> y desactiva «Ajustar a la página». Si no, las hojas no encajarán.</p>
   </div>
 </aside>
 
