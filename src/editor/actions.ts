@@ -93,15 +93,35 @@ export function renameLayer(l: Layer, name: string) {
   snap(); l.name = n; afterChange();
   return true;
 }
-/** Opacidad desde el deslizador: un arrastre seguido es un solo paso de deshacer. */
-let opacityEdit: { l: Layer | null; t: number } = { l: null, t: 0 };
-export function setOpacity(l: Layer, v: number) {
-  if (l.locked) { toast(LOCKED_MSG); return; }
+/** Opacidad desde el deslizador (una imagen o todas las seleccionadas): un arrastre seguido es un solo paso de deshacer. */
+let opacityEdit: { key: Layer | null; t: number } = { key: null, t: 0 };
+export function setOpacity(l: Layer | Layer[], v: number) {
+  const ls = Array.isArray(l) ? l : [l];
+  if (!ls.length) return;
+  if (ls.some((x) => x.locked)) { toast(LOCKED_MSG); return; }
   const now = performance.now();
-  if (!(opacityEdit.l === l && now - opacityEdit.t < 1000)) snap();
-  opacityEdit = { l, t: now };
-  l.opacity = Math.min(1, Math.max(0.05, v));
+  if (!(opacityEdit.key === ls[0] && now - opacityEdit.t < 1000)) snap();
+  opacityEdit = { key: ls[0]!, t: now };
+  for (const x of ls) x.opacity = Math.min(1, Math.max(0.05, v));
   dirty(); scheduleSave();
+}
+/** Oculta todas las seleccionadas (un paso de deshacer). */
+export function hideSelected() {
+  const ls = selected();
+  if (!ls.length) return;
+  snap();
+  for (const l of ls) l.hidden = true;
+  select(null); scheduleSave();
+  toast(ls.length > 1 ? `${ls.length} imágenes ocultas: no se imprimirán` : `“${ls[0]!.name}” oculta: no se imprimirá`, 6000, { label: 'Deshacer', fn: undo });
+}
+/** Bloquea todas las seleccionadas (un paso de deshacer). Bloqueadas ya no se pueden seleccionar en el lienzo. */
+export function lockSelected() {
+  const ls = selected();
+  if (!ls.length) return;
+  snap();
+  for (const l of ls) l.locked = true;
+  select(null); scheduleSave();
+  toast(ls.length > 1 ? `${ls.length} imágenes bloqueadas` : `“${ls[0]!.name}” bloqueada`, 6000, { label: 'Deshacer', fn: undo });
 }
 
 export function select(l: Layer | null) {

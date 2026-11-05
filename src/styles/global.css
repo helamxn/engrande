@@ -11,7 +11,7 @@
 :root {
   --bg: #eceff3; --panel: #ffffff; --fg: #16202a; --muted: #5a6977; --line: #d3dae2;
   --accent: #0b6a94; --accent-ink: #ffffff; --accent-soft: #e1eff6;
-  --mark: #c21a5a; --desk: #dce2e9; --dot: #b3bdc8; --chk1: #f4f6f8; --chk2: #e3e8ee;
+  --mark: #c21a5a; --desk: #dce2e9; --grid: #b9c3ce; --chk1: #f4f6f8; --chk2: #e3e8ee;
   --good: #2e7d4f; --warn: #b26a00; --bad: #c0392b;
   --shadow: rgba(10, 20, 30, .18);
   color-scheme: light;
@@ -20,7 +20,7 @@
   :root:not([data-theme="light"]) {
     --bg: #0f1418; --panel: #161d23; --fg: #e4ebf1; --muted: #8d9fae; --line: #29343e;
     --accent: #4db3df; --accent-ink: #04202d; --accent-soft: #133040;
-    --mark: #f0679a; --desk: #0a0e11; --dot: #27323b; --chk1: #2a3138; --chk2: #20262c;
+    --mark: #f0679a; --desk: #0a0e11; --grid: #26313a; --chk1: #2a3138; --chk2: #20262c;
     --good: #5cc489; --warn: #e3a33d; --bad: #ef6b5b; --shadow: rgba(0, 0, 0, .5);
     color-scheme: dark;
   }
@@ -28,7 +28,7 @@
 :root[data-theme="dark"] {
   --bg: #0f1418; --panel: #161d23; --fg: #e4ebf1; --muted: #8d9fae; --line: #29343e;
   --accent: #4db3df; --accent-ink: #04202d; --accent-soft: #133040;
-  --mark: #f0679a; --desk: #0a0e11; --dot: #27323b; --chk1: #2a3138; --chk2: #20262c;
+  --mark: #f0679a; --desk: #0a0e11; --grid: #26313a; --chk1: #2a3138; --chk2: #20262c;
   --good: #5cc489; --warn: #e3a33d; --bad: #ef6b5b; --shadow: rgba(0, 0, 0, .5);
   color-scheme: dark;
 }
@@ -194,6 +194,9 @@
   .no-sel .sel-note { @apply block; }
   /* !important: estos bloques llevan utilidades de display (flex) que, por capa, ganarían a esta regla */
   .no-sel .needs-sel { display: none !important; }
+  /* varias seleccionadas: opacidad, ocultar y bloquear para todas */
+  .needs-group { display: none; }
+  .has-group .needs-group { display: flex; }
   /* imagen bloqueada: se ve su nombre, pero no las medidas que no se pueden cambiar */
   .sel-locked .edit-sel { display: none !important; }
 

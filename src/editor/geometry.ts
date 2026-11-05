@@ -79,6 +79,23 @@ export function bboxMM(l: LayerGeom): Box {
   return { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) };
 }
 
+/* ---------- rejilla del fondo ---------- */
+/** Separaciones de la rejilla en mm: 1 cm, 5 cm, 10 cm, 50 cm, 1 m, 5 m, 10 m (cada una divide a la siguiente). */
+export const GRID_STEPS = [10, 50, 100, 500, 1000, 5000, 10000];
+const GRID_FADE: readonly [number, number] = [6, 36];
+/**
+ * Niveles de la rejilla visibles con la escala k (px por mm) y su opacidad 0..1. Cada nivel aparece poco a poco
+ * según crece su separación en pantalla (de 6 a 36 px), así que al hacer zoom las líneas finas se desvanecen
+ * o aparecen sin saltos, y las de 5 y 10 cm quedan más marcadas que las de 1 cm.
+ */
+export function gridLevels(k: number): { step: number; alpha: number }[] {
+  const [a, b] = GRID_FADE;
+  return GRID_STEPS.map((step) => {
+    const t = Math.min(1, Math.max(0, (step * k - a) / (b - a)));
+    return { step, alpha: t * t * (3 - 2 * t) };
+  }).filter((g) => g.alpha > 0.01);
+}
+
 /* ---------- varias imágenes: caja común, alinear y distribuir ---------- */
 export interface Box { x0: number; y0: number; x1: number; y1: number }
 export type AlignEdge = 'left' | 'hcenter' | 'right' | 'top' | 'vcenter' | 'bottom';

@@ -10,7 +10,7 @@ import {
 import { commitPending, setPending, snap, takeSnap, undo } from '../history';
 import { scheduleSave } from '../io/persist';
 import { lastPointerType, setLastPointer } from '../platform';
-import { boxHandles, dirty, handleCursor, nearest } from '../render';
+import { boxHandles, dirty, groupCorner, groupCursor, groupFrameMM, groupHandles, handleCursor, nearest } from '../render';
 import { S, st, V } from '../state';
 import { panBy, s2mm, zoomAt } from '../view';
 import { closeMenu, emptyMenu, groupMenu, layerMenu, openMenu } from '../ui/menu';
@@ -24,6 +24,10 @@ type Drag =
   | { t: 'move'; m0: Pt; items: { l: Layer; x: number; y: number }[] }
   /** Recuadro de selección (ratón o lápiz sobre el fondo). add: con Shift/Ctrl se suma a lo que ya había. */
   | { t: 'marquee'; a: Pt; add: boolean; base: Layer[]; moved: boolean }
+  /** Escalar el grupo desde una esquina: corner (la que se arrastra), opp (la opuesta) y center, en mm. */
+  | { t: 'gscale'; corner: Pt; opp: Pt; center: Pt; items: { l: Layer; g: LayerGeom }[] }
+  /** Girar el grupo alrededor del centro de su marco; frame0: el marco al empezar. */
+  | { t: 'grot'; pivot: Pt; a0: number; frame0: Pt[]; items: { l: Layer; g: LayerGeom }[] }
   | { t: 'rot'; cc: Pt; a0: number; r0: number }
   /** Recortar: la imagen se arrastra bajo el marco de recorte, que queda fijo. */
   | { t: 'frame'; m0: Pt; start: LayerGeom }
@@ -33,7 +37,7 @@ type Drag =
   | CropDrag;
 
 /** Pellizco con dos dedos: zoom de la vista, transformar la imagen o (al recortar) encuadrarla en el marco. */
-interface Gesture { cx: number; cy: number; d: number; a: number; mode: 'view' | 'layer' | 'frame' }
+interface Gesture { cx: number; cy: number; d: number; a: number; mode: 'view' | 'layer' | 'frame' | 'group' }
 
 const geomOf = (l: Layer): LayerGeom => ({
   cx: l.cx, cy: l.cy, w: l.w, h: l.h, rot: l.rot, flipX: l.flipX, flipY: l.flipY, crop: { ...l.crop }, img: l.img,
@@ -71,6 +75,18 @@ function gInfo(mode: Gesture['mode']): Gesture {
   return { cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2, d: Math.max(1, Math.hypot(b.x - a.x, b.y - a.y)), a: Math.atan2(b.y - a.y, b.x - a.x), mode };
 }
 const clearLP = () => { if (lpTimer) clearTimeout(lpTimer); lpTimer = null; };
+/** Vuelve a la posición del inicio del gesto (escalar o girar el grupo se calcula siempre desde ahí, sin acumular errores). */
+const restoreGeom = (l: Layer, g: LayerGeom) => { l.cx = g.cx; l.cy = g.cy; l.w = g.w; l.h = g.h; l.rot = g.rot; };
+const rotPt = (p: Pt, c: Pt, deg: number): Pt => {
+  const a = (deg * Math.PI) / 180, cs = Math.cos(a), sn = Math.sin(a), dx = p.x - c.x, dy = p.y - c.y;
+  return { x: c.x + dx * cs - dy * sn, y: c.y + dx * sn + dy * cs };
+};
+/** El punto (mm) está dentro del marco del grupo. */
+function inGroupFrame(m: Pt) {
+  if (st.group.length < 2) return false;
+  const f = groupFrameMM(), xs = f.map((p) => p.x), ys = f.map((p) => p.y);
+  return m.x >= Math.min(...xs) && m.x <= Math.max(...xs) && m.y >= Math.min(...ys) && m.y <= Math.max(...ys);
+}
 const startMove = (m: Pt): Drag => ({ t: 'move', m0: m, items: selected().map((l) => ({ l, x: l.cx, y: l.cy })) });
 
 /** Imágenes visibles que caben enteras en el recuadro (como en Excalidraw: así un fondo grande no se cuela). */
@@ -108,11 +124,12 @@ export function initPointer(cv: HTMLCanvasElement) {
       // Al recortar, pellizcar sobre la imagen la amplía o reduce dentro del marco.
       drag = null;
       const g0 = gInfo('view'), c0 = s2mm({ x: g0.cx, y: g0.cy }), sel = st.sel;
-      const mode = !sel || !touchable(sel) ? 'view'
-        : S.mode === 'move' && inside(sel, c0) ? 'layer'
-          : S.mode === 'crop' && insideImage(sel, c0) ? 'frame' : 'view';
+      const mode = S.mode === 'move' && inGroupFrame(c0) ? 'group'
+        : !sel || !touchable(sel) ? 'view'
+          : S.mode === 'move' && inside(sel, c0) ? 'layer'
+            : S.mode === 'crop' && insideImage(sel, c0) ? 'frame' : 'view';
       gest = { ...g0, mode };
-      setPending(mode === 'layer' ? takeSnap() : null);
+      setPending(mode === 'layer' || mode === 'group' ? takeSnap() : null);
       dirty();
       return;
     }
@@ -136,6 +153,18 @@ export function initPointer(cv: HTMLCanvasElement) {
     if (e.button === 1 || spaceDown) { drag = { t: 'pan', last: p }; return; }
 
     if (S.mode === 'move') {
+      if (st.group.length > 1) {
+        // tiradores del grupo: esquinas para escalar todas a la vez, círculo para girarlas
+        const h = nearest(groupHandles(), p, R);
+        if (h) {
+          setPending(takeSnap());
+          const fr = groupFrameMM(), center = { x: (fr[0]!.x + fr[2]!.x) / 2, y: (fr[0]!.y + fr[2]!.y) / 2 };
+          const items = st.group.map((l) => ({ l, g: geomOf(l) }));
+          if (h.id === 'rot') drag = { t: 'grot', pivot: center, a0: Math.atan2(m.y - center.y, m.x - center.x), frame0: fr, items };
+          else { const i = groupCorner(h.id); drag = { t: 'gscale', corner: fr[i]!, opp: fr[(i + 2) % 4]!, center, items }; }
+          return;
+        }
+      }
       if (sel && touchable(sel)) {
         const h = nearest(boxHandles(sel, true), p, R);
         if (h) {
@@ -187,6 +216,8 @@ export function initPointer(cv: HTMLCanvasElement) {
       const prevHoverL = st.hoverL;
       if (e.pointerType === 'mouse') {
         if (S.mode === 'move') {
+          const gh = st.group.length > 1 ? nearest(groupHandles(), p, 11) : null;
+          if (gh) { st.hoverL = null; setCursor(groupCursor(gh.id)); if (st.hoverL !== prevHoverL) dirty(); return; }
           const h = sel && touchable(sel) && nearest(boxHandles(sel, true), p, 11);
           st.hoverL = h ? null : hitLayer(p, false);
           setCursor(h && sel ? handleCursor(sel, h.id) : st.hoverL ? (e.altKey ? 'copy' : 'move') : 'default');
@@ -213,6 +244,15 @@ export function initPointer(cv: HTMLCanvasElement) {
         scaleLayer(sel, n.d / gest.d, pv);
         rotateLayer(sel, ((n.a - gest.a) * 180) / Math.PI, pv);
         syncSel();
+      } else if (gest.mode === 'group') {
+        // pellizco sobre el grupo: mover, escalar y girar todas alrededor de los dedos
+        commitPending();
+        const d = ((n.a - gest.a) * 180) / Math.PI;
+        for (const l of st.group) {
+          l.cx += pv.x - pp.x; l.cy += pv.y - pp.y;
+          scaleLayer(l, n.d / gest.d, pv); rotateLayer(l, d, pv); markManual(l);
+        }
+        syncSel();
       } else if (gest.mode === 'frame' && sel) {
         // encuadre con dos dedos: desplazar y ampliar la imagen bajo el marco fijo (sin girar)
         panInFrame(sel, geomOf(sel), { x: pv.x - pp.x, y: pv.y - pp.y });
@@ -231,6 +271,24 @@ export function initPointer(cv: HTMLCanvasElement) {
         let dx = m.x - drag.m0.x, dy = m.y - drag.m0.y;
         if (e.shiftKey) { if (Math.abs(dx) > Math.abs(dy)) dy = 0; else dx = 0; }
         for (const it of drag.items) { it.l.cx = it.x + dx; it.l.cy = it.y + dy; markManual(it.l); }
+        syncSel(); break;
+      }
+      case 'gscale': {
+        commitPending();
+        // Alt: desde el centro; si no, la esquina opuesta queda fija. Siempre sin deformar.
+        const P = e.altKey ? drag.center : drag.opp;
+        const vx = drag.corner.x - P.x, vy = drag.corner.y - P.y, L2 = vx * vx + vy * vy || 1;
+        const f = Math.max(0.05, ((m.x - P.x) * vx + (m.y - P.y) * vy) / L2);
+        for (const it of drag.items) { restoreGeom(it.l, it.g); scaleLayer(it.l, f, P); markManual(it.l); }
+        syncSel(); break;
+      }
+      case 'grot': {
+        commitPending();
+        let d = ((Math.atan2(m.y - drag.pivot.y, m.x - drag.pivot.x) - drag.a0) * 180) / Math.PI;
+        if (e.shiftKey) d = Math.round(d / 15) * 15;
+        for (const it of drag.items) { restoreGeom(it.l, it.g); rotateLayer(it.l, d, drag.pivot); markManual(it.l); }
+        const pivot = drag.pivot;
+        st.groupFrame = drag.frame0.map((q) => rotPt(q, pivot, d));
         syncSel(); break;
       }
       case 'marquee': {
@@ -276,7 +334,11 @@ export function initPointer(cv: HTMLCanvasElement) {
       if (sel && inside(sel, s2mm(p))) wandAt(p);
       else { const hit = hitLayer(p); if (hit) select(hit); else setMode('move'); }
     }
-    if ((drag && ['paint', 'scale', 'crop', 'frame', 'move', 'rot'].includes(drag.t)) || gest?.mode === 'layer') { renderList(); syncSel(); scheduleSave(); }
+    if ((drag && ['paint', 'scale', 'crop', 'frame', 'move', 'rot', 'gscale', 'grot'].includes(drag.t)) || gest?.mode === 'layer' || gest?.mode === 'group') {
+      renderList(); syncSel(); scheduleSave();
+    }
+    // al soltar el giro, el marco vuelve a ser la caja común (alineada con la pantalla)
+    if (drag?.t === 'grot') st.groupFrame = null;
     if (drag?.t === 'frame' && e.pointerType === 'mouse') cv.style.cursor = 'grab';
     ptrs.delete(e.pointerId);
     if (ptrs.size < 2) { if (gest) renderList(); gest = null; }

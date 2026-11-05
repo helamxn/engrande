@@ -9,7 +9,7 @@
 import {
   alignSelected, copyLayer, copySelected, distributeSelected, duplicateLayer, duplicateSelected, enterCrop, fitSel,
   centerSel, flip, newPoster, pasteLayer, removeLayer, removeSelected, reorder, resetOriginal, rotate90, select,
-  selectAll, selectMany, setMode, toggleHidden, toggleLocked, unstretchSel, autoBackground,
+  selectAll, selectMany, setMode, toggleHidden, toggleLocked, unstretchSel, autoBackground, hideSelected, lockSelected,
 } from '../actions';
 import { focusName } from './panel';
 import { $, toast } from '../dom';
@@ -129,6 +129,9 @@ export function groupMenu(): MenuItem[] {
         { label: 'En vertical', fn: () => distributeSelected('y') },
       ],
     },
+    '-',
+    { label: 'Ocultar las ' + n, icon: 'eyeOff', fn: hideSelected },
+    { label: 'Bloquear las ' + n, icon: 'lock', fn: lockSelected },
     '-',
     { label: 'Soltar la selección', icon: 'x', kbd: 'Esc', fn: () => select(null) },
     { label: `Quitar ${n} del póster`, icon: 'del', kbd: DELK, fn: removeSelected, danger: true },

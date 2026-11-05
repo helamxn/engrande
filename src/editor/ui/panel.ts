@@ -1,7 +1,7 @@
 /** Panel lateral: pestañas, ajustes de hojas, propiedades de la imagen, lista de imágenes, exportación y lectura. */
 import {
-  afterChange, centerSel, fitSel, markManual, renameLayer, select, setOpacity, toggleHidden, toggleInSelection,
-  toggleLocked, unstretchSel,
+  afterChange, centerSel, fitSel, hideSelected, lockSelected, markManual, renameLayer, select, setOpacity,
+  toggleHidden, toggleInSelection, toggleLocked, unstretchSel,
 } from '../actions';
 import { MAX_COLS_ROWS, PRESETS } from '../constants';
 import { $, $$, toast } from '../dom';
@@ -100,6 +100,13 @@ export function syncSel() {
   const sel = st.sel;
   document.body.classList.toggle('no-sel', !sel);
   document.body.classList.toggle('sel-locked', !!sel?.locked);
+  document.body.classList.toggle('has-group', st.group.length > 1);
+  if (st.group.length > 1) {
+    // opacidad común; si son distintas se muestra «varias» y el deslizador en la mayor
+    const ops = st.group.map((l) => Math.round(l.opacity * 100)), same = ops.every((o) => o === ops[0]);
+    setField('#gOpacity', Math.max(...ops));
+    $('#gOpacityOut').textContent = same ? `${ops[0]} %` : 'varias';
+  }
   $('#lockNote').hidden = !sel?.locked;
   const n = st.group.length;
   $('#selNote').textContent = n > 1
@@ -297,8 +304,8 @@ export function updateHint() {
   const H: Record<string, string> = {
     move: !st.layers.length ? 'Agrega una imagen para empezar'
       : st.group.length > 1 ? (t
-        ? `${st.group.length} seleccionadas · arrastra una para moverlas juntas · toca fuera para soltar`
-        : `${st.group.length} seleccionadas · arrastra para moverlas juntas · Shift o Ctrl + clic: añadir o quitar · Esc: soltar`)
+        ? `${st.group.length} seleccionadas · arrastra para moverlas · pellizca para escalar y girar · toca fuera para soltar`
+        : `${st.group.length} seleccionadas · arrastra para moverlas · esquinas: escalar · círculo: girar · Esc: soltar`)
       : sel?.hidden ? 'Imagen oculta: no se imprime · muéstrala con el ojo de la lista'
       : sel ? (t ? 'Arrastra para mover · pellizca sobre la imagen para escalar y girar · toca fuera para soltar' : 'Esquinas: escalar · lados: estirar · punto superior: girar · clic fuera para soltar')
         : (t ? 'Toca una imagen para seleccionarla · mantén pulsado para más opciones' : 'Clic en una imagen para seleccionarla · arrastra en el fondo para elegir varias · clic derecho: más opciones'),
@@ -363,6 +370,15 @@ export function initPanel() {
     $('#pOpacityOut').textContent = `${opacity.value} %`;
   });
   opacity.addEventListener('change', () => renderList());
+  const gOpacity = $<HTMLInputElement>('#gOpacity');
+  gOpacity.addEventListener('input', () => {
+    if (st.group.length < 2) return;
+    setOpacity(st.group, +gOpacity.value / 100);
+    $('#gOpacityOut').textContent = `${gOpacity.value} %`;
+  });
+  gOpacity.addEventListener('change', () => renderList());
+  $('#gHide').addEventListener('click', hideSelected);
+  $('#gLock').addEventListener('click', lockSelected);
   numField('#pW', (l, v) => { const f = Math.max(3, v * 10) / visW(l); if (S.lock) scaleLayer(l, f, cropCenter(l)); else keepCenter(l, (x) => { x.w *= f; }); markManual(l); });
   numField('#pH', (l, v) => { const f = Math.max(3, v * 10) / visH(l); if (S.lock) scaleLayer(l, f, cropCenter(l)); else keepCenter(l, (x) => { x.h *= f; }); markManual(l); });
   numField('#pX', (l, v) => { l.cx += v * 10 - bboxMM(l).x0; markManual(l); });
@@ -372,7 +388,7 @@ export function initPanel() {
     S.lock = !S.lock;
     const b = $('#pLock');
     b.setAttribute('aria-pressed', String(S.lock));
-    b.innerHTML = ICON[S.lock ? 'lock' : 'lockOpen']; // constante del código
+    b.innerHTML = ICON[S.lock ? 'ratioOn' : 'ratioOff']; // constante del código
   });
   $('#unstretch').addEventListener('click', unstretchSel);
   $('#fitContain').addEventListener('click', fitSel('contain'));

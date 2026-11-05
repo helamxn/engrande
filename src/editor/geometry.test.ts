@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  alignShifts, applyCropDrag, applyFit, boxInside, distributeShifts, unionBox, applyScale, bboxMM, conformCrop, cropCenter, cropPtsMM, fitLayer, geo, hasCutMarks, inside,
+  alignShifts, applyCropDrag, gridLevels, applyFit, boxInside, distributeShifts, unionBox, applyScale, bboxMM, conformCrop, cropCenter, cropPtsMM, fitLayer, geo, hasCutMarks, inside,
   displaySide, flipOnScreen, isStretched, localToMM, markLen, mmToLocal, normDeg, panInFrame, pppOf, relayout, rotateLayer, srcDims, startScale,
   unstretch, visH, visW, zoomInFrame,
 } from './geometry';
@@ -309,5 +309,25 @@ describe('alinear y distribuir varias imágenes', () => {
 
   it('con menos de tres no reparte nada', () => {
     expect(distributeShifts(boxes.slice(0, 2), 'x')).toEqual([{ x: 0, y: 0 }, { x: 0, y: 0 }]);
+  });
+});
+
+describe('rejilla del fondo (gridLevels)', () => {
+  it('a escala normal se ven 1 cm, 5 cm y 10 cm, más marcadas las gruesas', () => {
+    const g = gridLevels(2); // 2 px por mm: 1 cm = 20 px
+    expect(g.map((x) => x.step).slice(0, 3)).toEqual([10, 50, 100]);
+    expect(g[0]!.alpha).toBeLessThan(g[1]!.alpha);
+  });
+  it('al alejar, la línea de 1 cm desaparece y quedan las gruesas', () => {
+    expect(gridLevels(0.5).some((x) => x.step === 10)).toBe(false);
+    expect(gridLevels(0.5)[0]!.step).toBe(50);
+  });
+  it('la opacidad cambia de forma continua con el zoom (sin saltos)', () => {
+    let prev = gridLevels(0.6).find((x) => x.step === 10)?.alpha ?? 0;
+    for (let k = 0.61; k < 4; k += 0.01) {
+      const a = gridLevels(k).find((x) => x.step === 10)?.alpha ?? 0;
+      expect(Math.abs(a - prev)).toBeLessThan(0.05);
+      prev = a;
+    }
   });
 });

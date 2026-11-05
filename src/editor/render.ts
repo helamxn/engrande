@@ -1,7 +1,7 @@
 /** Dibujo del lienzo: póster, imágenes, franjas de solape, nombres de hoja y tiradores. */
 import { cm } from './format';
 import {
-  HANDLES, bboxMM, cropCenter, cropPtsMM, displaySide, handleLocal, localToMM, rad, rowName, unionBox, visH, visW,
+  gridLevels, HANDLES, bboxMM, cropCenter, cropPtsMM, displaySide, handleLocal, localToMM, rad, rowName, unionBox, visH, visW,
 } from './geometry';
 import { canvasRevision } from './io/persist';
 import { C, posterGeo, S, sheetsVisible, st, V, view } from './state';
@@ -13,8 +13,6 @@ import type { HandleId, Layer, Pt } from './types';
 let cv: HTMLCanvasElement;
 let ctx: CanvasRenderingContext2D;
 let checker: CanvasPattern | null = null;
-/** Cuadrícula de puntos del fondo: patrón de un punto, rehecho solo si cambia su tamaño o el color. */
-let dotPat: { key: string; pat: CanvasPattern | null; n: number } | null = null;
 let dirtyFlag = false;
 
 export function initRender(canvas: HTMLCanvasElement) {
@@ -33,8 +31,7 @@ export function dirty() {
 /** Lee los colores del tema (cambian con el modo oscuro) y rehace el patrón de transparencia. */
 export function readColors() {
   const cs = getComputedStyle(document.documentElement);
-  dotPat = null;
-  for (const k of ['desk', 'dot', 'accent', 'mark', 'fg', 'muted', 'panel', 'chk1', 'chk2', 'line']) C[k] = cs.getPropertyValue('--' + k).trim();
+  for (const k of ['desk', 'grid', 'accent', 'mark', 'fg', 'muted', 'panel', 'chk1', 'chk2', 'line']) C[k] = cs.getPropertyValue('--' + k).trim();
   const p = document.createElement('canvas');
   p.width = p.height = 16;
   const x = p.getContext('2d')!;
@@ -45,35 +42,40 @@ export function readColors() {
   renderList();
 }
 
-/* ---------- cuadrícula de puntos del fondo ---------- */
-/** Separación de los puntos en mm (1 cm, 5 cm, 10 cm…): la menor que deja al menos DOT_MIN px entre ellos. */
-const DOT_STEPS = [10, 50, 100, 500, 1000, 5000];
-const DOT_MIN = 12;
-export const dotStep = (k: number) => DOT_STEPS.find((s) => s * k >= DOT_MIN) ?? DOT_STEPS[DOT_STEPS.length - 1]!;
-
+/* ---------- rejilla del fondo ---------- */
 /**
- * Puntos fijos al póster (se mueven y escalan con la vista, como en las pizarras infinitas) y alineados con su
- * esquina, así que sirven de regla en cm reales. Se pinta con un patrón de un solo punto y un único fillRect.
+ * Rejilla fija al póster (se mueve y escala con la vista, como en Figma) y alineada con su esquina, así que las
+ * líneas marcan cm reales. Cada línea se dibuja una sola vez, con la opacidad del nivel más grueso al que pertenece
+ * (una línea de 10 cm no se repinta como línea de 1 cm), en píxeles exactos del dispositivo para que no se vea borrosa.
  */
-function drawDots() {
-  if (!C.dot) return;
-  const { dpr } = view, sp = dotStep(V.k) * V.k * dpr; // separación exacta en px del dispositivo
-  const n = Math.max(4, Math.round(sp));
-  const key = `${n}|${C.dot}|${dpr}`;
-  if (dotPat?.key !== key) {
-    const t = document.createElement('canvas');
-    t.width = t.height = n;
-    const x = t.getContext('2d')!;
-    x.fillStyle = C.dot; x.beginPath(); x.arc(n / 2, n / 2, Math.max(0.9, dpr), 0, Math.PI * 2); x.fill();
-    dotPat = { key, pat: ctx.createPattern(t, 'repeat'), n };
-  }
-  const pat = dotPat.pat;
-  if (!pat) return;
-  // el punto del patrón está en el centro de la celda: se desplaza media celda para que caiga en (0, 0) del póster
-  const o = mm2s({ x: 0, y: 0 }), f = sp / dotPat.n;
-  pat.setTransform(new DOMMatrix([f, 0, 0, f, o.x * dpr - sp / 2, o.y * dpr - sp / 2]));
-  ctx.fillStyle = pat;
-  ctx.fillRect(0, 0, cv.width, cv.height);
+function drawGrid() {
+  if (!C.grid) return;
+  const levels = gridLevels(V.k);
+  if (!levels.length) return;
+  const { dpr } = view, W = cv.width, H = cv.height;
+  const a = { x: -V.ox / V.k, y: -V.oy / V.k }, b = { x: (view.CW - V.ox) / V.k, y: (view.CH - V.oy) / V.k };
+  const lw = Math.max(1, Math.floor(dpr)), off = lw % 2 ? 0.5 : 0;
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.strokeStyle = C.grid; ctx.lineWidth = lw;
+  levels.forEach(({ step, alpha }, j) => {
+    const next = levels[j + 1];
+    const ratio = next ? Math.round(next.step / step) : 0; // las múltiplos del nivel siguiente las pinta ese nivel
+    ctx.globalAlpha = alpha;
+    ctx.beginPath();
+    for (let i = Math.ceil(a.x / step), e = Math.floor(b.x / step); i <= e; i++) {
+      if (ratio && i % ratio === 0) continue;
+      const X = Math.round((i * step * V.k + V.ox) * dpr) + off;
+      ctx.moveTo(X, 0); ctx.lineTo(X, H);
+    }
+    for (let i = Math.ceil(a.y / step), e = Math.floor(b.y / step); i <= e; i++) {
+      if (ratio && i % ratio === 0) continue;
+      const Y = Math.round((i * step * V.k + V.oy) * dpr) + off;
+      ctx.moveTo(0, Y); ctx.lineTo(W, Y);
+    }
+    ctx.stroke();
+  });
+  ctx.restore();
 }
 
 /* ---------- dibujo de una imagen (lo usa también la exportación) ---------- */
@@ -134,6 +136,26 @@ export function boxHandles(l: Layer, withRot: boolean): Handle[] {
   }
   return hs;
 }
+/* ---------- marco y tiradores del grupo ---------- */
+const GROUP_CORNERS = ['nw', 'ne', 'se', 'sw'] as const;
+/** Esquinas del marco del grupo en mm: la caja común o, mientras se gira, esa caja girada. */
+export function groupFrameMM(): Pt[] {
+  if (st.groupFrame) return st.groupFrame;
+  const u = unionBox(st.group.map((l) => bboxMM(l)));
+  return [{ x: u.x0, y: u.y0 }, { x: u.x1, y: u.y0 }, { x: u.x1, y: u.y1 }, { x: u.x0, y: u.y1 }];
+}
+/** Tiradores del grupo: cuatro esquinas (escalar sin deformar) y el de girar, sobre el lado de arriba. */
+export function groupHandles(): Handle[] {
+  const f = groupFrameMM().map(mm2s);
+  const hs: Handle[] = f.map((p, i) => ({ id: GROUP_CORNERS[i]!, x: p.x, y: p.y }));
+  const tm = { x: (f[0]!.x + f[1]!.x) / 2, y: (f[0]!.y + f[1]!.y) / 2 }, c = { x: (f[0]!.x + f[2]!.x) / 2, y: (f[0]!.y + f[2]!.y) / 2 };
+  const dx = tm.x - c.x, dy = tm.y - c.y, d = Math.hypot(dx, dy) || 1;
+  hs.push({ id: 'rot', x: tm.x + (dx / d) * 28, y: tm.y + (dy / d) * 28, base: tm });
+  return hs;
+}
+export const groupCorner = (id: Handle['id']) => GROUP_CORNERS.indexOf(id as (typeof GROUP_CORNERS)[number]);
+export const groupCursor = (id: Handle['id']) => (id === 'rot' ? 'grab' : id === 'nw' || id === 'se' ? 'nwse-resize' : 'nesw-resize');
+
 export function nearest(hs: Handle[], p: Pt, r: number) {
   let best: Handle | null = null, bd = r;
   for (const h of hs) { const d = Math.hypot(h.x - p.x, h.y - p.y); if (d <= bd) { bd = d; best = h; } }
@@ -177,7 +199,7 @@ export function render() {
 
   // mesa de trabajo y papel
   ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = C.desk!; ctx.fillRect(0, 0, cv.width, cv.height);
-  drawDots();
+  drawGrid();
   // el papel y las hojas solo cuando el usuario ya hizo algo (cargar una imagen o elegir la distribución):
   // antes, un tamaño que nadie eligió sobra; solo se ven la mesa de puntos y la pantalla de inicio
   if (sheetsVisible()) {
@@ -248,14 +270,17 @@ export function render() {
       ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(rot.x, rot.y, 6, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
       sizeLabel(sel, dims(sel));
     } else if (st.group.length > 1) {
-      // varias: el contorno de cada una y la caja común discontinua (sin tiradores: escalar y girar el grupo es otra fase)
+      // varias: el contorno de cada una, el marco común y sus tiradores (esquinas para escalar, círculo para girar)
       ctx.strokeStyle = C.accent!; ctx.lineWidth = 1.5;
       for (const l of st.group) { poly(cropPts(l)); ctx.stroke(); }
-      const u = unionBox(st.group.map((l) => bboxMM(l)));
-      const a = mm2s({ x: u.x0, y: u.y0 }), b = mm2s({ x: u.x1, y: u.y1 });
-      const box = [a, { x: b.x, y: a.y }, b, { x: a.x, y: b.y }];
-      ctx.lineWidth = 1; ctx.setLineDash([5, 4]); poly(box.map((p) => ({ x: p.x + 0.5, y: p.y + 0.5 }))); ctx.stroke(); ctx.setLineDash([]);
-      sizeLabel(box, `${st.group.length} imágenes · ${cm(u.x1 - u.x0)} × ${cm(u.y1 - u.y0)} cm`);
+      const fr = groupFrameMM(), box = fr.map(mm2s);
+      ctx.lineWidth = 1; ctx.setLineDash([5, 4]); poly(box); ctx.stroke(); ctx.setLineDash([]);
+      const hs = groupHandles(), rot = hs.pop()!;
+      ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(rot.base!.x, rot.base!.y); ctx.lineTo(rot.x, rot.y); ctx.stroke();
+      hs.forEach((h) => handleDot(h, 9));
+      ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(rot.x, rot.y, 6, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      const w = Math.hypot(fr[1]!.x - fr[0]!.x, fr[1]!.y - fr[0]!.y), h = Math.hypot(fr[3]!.x - fr[0]!.x, fr[3]!.y - fr[0]!.y);
+      sizeLabel(box, `${st.group.length} imágenes · ${cm(w)} × ${cm(h)} cm`);
     }
     if (st.marquee) {
       const { a, b } = st.marquee, x = Math.min(a.x, b.x), y = Math.min(a.y, b.y), w = Math.abs(b.x - a.x), h = Math.abs(b.y - a.y);

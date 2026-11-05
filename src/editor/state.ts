@@ -24,6 +24,8 @@ export const st = {
    * las hojas aunque se quede vacío. Un póster nuevo empieza sin hojas a la vista.
    */
   sheetsOn: false,
+  /** Marco del grupo mientras se gira (esquinas en mm); null = la caja común, alineada con la pantalla. */
+  groupFrame: null as Pt[] | null,
   /** Recuadro de selección mientras se arrastra (px de pantalla). */
   marquee: null as { a: Pt; b: Pt } | null,
   nextId: 1,

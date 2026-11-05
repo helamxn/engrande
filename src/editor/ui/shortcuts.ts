@@ -23,10 +23,11 @@ const GROUPS: Group[] = [
     ['Espacio + arrastrar', 'Mover la vista (también con el botón central)'],
   ]],
   ['Varias imágenes', [
-    [SHIFT_CLICK,'Añadir o quitar de la selección'],
+    [SHIFT_CLICK, 'Añadir o quitar de la selección'],
     ['Arrastrar en el fondo', 'Recuadro: selecciona las que quedan dentro'],
     [`${MOD}A`, 'Seleccionar todas'],
     ['Arrastrar una', 'Mover todas juntas'],
+    ['Esquinas · círculo', 'Escalar · girar todas (Shift: de 15° en 15°)'],
     ['Mantener pulsada otra', 'Táctil: «Añadir a la selección»'],
   ]],
   ['Imagen seleccionada', [
