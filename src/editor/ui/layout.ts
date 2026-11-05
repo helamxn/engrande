@@ -20,7 +20,7 @@ function measure() {
     return { t: Math.round($('#tools').getBoundingClientRect().bottom - s.top), r: 0, b: Math.round(s.bottom - p.top), l: 0 };
   }
   const head = $('header').getBoundingClientRect();
-  const foot = Math.min($('#tools').getBoundingClientRect().top, $('#readout').getBoundingClientRect().top);
+  const foot = $('#tools').getBoundingClientRect().top;
   return {
     t: Math.round(head.bottom - s.top),
     // plegado, el panel mide 0: solo queda el botón para mostrarlo, que va en la franja de la cabecera
@@ -58,7 +58,7 @@ export function togglePanel(on = isPanelOff()) {
 export type SheetState = 'peek' | 'half' | 'full';
 let sheet: SheetState = 'peek';
 
-/** Alturas (px): solo asa, lectura y pestañas; media pantalla; hasta debajo de las herramientas. */
+/** Alturas (px): solo asa y pestañas; media pantalla; hasta debajo de las herramientas. */
 function sheetHeights() {
   const tabs = $('#sheetTabs');
   const peek = Math.round(tabs.offsetTop + tabs.offsetHeight);
@@ -81,7 +81,7 @@ export function openSheet(state: SheetState) {
   update(); // y otra vez al terminar la transición (transitionend)
 }
 
-/** Arrastrar el asa (o la lectura) cambia la altura; al soltar se queda en la más cercana. Un toque alterna. */
+/** Arrastrar el asa cambia la altura; al soltar se queda en la más cercana. Un toque alterna. */
 function initSheetDrag() {
   let start: { y: number; h: number; id: number } | null = null;
   let moved = false;
@@ -109,7 +109,7 @@ function initSheetDrag() {
     const near = (['peek', 'half', 'full'] as const).reduce((a, k) => (Math.abs(hs[k] - h) < Math.abs(hs[a] - h) ? k : a));
     openSheet(near);
   };
-  for (const el of [$('#sheetHandle'), $('#readoutSheet')]) {
+  for (const el of [$('#sheetHandle')]) {
     el.addEventListener('pointerdown', down);
     el.addEventListener('pointermove', move);
     el.addEventListener('pointerup', up);
@@ -146,7 +146,7 @@ export function initLayout() {
 
   // las islas cambian de tamaño con la ventana, al plegar o deslizar el panel o cuando la lectura ocupa otra línea
   const ro = new ResizeObserver(update);
-  for (const sel of ['#stage', 'header', '#tools', '#readout', '#panel']) ro.observe($(sel));
+  for (const sel of ['#stage', 'header', '#tools', '#panel']) ro.observe($(sel));
   deskMQ?.addEventListener('change', () => { syncSheetMode(); update(); });
   addEventListener('resize', () => { if (!deskMQ?.matches) openSheet(sheet); });
   update();

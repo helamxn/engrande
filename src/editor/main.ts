@@ -8,7 +8,6 @@ import { flushSave, initPersistence, isWorkSafe, restoreProject } from './io/per
 import { initKeyboard } from './input/keyboard';
 import { initPointer } from './input/pointer';
 import { dockMQ, isMac, MOD } from './platform';
-import { setPref } from './prefs';
 import { initRender, readColors } from './render';
 import { st, V } from './state';
 import { initContextBar } from './ui/contextbar';
@@ -84,7 +83,6 @@ export function startEditor() {
     // se restaura sin preguntar: solo hay una versión del trabajo, no hay nada que elegir
     const restored = await restoreProject().catch((err) => { console.error(err); return null; });
     if (restored && st.layers.length) {
-      setPref('onboarded', '1'); // ya trabajó con imágenes en este navegador
       syncExportUI();
       layoutRestored();
       select(null);

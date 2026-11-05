@@ -1,10 +1,10 @@
 ---
 import Icon from './Icon.astro';
 /**
- * Mesa de trabajo: historial, zoom, lienzo con las hojas y lectura del tamaño y la calidad.
- * El lienzo ocupa toda la ventana (es el fondo de la app) y lo demás flota encima como «islas»:
- * en escritorio, herramientas y lectura abajo a la izquierda; en móvil, las herramientas bajo la cabecera
- * y la lectura dentro del panel inferior.
+ * Mesa de trabajo: historial, zoom y lienzo con las hojas.
+ * El lienzo ocupa toda la ventana (es el fondo de la app) y lo demás flota encima como «islas»: las herramientas
+ * abajo a la izquierda en escritorio y bajo la cabecera en móvil. El tamaño del póster se dibuja junto a él y la
+ * calidad, en la etiqueta de la imagen seleccionada (ver render.ts).
  */
 const icon = 'size-[17px]';
 ---
@@ -49,45 +49,12 @@ const icon = 'size-[17px]';
     <!-- zona libre: la parte del lienzo que no tapan las islas (sus márgenes los pone el editor) -->
     <div id="free" class="pointer-events-none absolute inset-0">
       <!--
-        pantalla de inicio, solo con el póster vacío. Dos variantes (las elige renderList):
-        la guía completa la primera vez en este navegador; después, un aviso ligero que deja ver las hojas.
-        El contenedor no captura el puntero: con el aviso ligero se puede seguir usando el lienzo (zoom, menú).
+        pantalla de inicio, solo con el póster vacío: un aviso con el botón para elegir la imagen.
+        El contenedor no captura el puntero: se puede seguir usando el lienzo (zoom, menú) alrededor del aviso.
       -->
       <div id="empty" class="absolute inset-0 grid place-items-center overflow-y-auto p-4">
-        <!--
-          guía: cabecera centrada (icono, título, cómo empezar, botón) y debajo los pasos en filas
-          [número | título · descripción], que se leen de arriba abajo y no se parten en columnas estrechas
-        -->
         <div
-          id="emptyFull"
-          class="pointer-events-auto flex w-full max-w-[440px] flex-col items-center gap-4 rounded-2xl bg-panel/95 shadow-pop px-6 pt-7 pb-6 text-center"
-        >
-          <Icon name="addImage" class="size-9 text-accent" />
-          <div>
-            <h2 class="m-0 text-[1.15rem] font-bold">Empieza con una imagen o un PDF</h2>
-            <p class="mt-1 mb-0 text-[.88rem] text-balance text-muted">Arrástralo aquí, pégalo con Ctrl+V (⌘V en Mac) o elígelo.</p>
-          </div>
-          <button type="button" class="btn btn-primary" data-addfile>
-            <Icon name="addImage" />
-            Elegir imagen
-          </button>
-          <ol class="m-0 mt-1 grid w-full list-none gap-3 border-t border-line p-0 pt-4 text-left text-[.86rem]">
-            {[
-              ['Elige la imagen', 'Foto, dibujo o PDF.'],
-              ['Ajusta el tamaño', 'Hojas, papel y margen en el panel.'],
-              ['Descarga e imprime', 'El PDF por hojas, al 100 %.'],
-            ].map(([t, d], i) => (
-              <li class="grid grid-cols-[auto_1fr] items-start gap-x-3">
-                <span class="grid size-6 place-items-center rounded-full bg-accent-soft text-[.78rem] font-bold text-accent">{i + 1}</span>
-                <span class="pt-0.5"><b class="font-semibold text-fg">{t}</b><span class="text-muted"> · {d}</span></span>
-              </li>
-            ))}
-          </ol>
-        </div>
-        <div
-          id="emptyLite"
           class="pointer-events-auto flex max-w-full flex-wrap items-center justify-center gap-x-3 gap-y-2 rounded-xl border border-line bg-panel/95 py-2 pr-2 pl-4 text-[.88rem] text-muted shadow-pop"
-          hidden
         >
           <Icon name="addImage" class="size-5 flex-none text-accent" />
           <span>Suelta aquí una imagen o un PDF, o pégalo</span>
@@ -109,8 +76,4 @@ const icon = 'size-[17px]';
     </div>
   </div>
 
-  <div
-    id="readout"
-    class="island pointer-events-auto relative z-[1] hidden min-h-[46px] flex-wrap content-center items-center gap-x-4 gap-y-1.5 px-3.5 py-1.5 font-mono text-[.8rem] text-muted tabular-nums desk:flex [&_b]:font-medium [&_b]:text-fg"
-  ></div>
 </section>

@@ -9,7 +9,6 @@ import { pushUndo, snap, takeSnap, restoreSnap, undo } from './history';
 import { canvasRevision, markCanvasChanged, scheduleSave } from './io/persist';
 import { runJob } from './pixeljobs';
 import type { PixelJob, PixelResult } from './pixels';
-import { setPref } from './prefs';
 import { dirty } from './render';
 import { DEFAULT_EXPORT, DEFAULT_LAYOUT, posterGeo, S, st, V } from './state';
 import { s2mm } from './view';
@@ -48,7 +47,6 @@ export function newLayer(img: HTMLCanvasElement, name: string, extra: Partial<La
 export function addLayer(l: Layer, { factor = 1, offset = 0 } = {}) {
   st.layers.push(l);
   st.sheetsOn = true;
-  setPref('onboarded', '1'); // ya cargó una imagen alguna vez: no se vuelve a mostrar la guía de inicio
   const fit = { mode: 'contain' as const, scale: factor };
   applyFit(l, fit, posterGeo());
   if (offset) { l.cx += offset; l.cy += offset; l.fit = null; } else l.fit = fit;

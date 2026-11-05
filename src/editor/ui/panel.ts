@@ -16,11 +16,11 @@ import { C, posterGeo, S, st } from '../state';
 import { fitView } from '../view';
 import { renderPdfPage } from '../io/pdf';
 import { canvasRevision, scheduleSave } from '../io/persist';
-import { getPref } from '../prefs';
 import { ICON } from './icons';
 import { isPanelOff, openSheet, togglePanel } from './layout';
 import { initListDrag } from './listdrag';
 import { groupMenu, layerMenu, openMenu } from './menu';
+import type { Quality } from '../geometry';
 import type { Geo, Layer, LayoutSettings, Orient, Paper } from '../types';
 
 /* ---------- pestañas (patrón ARIA tabs) ---------- */
@@ -124,7 +124,7 @@ export function syncSel() {
     $('#pdfField').hidden = !(sel.pdf && sel.pages > 1);
     if (sel.pdf) { $<HTMLInputElement>('#pdfPage').max = String(sel.pages); setField('#pdfPage', sel.page); $('#pdfPages').textContent = 'de ' + sel.pages; }
   }
-  updateReadout(); updateHint();
+  updateStats(); updateHint();
 }
 /**
  * Campo numérico de la imagen (texto con coma decimal, no type=number, que mostraría «14.3» según el navegador).
@@ -270,12 +270,8 @@ export function renderList() {
     ol.appendChild(li);
   });
   $('#layerCount').textContent = String(n);
-  // pantalla de inicio, solo con el póster vacío: la guía completa la primera vez; después (o si ya eligió
-  // las hojas), un aviso ligero que no tapa el póster
+  // pantalla de inicio (un aviso con «Elegir imagen»), solo con el póster vacío
   $('#empty').hidden = n > 0;
-  const lite = st.sheetsOn || getPref('onboarded') === '1';
-  $('#emptyFull').hidden = lite;
-  $('#emptyLite').hidden = !lite;
   // sin nada que imprimir no se puede descargar (las ocultas no se imprimen)
   const printable = st.layers.some((l) => !l.hidden);
   for (const id of ['#quickExport', '#exportTiles', '#exportSingle']) {
@@ -287,37 +283,53 @@ export function renderList() {
   updateHint();
 }
 
-/* ---------- lectura bajo el lienzo ---------- */
-export function updateReadout() {
-  const g = posterGeo(), sel = st.sel;
-  // las imágenes ocultas no se imprimen: no cuentan para la calidad
-  const pool = st.group.length > 1 ? st.group : st.layers;
-  const t = sel ?? pool.reduce<Layer | null>((a, l) => (l.hidden ? a : !a || pppOf(l, HI_AREA) < pppOf(a, HI_AREA) ? l : a), null);
-  const out = $('#readout');
-  out.textContent = '';
-  const item = (label: string, value: string) => {
-    const s = document.createElement('span'); s.append(label + ' ');
-    const b = document.createElement('b'); b.textContent = value; s.append(b);
-    out.appendChild(s); return s;
-  };
-  item('Póster', `${cm(g.W)} × ${cm(g.H)} cm`);
-  const sheets = document.createElement('span');
-  const nb = document.createElement('b'); nb.textContent = String(S.cols * S.rows);
-  sheets.append(nb, ` hojas ${S.paper} ${S.orient === 'portrait' ? 'verticales' : 'horizontales'}`);
-  out.appendChild(sheets);
-  if (t) {
-    const ppp = pppOf(t, HI_AREA), q = qualityOf(ppp);
-    // «Calidad»: la nitidez al tamaño impreso. Con varias, la de la peor (es la que se notará).
-    const label = sel ? 'Calidad de la seleccionada' : st.group.length > 1 ? `Calidad (la peor de ${st.group.length})` : st.layers.length > 1 ? 'Calidad (la peor)' : 'Calidad';
-    const s = item(label, `${ppp} ppp`);
-    s.title = 'Puntos por pulgada al tamaño impreso: 150 o más, buena; 100–150, aceptable; menos de 100, se verá pixelada.';
-    const pill = document.createElement('span');
-    pill.className = `pill q-${q}`;
-    pill.textContent = q === 'good' ? 'buena' : q === 'warn' ? 'aceptable' : 'baja';
-    s.append(' ', pill);
+/* ---------- resumen para descargar ---------- */
+/**
+ * La lectura ya no flota en el lienzo: el tamaño del póster se dibuja junto a él y la calidad, en la etiqueta de la
+ * imagen seleccionada. En la pestaña Descargar se dice qué se va a descargar y, solo si alguna imagen no tiene buena
+ * calidad, un aviso estándar (icono, título y texto).
+ */
+export function updateStats() {
+  const g = posterGeo(), n = S.cols * S.rows;
+  // las ocultas no se imprimen: no cuentan
+  const rows = st.layers.filter((l) => !l.hidden).map((l) => { const ppp = pppOf(l, HI_AREA); return { l, ppp, q: qualityOf(ppp) }; });
+  const bad = rows.filter((r) => r.q === 'bad'), warn = rows.filter((r) => r.q === 'warn');
+
+  const box = $('#exportSummary');
+  box.textContent = '';
+  const info = document.createElement('p');
+  info.className = 'm-0 text-[.88rem] font-semibold';
+  const orient = S.orient === 'portrait' ? (n === 1 ? 'vertical' : 'verticales') : (n === 1 ? 'horizontal' : 'horizontales');
+  info.textContent = `Póster ${cm(g.W)} × ${cm(g.H)} cm · ${n} ${n === 1 ? 'hoja' : 'hojas'} ${S.paper} ${orient}`;
+  box.appendChild(info);
+  if (!rows.length) {
+    const p = document.createElement('p');
+    p.className = 'm-0 text-[.86rem] text-muted';
+    p.textContent = st.layers.length ? 'Todas las imágenes están ocultas.' : 'Agrega una imagen para descargar.';
+    box.appendChild(p);
+    return;
   }
-  // móvil: la misma lectura, dentro del panel inferior
-  $('#readoutSheet').replaceChildren(...[...out.childNodes].map((c) => c.cloneNode(true)));
+  if (!bad.length && !warn.length) return; // todo bien: sin aviso
+
+  const worst: Quality = bad.length ? 'bad' : 'warn', count = (k: number) => (k === 1 ? '1 imagen' : `${k} imágenes`);
+  const alert = document.createElement('div');
+  alert.className = `alert alert-${worst}`;
+  alert.insertAdjacentHTML('afterbegin', ICON.warning); // constante del código
+  const body = document.createElement('div');
+  body.className = 'flex min-w-0 flex-1 flex-col gap-1.5';
+  const title = document.createElement('p');
+  title.className = 'alert-title';
+  title.textContent = bad.length ? `${count(bad.length)} con calidad baja` : `${count(warn.length)} con calidad aceptable`;
+  const text = document.createElement('p');
+  text.className = 'text-muted';
+  // sin listado: la calidad de cada imagen se ve en su etiqueta al seleccionarla
+  text.textContent = (bad.length
+    ? 'Se verá pixelada al imprimir. Hazla más pequeña en el póster o usa un archivo con más resolución.'
+    : 'Se nota de cerca, no a un metro. Para mejorarla, hazla algo más pequeña o usa un archivo con más resolución.')
+    + ' Al seleccionar una imagen, su calidad aparece junto a su tamaño.';
+  body.append(title, text);
+  alert.appendChild(body);
+  box.appendChild(alert);
 }
 
 /* ---------- pista inferior ---------- */

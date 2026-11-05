@@ -55,6 +55,7 @@ import shrink from 'lucide-static/icons/shrink.svg?raw';
 import pencilLine from 'lucide-static/icons/pen-line.svg?raw';
 import sparkles from 'lucide-static/icons/sparkles.svg?raw';
 import trash from 'lucide-static/icons/trash-2.svg?raw';
+import triangleAlert from 'lucide-static/icons/triangle-alert.svg?raw';
 import undo from 'lucide-static/icons/undo-2.svg?raw';
 import wand from 'lucide-static/icons/wand-sparkles.svg?raw';
 import x from 'lucide-static/icons/x.svg?raw';
@@ -80,7 +81,7 @@ const RAW = {
   zoomInLens, zoomOutLens,
   // varias imágenes: alinear, repartir y seleccionar
   // tamaño y posición en el panel, renombrar
-  ratioOn: link, ratioOff: linkOff, grip,
+  ratioOn: link, ratioOff: linkOff, grip, warning: triangleAlert,
   fitContain: shrink, fitCover: expand, center: focus, rename: pencilLine,
   alignLeft, alignHCenter, alignRight, alignTop, alignVCenter, alignBottom, distributeH, distributeV, selectBox,
 } as const;
