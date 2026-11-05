@@ -202,8 +202,18 @@
 
   /* lista de imágenes */
   .layer {
-    @apply flex items-center gap-1 rounded-[9px] border border-line p-1;
+    @apply relative flex items-center gap-1 rounded-[9px] border border-line p-1;
     &.on { @apply border-accent bg-accent-soft; }
+    /* asa de arrastre, a la izquierda; touch-none: en táctil arrastra en vez de hacer scroll */
+    & .grip {
+      @apply -ml-0.5 grid h-9 w-4 flex-none cursor-grab touch-none place-items-center text-muted opacity-60;
+      & svg { @apply size-3.5; }
+    }
+    &:hover .grip { @apply opacity-100; }
+    /* las demás filas se apartan con una transición; la arrastrada sigue al puntero sin retraso */
+    .reordering & { transition: transform .15s ease; }
+    &.dragging { @apply z-10 cursor-grabbing bg-panel shadow-pop; transition: none; }
+    &.dragging.on { @apply bg-accent-soft; }
     /* oculta: la miniatura y el nombre se atenúan; los botones siguen nítidos */
     &.off .layer-main { @apply opacity-45; }
     & .act {

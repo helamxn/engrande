@@ -1,6 +1,6 @@
 /** Panel lateral: pestañas, ajustes de hojas, propiedades de la imagen, lista de imágenes, exportación y lectura. */
 import {
-  afterChange, centerSel, fitSel, hideSelected, lockSelected, markManual, renameLayer, select, setOpacity,
+  afterChange, centerSel, fitSel, hideSelected, lockSelected, markManual, renameLayer, reorder, select, setOpacity,
   toggleHidden, toggleInSelection, toggleLocked, unstretchSel,
 } from '../actions';
 import { MAX_COLS_ROWS, PRESETS } from '../constants';
@@ -19,6 +19,7 @@ import { canvasRevision, scheduleSave } from '../io/persist';
 import { getPref } from '../prefs';
 import { ICON } from './icons';
 import { isPanelOff, openSheet, togglePanel } from './layout';
+import { initListDrag } from './listdrag';
 import { groupMenu, layerMenu, openMenu } from './menu';
 import type { Geo, Layer, LayoutSettings, Orient, Paper } from '../types';
 
@@ -194,6 +195,12 @@ function thumbFor(l: Layer) {
   return t.c;
 }
 
+/** Fila de la lista → su imagen (para arrastrar y para devolver el foco tras reordenar con el teclado). */
+const rowLayer = new WeakMap<Element, Layer>();
+function focusRow(l: Layer) {
+  for (const li of document.querySelectorAll('#layers li')) if (rowLayer.get(li) === l) li.querySelector<HTMLElement>('.layer-main')?.focus();
+}
+
 export function renderList() {
   const ol = document.querySelector('#layers');
   if (!ol || !C.chk1) return;
@@ -203,11 +210,26 @@ export function renderList() {
     const li = document.createElement('li');
     const on = l === st.sel || st.group.includes(l);
     li.className = 'layer' + (on ? ' on' : '') + (l.hidden ? ' off' : '');
+    rowLayer.set(li, l);
+    // asa para arrastrar (en táctil es la única zona que arrastra; con ratón vale toda la fila)
+    if (n > 1) {
+      const grip = document.createElement('span');
+      grip.className = 'grip'; grip.title = 'Arrastra para cambiar el orden';
+      grip.innerHTML = ICON.grip; // constante del código
+      li.appendChild(grip);
+    }
     const b = document.createElement('button');
     b.type = 'button'; b.className = 'layer-main';
     b.setAttribute('aria-pressed', String(on));
     // Shift o Ctrl + clic en la lista también suma o quita de la selección
     b.addEventListener('click', (e) => { if ((e.shiftKey || e.ctrlKey || e.metaKey) && !l.hidden) toggleInSelection(l); else select(l); });
+    // teclado: Alt + ↑ ↓ cambia el orden (arriba = al frente) y el foco sigue a la imagen
+    b.addEventListener('keydown', (e) => {
+      if (!e.altKey || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return;
+      e.preventDefault();
+      reorder(l, e.key === 'ArrowUp' ? 1 : -1);
+      focusRow(l);
+    });
     // doble clic en la lista: renombrar
     b.addEventListener('dblclick', () => { select(l); focusName(); });
     b.addEventListener('contextmenu', (e) => {
@@ -377,6 +399,7 @@ export function initPanel() {
     $('#gOpacityOut').textContent = `${gOpacity.value} %`;
   });
   gOpacity.addEventListener('change', () => renderList());
+  initListDrag($('#layers'), (li) => rowLayer.get(li));
   $('#gHide').addEventListener('click', hideSelected);
   $('#gLock').addEventListener('click', lockSelected);
   numField('#pW', (l, v) => { const f = Math.max(3, v * 10) / visW(l); if (S.lock) scaleLayer(l, f, cropCenter(l)); else keepCenter(l, (x) => { x.w *= f; }); markManual(l); });

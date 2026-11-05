@@ -31,6 +31,7 @@ import focus from 'lucide-static/icons/focus.svg?raw';
 import eyeOff from 'lucide-static/icons/eye-off.svg?raw';
 import filePlus from 'lucide-static/icons/file-plus.svg?raw';
 import flip from 'lucide-static/icons/flip-horizontal-2.svg?raw';
+import grip from 'lucide-static/icons/grip-vertical.svg?raw';
 import history from 'lucide-static/icons/history.svg?raw';
 import imagePlus from 'lucide-static/icons/image-plus.svg?raw';
 import keyboard from 'lucide-static/icons/keyboard.svg?raw';
@@ -77,7 +78,7 @@ const RAW = {
   chevronRight, chevronLeft, copy, paste: clipboardPaste, layers, scaling, history, fitAll: maximize, zoomInLens, zoomOutLens,
   // varias imágenes: alinear, repartir y seleccionar
   // tamaño y posición en el panel, renombrar
-  ratioOn: link, ratioOff: linkOff,
+  ratioOn: link, ratioOff: linkOff, grip,
   fitContain: shrink, fitCover: expand, center: focus, rename: pencilLine,
   alignLeft, alignHCenter, alignRight, alignTop, alignVCenter, alignBottom, distributeH, distributeV, selectBox,
 } as const;
