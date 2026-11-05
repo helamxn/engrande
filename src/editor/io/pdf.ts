@@ -5,6 +5,7 @@
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { MAX_SIDE } from '../constants';
+import { LIMITS } from '../platform';
 
 /** Recursos de pdf.js copiados a public/pdfjs por scripts/copy-pdfjs.mjs. */
 const ASSETS = '/pdfjs/';
@@ -28,7 +29,7 @@ export async function openPdf(data: ArrayBuffer): Promise<PDFDocumentProxy> {
     iccUrl: ASSETS + 'iccs/',
     enableXfa: false,
     // limita las imágenes internas del PDF para que un archivo malicioso no agote la memoria
-    maxImageSize: 64e6,
+    maxImageSize: LIMITS.pdfImageSize,
   }).promise;
 }
 

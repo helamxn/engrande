@@ -1,6 +1,7 @@
 /** Carga de imágenes y PDF: selector de archivos, arrastrar y soltar en toda la página y pegar. */
 import { addLayer, applyCrop, makeCanvas, newLayer } from '../actions';
-import { MAX_FILE_BYTES, MAX_IMAGE_PIXELS } from '../constants';
+import { MAX_FILE_BYTES } from '../constants';
+import { LIMITS } from '../platform';
 import { $, hideToast, toast } from '../dom';
 import { snap } from '../history';
 import { S, st } from '../state';
@@ -51,7 +52,9 @@ async function fileToLayer(f: File): Promise<Layer | null> {
     return newLayer(makeCanvas(im, sw, sh, true), name, { src: { kind: 'svg', blob: f } });
   }
   const px = im.naturalWidth * im.naturalHeight;
-  if (px > MAX_IMAGE_PIXELS) throw new LoadError(`“${fname}” tiene ${Math.round(px / 1e6)} megapíxeles. El máximo es ${MAX_IMAGE_PIXELS / 1e6}.`);
+  if (px > LIMITS.maxImagePixels) {
+    throw new LoadError(`“${fname}” tiene ${Math.round(px / 1e6)} megapíxeles. En este equipo el máximo es ${LIMITS.maxImagePixels / 1e6}.`);
+  }
   // se guarda el archivo original: el lienzo de trabajo es como máximo de MAX_SIDE, pero al exportar se usa la resolución completa
   return newLayer(makeCanvas(im, im.naturalWidth, im.naturalHeight), name, { src: { kind: 'img', blob: f, w: im.naturalWidth, h: im.naturalHeight } });
 }
