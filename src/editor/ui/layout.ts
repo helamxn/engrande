@@ -67,8 +67,12 @@ function sheetHeights() {
   const half = Math.min(full, Math.max(peek + 160, Math.round(innerHeight * 0.5)));
   return { peek, half, full };
 }
+/**
+ * La altura va en una variable CSS que solo usa el panel en móvil (global.css), no en style.height: así, al pasar a
+ * escritorio (p. ej. al quitar el zoom del navegador) la altura de la hoja no se queda pegada a la tarjeta lateral,
+ * pase lo que pase con el orden de los eventos resize y change.
+ */
 function applySheetHeight(h: number) {
-  panel.style.height = `${h}px`;
   document.documentElement.style.setProperty('--sheet-h', `${h}px`);
 }
 
@@ -121,14 +125,9 @@ function initSheetDrag() {
   for (const t of document.querySelectorAll('[role=tab]')) t.addEventListener('click', () => { if (sheet === 'peek') openSheet('half'); });
 }
 
-/** Al pasar de móvil a escritorio (o al revés) el panel cambia de forma: se ajusta su altura. */
+/** Al pasar a móvil se recalcula la altura de la hoja (en escritorio la variable no se usa). */
 function syncSheetMode() {
-  if (deskMQ?.matches) {
-    panel.style.height = '';
-    document.documentElement.style.setProperty('--sheet-h', '0px');
-  } else {
-    openSheet(sheet);
-  }
+  if (!deskMQ?.matches) openSheet(sheet);
 }
 
 export function initLayout() {

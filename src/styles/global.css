@@ -76,7 +76,8 @@
   body { background: var(--desk); }
   /* panel inferior (móvil): su altura cambia con una transición, salvo mientras se arrastra */
   @media (width < 60rem) {
-    #panel { transition: height .22s cubic-bezier(.2, .8, .2, 1); }
+    /* altura de la hoja: la pone layout.ts en --sheet-h (solo cuenta en móvil) */
+    #panel { height: max(var(--sheet-h, 76px), 64px); transition: height .22s cubic-bezier(.2, .8, .2, 1); }
     #panel.sheet-drag { transition: none; }
   }
   @media (prefers-reduced-motion: reduce) { #panel { transition: none !important; } }
