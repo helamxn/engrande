@@ -1,7 +1,7 @@
 /** Atajos de teclado. */
 import {
-  afterChange, applyCrop, cancelCrop, copySelected, duplicateSelected, enterCrop, flip, removeSelected, reorder, rotate90,
-  select, selectAll, selected, setMode, shiftSelected,
+  afterChange, applyCrop, cancelCrop, copySelected, cutSelected, duplicateSelected, enterCrop, flip, removeSelected,
+  reorder, rotate90, select, selectAll, selected, setMode, shiftSelected,
 } from '../actions';
 import { redo, snap, undo } from '../history';
 import { S, st } from '../state';
@@ -30,6 +30,7 @@ export function initKeyboard() {
     if (mod && k === 'a') { e.preventDefault(); if (S.mode === 'crop') applyCrop(); selectAll(); return; }
     if (mod && k === 'd' && any) { e.preventDefault(); duplicateSelected(); return; }
     if (mod && k === 'c' && any) { e.preventDefault(); copySelected(); return; }
+    if (mod && k === 'x' && any) { e.preventDefault(); cutSelected(); return; }
     if (mod && (e.key === ']' || e.code === 'BracketRight') && sel) { e.preventDefault(); reorder(sel, e.shiftKey ? 'front' : 1); return; }
     if (mod && (e.key === '[' || e.code === 'BracketLeft') && sel) { e.preventDefault(); reorder(sel, e.shiftKey ? 'back' : -1); return; }
     if (e.key === 'Enter' && S.mode === 'crop') { e.preventDefault(); applyCrop(); return; }

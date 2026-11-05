@@ -32,7 +32,7 @@ const GROUPS: Group[] = [
   ]],
   ['Imagen seleccionada', [
     ['Flechas', 'Mover 1 mm (con Shift, 10 mm)'],
-    [`${MOD}D · ${MOD}C`, 'Duplicar · copiar'],
+    [`${MOD}C · ${MOD}X · ${MOD}D`, 'Copiar · cortar · duplicar'],
     [`${MOD}] · ${MOD}[`, 'Adelante · atrás (con Shift: al frente / al fondo)'],
     [`${ALT} + ↑ ↓ en la lista`, 'Adelante · atrás (o arrastra la fila)'],
     ['R · H', 'Girar 90° · espejo (con Shift: al revés / vertical)'],

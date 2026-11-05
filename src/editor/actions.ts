@@ -210,6 +210,23 @@ export function copySelected() {
   st.clipN = 0;
   toast(ls.length > 1 ? `${ls.length} imágenes copiadas` : 'Imagen copiada');
 }
+/**
+ * Cortar (Ctrl+X): copia lo seleccionado y lo quita del póster en un solo paso de deshacer.
+ * El primer pegado vuelve al mismo sitio (ya no hay original que tapar); los siguientes se desplazan como siempre.
+ */
+export function cutSelected() {
+  const ls = selected();
+  if (!ls.length) return;
+  if (ls.some((l) => l.locked)) { toast(LOCKED_MSG); return; }
+  if (S.mode === 'crop') applyCrop();
+  st.clip = ls.map((l) => cloneLayer(l));
+  st.clipN = -1;
+  snap();
+  st.layers = st.layers.filter((x) => !ls.includes(x));
+  select(null);
+  scheduleSave();
+  toast(ls.length > 1 ? `${ls.length} imágenes cortadas` : `“${ls[0]!.name}” cortada`, 6000, { label: 'Deshacer', fn: undo });
+}
 
 /** Alinea las seleccionadas entre sí (con su caja común). */
 export function alignSelected(edge: AlignEdge) {

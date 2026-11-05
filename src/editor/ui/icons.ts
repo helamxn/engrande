@@ -12,6 +12,7 @@ import alignTop from 'lucide-static/icons/align-start-horizontal.svg?raw';
 import alignVCenter from 'lucide-static/icons/align-center-horizontal.svg?raw';
 import distributeH from 'lucide-static/icons/align-horizontal-distribute-center.svg?raw';
 import distributeV from 'lucide-static/icons/align-vertical-distribute-center.svg?raw';
+import scissors from 'lucide-static/icons/scissors.svg?raw';
 import selectBox from 'lucide-static/icons/square-dashed-mouse-pointer.svg?raw';
 import arrowDown from 'lucide-static/icons/arrow-down.svg?raw';
 import arrowUp from 'lucide-static/icons/arrow-up.svg?raw';
@@ -75,7 +76,8 @@ const RAW = {
   newPoster: filePlus, addImage: imagePlus, download, undo, redo, zoomIn: plus, zoomOut: minus, lock, lockOpen, printer,
   plus, minus, keyboard, panelClose: panelRightClose, panelOpen: panelRightOpen,
   // menú contextual (flechas de submenú e iconos de las opciones principales)
-  chevronRight, chevronLeft, copy, paste: clipboardPaste, layers, scaling, history, fitAll: maximize, zoomInLens, zoomOutLens,
+  chevronRight, chevronLeft, copy, cut: scissors, paste: clipboardPaste, layers, scaling, history, fitAll: maximize,
+  zoomInLens, zoomOutLens,
   // varias imágenes: alinear, repartir y seleccionar
   // tamaño y posición en el panel, renombrar
   ratioOn: link, ratioOff: linkOff, grip,

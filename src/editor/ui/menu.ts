@@ -7,9 +7,10 @@
  * - Táctil: los submenús no se abren al lado (no caben); el menú pasa a mostrar su contenido con «Atrás».
  */
 import {
-  alignSelected, copyLayer, copySelected, distributeSelected, duplicateLayer, duplicateSelected, enterCrop, fitSel,
-  centerSel, flip, newPoster, pasteLayer, removeLayer, removeSelected, reorder, resetOriginal, rotate90, select,
-  selectAll, selectMany, setMode, toggleHidden, toggleLocked, unstretchSel, autoBackground, hideSelected, lockSelected,
+  alignSelected, copyLayer, copySelected, cutSelected, distributeSelected, duplicateLayer, duplicateSelected,
+  enterCrop, fitSel, centerSel, flip, newPoster, pasteLayer, removeLayer, removeSelected, reorder, resetOriginal,
+  rotate90, select, selectAll, selectMany, setMode, toggleHidden, toggleLocked, unstretchSel, autoBackground,
+  hideSelected, lockSelected,
 } from '../actions';
 import { focusName } from './panel';
 import { $, toast } from '../dom';
@@ -69,6 +70,7 @@ export function layerMenu(l: Layer, prev: Layer[] = []): MenuItem[] {
     },
     '-',
     { label: 'Copiar', icon: 'copy', kbd: MOD + 'C', fn: () => copyLayer(l) },
+    { label: 'Cortar', icon: 'cut', kbd: MOD + 'X', fn: () => { select(l); cutSelected(); }, disabled: l.locked },
     { label: 'Pegar', icon: 'paste', kbd: MOD + 'V', fn: () => void pasteAny(), disabled: !canPaste() },
     { label: 'Duplicar', icon: 'dup', kbd: MOD + 'D', fn: () => duplicateLayer(l) },
     { label: l.hidden ? 'Mostrar' : 'Ocultar', icon: l.hidden ? 'eye' : 'eyeOff', fn: () => toggleHidden(l) },
@@ -110,6 +112,7 @@ export function groupMenu(): MenuItem[] {
   return [
     { head: `${n} imágenes` },
     { label: 'Copiar', icon: 'copy', kbd: MOD + 'C', fn: copySelected },
+    { label: 'Cortar', icon: 'cut', kbd: MOD + 'X', fn: cutSelected },
     { label: 'Duplicar', icon: 'dup', kbd: MOD + 'D', fn: duplicateSelected },
     '-',
     {
