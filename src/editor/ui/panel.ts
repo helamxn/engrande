@@ -1,7 +1,8 @@
 /** Panel lateral: pestañas, ajustes de hojas, propiedades de la imagen, lista de imágenes, exportación y lectura. */
 import {
-  afterChange, centerSel, fitSel, hideSelected, lockSelected, markManual, renameLayer, reorder, select, setOpacity,
-  toggleHidden, toggleInSelection, toggleLocked, unstretchSel,
+  afterChange, centerSel, fitSel, hideSelected, lockSelected, markManual, renameLayer, reorder, select,
+  selectedGroup, selectMany, setOpacity, toggleGroupFlag, toggleHidden, toggleInSelection, toggleLocked,
+  unstretchSel,
 } from '../actions';
 import { MAX_COLS_ROWS, PRESETS } from '../constants';
 import { $, $$, toast } from '../dom';
@@ -214,15 +215,65 @@ function focusRow(l: Layer) {
   for (const li of document.querySelectorAll('#layers li')) if (rowLayer.get(li) === l) li.querySelector<HTMLElement>('.layer-main')?.focus();
 }
 
+/** Grupos plegados en la lista (solo afecta a la vista; no se guarda). */
+const collapsed = new Set<number>();
+
+/** Fila de un grupo: plegar, seleccionar el grupo entero, verlo u ocultarlo, bloquearlo y su menú. */
+function groupRow(gid: number): HTMLLIElement {
+  const members = st.layers.filter((l) => l.gid === gid);
+  const li = document.createElement('li');
+  const allHidden = members.every((l) => l.hidden), allLocked = members.every((l) => l.locked);
+  li.className = 'group-row' + (selectedGroup() === gid ? ' on' : '') + (allHidden ? ' off' : '');
+  const pick = () => selectMany(members);
+  const chev = document.createElement('button');
+  chev.type = 'button'; chev.className = 'act chev' + (collapsed.has(gid) ? ' closed' : '');
+  chev.setAttribute('aria-expanded', String(!collapsed.has(gid)));
+  chev.setAttribute('aria-label', collapsed.has(gid) ? 'Desplegar el grupo' : 'Plegar el grupo');
+  chev.innerHTML = ICON.chevronDown; // constante del código
+  chev.addEventListener('click', () => { if (collapsed.has(gid)) collapsed.delete(gid); else collapsed.add(gid); renderList(); });
+  const b = document.createElement('button');
+  b.type = 'button'; b.className = 'layer-main';
+  b.setAttribute('aria-pressed', String(selectedGroup() === gid));
+  b.insertAdjacentHTML('afterbegin', ICON.group.replace('class="', 'class="gicon ')); // constante del código
+  const nm = document.createElement('span'); nm.textContent = 'Grupo';
+  const sm = document.createElement('small'); sm.textContent = `${members.length} imágenes` + (allHidden ? ' · oculto' : allLocked ? ' · bloqueado' : '');
+  nm.appendChild(sm); b.appendChild(nm);
+  b.addEventListener('click', pick);
+  b.addEventListener('contextmenu', (e) => { e.preventDefault(); pick(); if (st.group.length > 1) openMenu(e.clientX, e.clientY, groupMenu()); });
+  li.append(chev, b);
+  const acts: [keyof typeof ICON, string, (e: MouseEvent) => void][] = [
+    [allHidden ? 'eyeOff' : 'eye', allHidden ? 'Mostrar el grupo' : 'Ocultar el grupo', () => toggleGroupFlag(gid, 'hidden')],
+    [allLocked ? 'lock' : 'lockOpen', allLocked ? 'Desbloquear el grupo' : 'Bloquear el grupo', () => toggleGroupFlag(gid, 'locked')],
+    ['more', 'Más opciones del grupo', (e) => {
+      const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+      pick(); if (st.group.length > 1) openMenu(r.left, r.bottom + 4, groupMenu());
+    }],
+  ];
+  for (const [ic, t, fn] of acts) {
+    const a = document.createElement('button');
+    a.type = 'button'; a.className = 'act'; a.title = t; a.setAttribute('aria-label', t);
+    a.innerHTML = ICON[ic]; // constante del código
+    if (ic === 'lock') a.classList.add('text-accent');
+    a.addEventListener('click', fn);
+    li.appendChild(a);
+  }
+  return li;
+}
+
 export function renderList() {
   const ol = document.querySelector('#layers');
   if (!ol || !C.chk1) return;
   ol.textContent = '';
   const n = st.layers.length;
+  let lastGid: number | null = null;
   [...st.layers].reverse().forEach((l) => {
+    // las imágenes de un grupo van seguidas: antes de la primera, la fila del grupo
+    if (l.gid != null && l.gid !== lastGid) ol.appendChild(groupRow(l.gid));
+    lastGid = l.gid;
     const li = document.createElement('li');
     const on = l === st.sel || st.group.includes(l);
-    li.className = 'layer' + (on ? ' on' : '') + (l.hidden ? ' off' : '');
+    li.className = 'layer' + (on ? ' on' : '') + (l.hidden ? ' off' : '') + (l.gid != null ? ' in-group' : '');
+    if (l.gid != null && collapsed.has(l.gid)) li.hidden = true;
     rowLayer.set(li, l);
     // asa para arrastrar (en táctil es la única zona que arrastra; con ratón vale toda la fila)
     if (n > 1) {

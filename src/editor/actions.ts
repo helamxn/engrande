@@ -5,6 +5,7 @@ import {
   alignShifts, applyFit, bboxMM, conformCrop, cropCenter, distributeShifts, flipOnScreen, keepCenter, mmToLocal,
   natRatio, rotateLayer, unstretch, type AlignEdge,
 } from './geometry';
+import { nextGid, normalizeGroups, regroupCopies } from './groups';
 import { pushUndo, snap, takeSnap, restoreSnap, undo } from './history';
 import { canvasRevision, markCanvasChanged, scheduleSave } from './io/persist';
 import { runJob } from './pixeljobs';
@@ -12,6 +13,7 @@ import type { PixelJob, PixelResult } from './pixels';
 import { dirty } from './render';
 import { DEFAULT_EXPORT, DEFAULT_LAYOUT, posterGeo, S, st, V } from './state';
 import { s2mm } from './view';
+import { MOD, SHIFT } from './platform';
 import { renderBar } from './ui/contextbar';
 import { layoutChanged, layoutRestored, renderList, syncExportUI, syncSel } from './ui/panel';
 import type { FitMode, Layer, LayerProps, Mode, Pt, Snapshot, Source } from './types';
@@ -40,7 +42,7 @@ export function newLayer(img: HTMLCanvasElement, name: string, extra: Partial<La
   return {
     id: st.nextId++, name, img, orig: img, cx: g.W / 2, cy: g.H / 2, w: g.W, h: (g.W * img.height) / img.width,
     rot: 0, flipX: false, flipY: false, crop: { x0: 0, y0: 0, x1: 1, y1: 1 },
-    pdf: null, page: 1, pages: 1, src: null as Source | null, fit: null, hidden: false, locked: false, opacity: 1, ...extra,
+    pdf: null, page: 1, pages: 1, src: null as Source | null, fit: null, hidden: false, locked: false, opacity: 1, gid: null, ...extra,
   };
 }
 /** Coloca una imagen nueva ajustada al póster. Si va desplazada (varias a la vez), queda como colocada a mano. */
@@ -155,8 +157,77 @@ export function selectMany(ls: Layer[]) {
 }
 /** Shift o Ctrl + clic: añade la imagen a la selección o la quita. */
 export function toggleInSelection(l: Layer) {
-  const cur = selected();
-  selectMany(cur.includes(l) ? cur.filter((x) => x !== l) : [...cur, l]);
+  // una imagen de un grupo cuenta como el grupo entero (salvo si ya se entró en él: ver selectUnit)
+  const unit = inside(l) ? [l] : unitOf(l), cur = selected();
+  selectMany(unit.every((x) => cur.includes(x)) ? cur.filter((x) => !unit.includes(x)) : [...cur, ...unit]);
+}
+
+/* ---------- grupos (Ctrl+G) ---------- */
+/** Imágenes del grupo de l (o solo l si está suelta). */
+export const unitOf = (l: Layer): Layer[] => (l.gid == null ? [l] : st.layers.filter((x) => x.gid === l.gid));
+/** Se «entró» en el grupo de l: hay una imagen suya seleccionada sola (con doble clic). */
+const inside = (l: Layer) => l.gid != null && st.sel != null && st.sel.gid === l.gid;
+/** Número de grupo si la selección es exactamente un grupo entero; si no, null. */
+export function selectedGroup(): number | null {
+  const g = st.group, gid = g[0]?.gid;
+  if (g.length < 2 || gid == null || g.some((l) => l.gid !== gid)) return null;
+  return st.layers.filter((l) => l.gid === gid && !l.hidden && !l.locked).length === g.length ? gid : null;
+}
+/**
+ * Clic en una imagen: si es de un grupo, se selecciona el grupo entero; si ya se había entrado en ese grupo
+ * (una de sus imágenes sola), se selecciona solo la tocada, como en Figma.
+ */
+export function selectUnit(l: Layer) {
+  if (l.gid == null || inside(l)) select(l);
+  else selectMany(unitOf(l));
+}
+/** Doble clic dentro de un grupo seleccionado: entra en él y deja solo esa imagen. */
+export const enterGroup = (l: Layer) => select(l);
+/** Ordena las capas para que cada grupo quede junto y quita los grupos de una sola imagen. */
+export function tidyGroups() { st.layers = normalizeGroups(st.layers); }
+
+/** Agrupa las seleccionadas (2 o más). Si alguna ya era de otro grupo, pasa al nuevo. */
+export function groupSelected() {
+  const ls = selected();
+  if (ls.length < 2) { toast('Selecciona al menos 2 imágenes para agruparlas'); return; }
+  if (selectedGroup() != null) return; // ya es un grupo
+  snap();
+  const gid = nextGid(st.layers);
+  for (const l of ls) l.gid = gid;
+  tidyGroups();
+  selectMany(ls);
+  scheduleSave();
+  toast(`Grupo de ${ls.length} imágenes · ${MOD}${SHIFT}G para desagrupar`, 4000);
+}
+/** Desagrupa los grupos de las seleccionadas. */
+export function ungroupSelected() {
+  const gids = new Set(selected().map((l) => l.gid).filter((g): g is number => g != null));
+  if (!gids.size) return;
+  snap();
+  const freed = st.layers.filter((l) => l.gid != null && gids.has(l.gid));
+  for (const l of freed) l.gid = null;
+  selectMany(freed);
+  scheduleSave();
+  toast(gids.size > 1 ? `${gids.size} grupos deshechos` : 'Grupo deshecho', 6000, { label: 'Deshacer', fn: undo });
+}
+/** Saca una imagen de su grupo (se queda donde está en el orden de capas). */
+export function leaveGroup(l: Layer) {
+  if (l.gid == null) return;
+  snap();
+  l.gid = null;
+  tidyGroups();
+  afterChange();
+}
+/** Ver u ocultar, bloquear o desbloquear todas las imágenes de un grupo (desde la fila del grupo en la lista). */
+export function toggleGroupFlag(gid: number, flag: 'hidden' | 'locked') {
+  const ls = st.layers.filter((l) => l.gid === gid);
+  if (!ls.length) return;
+  snap();
+  const on = !ls.every((l) => l[flag]);
+  for (const l of ls) l[flag] = on;
+  if (on) select(null); // ocultas o bloqueadas no se pueden tener seleccionadas en el lienzo
+  afterChange();
+  toast(flag === 'hidden' ? (on ? 'Grupo oculto: no se imprimirá' : 'Grupo visible de nuevo') : (on ? 'Grupo bloqueado' : 'Grupo desbloqueado'));
 }
 export const selectAll = () => selectMany(st.layers);
 
@@ -173,6 +244,7 @@ export function removeSelected() {
   if (ls.length < 2) { if (ls[0]) removeLayer(ls[0]); return; }
   snap();
   st.layers = st.layers.filter((x) => !ls.includes(x));
+  tidyGroups();
   select(null);
   scheduleSave();
   toast(`${ls.length} imágenes quitadas del póster`, 6000, { label: 'Deshacer', fn: undo });
@@ -187,6 +259,8 @@ export function duplicateSelected() {
     st.layers.splice(st.layers.indexOf(l) + 1, 0, d);
     return d;
   });
+  regroupCopies(copies, st.layers.filter((x) => !copies.includes(x)));
+  tidyGroups();
   selectMany(copies);
   scheduleSave();
 }
@@ -198,6 +272,8 @@ export function cloneSelectedInPlace(): Layer[] {
     st.layers.splice(st.layers.indexOf(l) + 1, 0, d);
     return d;
   });
+  regroupCopies(copies, st.layers.filter((x) => !copies.includes(x)));
+  tidyGroups();
   selectMany(copies);
   return copies;
 }
@@ -221,6 +297,7 @@ export function cutSelected() {
   st.clipN = -1;
   snap();
   st.layers = st.layers.filter((x) => !ls.includes(x));
+  tidyGroups();
   select(null);
   scheduleSave();
   toast(ls.length > 1 ? `${ls.length} imágenes cortadas` : `«${ls[0]!.name}» cortada`, 6000, { label: 'Deshacer', fn: undo });
@@ -278,6 +355,7 @@ export function removeLayer(l: Layer) {
   if (S.mode === 'crop') applyCrop();
   snap();
   st.layers = st.layers.filter((x) => x !== l);
+  tidyGroups();
   if (st.sel === l) select(null);
   else if (st.group.includes(l)) { selectMany(st.group.filter((x) => x !== l)); scheduleSave(); }
   else afterChange();
@@ -290,10 +368,12 @@ export function reorder(l: Layer, to: 'front' | 'back' | number) {
   if (i === j) return;
   snap();
   st.layers.splice(i, 1); st.layers.splice(j, 0, l);
+  tidyGroups();
   afterChange();
 }
 export function duplicateLayer(l: Layer) {
   snap();
+  // la copia de una imagen de un grupo queda dentro del mismo grupo, justo encima
   const d = cloneLayer(l, { name: l.name + ' (copia)', fit: null });
   d.cx += 10; d.cy += 10;
   st.layers.splice(st.layers.indexOf(l) + 1, 0, d);
@@ -312,6 +392,8 @@ export function pasteLayer() {
     st.layers.push(d);
     return d;
   });
+  regroupCopies(ds, st.layers.filter((x) => !ds.includes(x)));
+  tidyGroups();
   selectMany(ds);
   scheduleSave();
   return true;

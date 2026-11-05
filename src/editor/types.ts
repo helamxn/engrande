@@ -54,6 +54,8 @@ export interface Layer extends LayerGeom {
   locked: boolean;
   /** Opacidad 0..1 (también en el PDF: se mezcla con el blanco del papel o con lo que haya debajo). */
   opacity: number;
+  /** Grupo al que pertenece (Ctrl+G); null = suelta. Ver groups.ts. */
+  gid: number | null;
 }
 
 export interface Settings {
@@ -99,6 +101,7 @@ export interface LayerProps extends Transform {
   locked: boolean;
   opacity: number;
   hidden: boolean;
+  gid: number | null;
 }
 
 /** Ajustes que definen la geometría del póster (se guardan en el historial). */

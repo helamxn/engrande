@@ -240,6 +240,22 @@
       & svg { @apply size-4; }
     }
   }
+  /* fila de un grupo en la lista y sus imágenes, sangradas debajo */
+  .group-row {
+    @apply flex items-center gap-1 rounded-[9px] border border-dashed border-line p-1;
+    &.on { @apply border-solid border-accent bg-accent-soft; }
+    &.off .layer-main { @apply opacity-45; }
+    & .gicon { @apply ml-1 size-5 flex-none text-muted; }
+    & .act {
+      @apply grid size-7 flex-none cursor-pointer place-items-center rounded-md border-0 bg-transparent text-muted;
+      &:hover { @apply bg-panel text-fg; }
+      & svg { @apply size-4; }
+    }
+    & .chev svg { transition: transform .15s; }
+    & .chev.closed svg { transform: rotate(-90deg); }
+  }
+  .layer.in-group { @apply ml-5; }
+
   .layer-main {
     @apply flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 rounded-md border-0 bg-transparent p-0.5 text-left;
     & canvas { @apply size-11 flex-none rounded-[5px] border border-line; }

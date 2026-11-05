@@ -1,12 +1,13 @@
 /** Barra de herramientas que flota junto a la imagen seleccionada (o acoplada abajo en móvil). */
 import {
   alignSelected, applyCrop, autoBackground, cancelCrop, distributeSelected, duplicateSelected, enterCrop, flip,
-  removeLayer, removeSelected, rotate90, setCropRatio, setMode, toggleLocked,
+  groupSelected, removeLayer, removeSelected, rotate90, selectedGroup, setCropRatio, setMode, toggleLocked,
+  ungroupSelected,
 } from '../actions';
 import type { AlignEdge } from '../geometry';
 import { RATIOS } from '../constants';
 import { $ } from '../dom';
-import { DELK, dockMQ, MOD } from '../platform';
+import { DELK, dockMQ, MOD, SHIFT } from '../platform';
 import { cropPts, dirty } from '../render';
 import { S, st, view } from '../state';
 import { isGesturing } from '../input/pointer';
@@ -73,15 +74,17 @@ function groupBar() {
     `<button type="button" class="tb" data-act="align" data-e="${edge}" title="${t}" aria-label="${t}">${ICON[icon]}</button>`;
   const ds = (icon: IconName, axis: 'x' | 'y', t: string) =>
     `<button type="button" class="tb" data-act="dist" data-a="${axis}" title="${t}" aria-label="${t}"${dis}>${ICON[icon]}</button>`;
-  return `<span class="mini"><b class="text-fg">${n}</b> imágenes</span>${SEP}`
-    + al('alignLeft', 'left', 'Alinear a la izquierda') + al('alignHCenter', 'hcenter', 'Alinear al centro (horizontal)')
+  const whole = selectedGroup() != null;
+  // compacta: junto al panel queda poco sitio. Quitar va en «Más» (y con Supr).
+  return `<span class="mini">${whole ? 'Grupo · ' : ''}<b class="text-fg">${n}</b>${whole ? '' : ' imágenes'}</span>`
+    + (whole ? tb('ungroup', '', 'ungroup', `Desagrupar (${MOD}${SHIFT}G)`) : tb('group', '', 'group', `Agrupar (${MOD}G)`))
+    + SEP + al('alignLeft', 'left', 'Alinear a la izquierda') + al('alignHCenter', 'hcenter', 'Alinear al centro (horizontal)')
     + al('alignRight', 'right', 'Alinear a la derecha') + al('alignTop', 'top', 'Alinear arriba')
     + al('alignVCenter', 'vcenter', 'Alinear al centro (vertical)') + al('alignBottom', 'bottom', 'Alinear abajo')
     + SEP + ds('distributeH', 'x', n < 3 ? 'Repartir en horizontal (3 o más imágenes)' : 'Repartir en horizontal')
     + ds('distributeV', 'y', n < 3 ? 'Repartir en vertical (3 o más imágenes)' : 'Repartir en vertical')
     + SEP + tb('dup', 'Duplicar', 'dupGroup', `Duplicar (${MOD}D)`, '', true)
-    + tb('more', 'Más', 'more', 'Más opciones (clic derecho)', '', true)
-    + tb('del', 'Quitar', 'delGroup', `Quitar del póster (${DELK})`, 'danger', true);
+    + tb('more', 'Más', 'more', `Más opciones: quitar (${DELK}), ocultar, bloquear…`, '', true);
 }
 
 export function renderBar() {
@@ -173,6 +176,8 @@ export function initContextBar() {
         case 'dupGroup': duplicateSelected(); break;
         case 'delGroup': removeSelected(); break;
         case 'more': { const r = b.getBoundingClientRect(); openMenu(r.left, r.bottom + 4, groupMenu()); break; }
+        case 'group': groupSelected(); break;
+        case 'ungroup': ungroupSelected(); break;
         case 'alignMenu': { const r = b.getBoundingClientRect(); openMenu(r.left, r.top, alignMenu()); break; }
         case 'distMenu': { const r = b.getBoundingClientRect(); openMenu(r.left, r.top, distributeMenu()); break; }
       }

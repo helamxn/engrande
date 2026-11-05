@@ -1,7 +1,7 @@
 /** Ratón, táctil y lápiz sobre el lienzo: seleccionar, mover, escalar, girar, recortar, pintar y gestos. */
 import {
-  applyCrop, beginPixelEdit, cloneSelectedInPlace, enterCrop, isSelected, markManual, paint, select, selected, selectMany,
-  setMode, toggleInSelection, wandAt,
+  applyCrop, beginPixelEdit, cloneSelectedInPlace, enterCrop, isSelected, markManual, paint, select, selected,
+  selectMany, selectUnit, setMode, toggleInSelection, unitOf, wandAt,
 } from '../actions';
 import {
   applyCropDrag, applyScale, bboxMM, boxInside, cropCenter, inside, insideImage, mmToLocal, normDeg, panInFrame,
@@ -93,11 +93,15 @@ const startMove = (m: Pt): Drag => ({ t: 'move', m0: m, items: selected().map((l
 function inMarquee(a: Pt, b: Pt): Layer[] {
   const p = s2mm(a), q = s2mm(b);
   const box = { x0: Math.min(p.x, q.x), y0: Math.min(p.y, q.y), x1: Math.max(p.x, q.x), y1: Math.max(p.y, q.y) };
-  return st.layers.filter((l) => touchable(l) && boxInside(bboxMM(l), box));
+  const ins = st.layers.filter((l) => touchable(l) && boxInside(bboxMM(l), box));
+  // un grupo solo entra si caben todas sus imágenes (como en Figma)
+  return ins.filter((l) => l.gid == null || unitOf(l).every((x) => !touchable(x) || ins.includes(x)));
 }
 /** Menú de una imagen: si forma parte de un grupo, el del grupo; si no, se selecciona sola. */
 function menuFor(h: Layer) {
   if (st.group.length > 1 && st.group.includes(h)) return groupMenu();
+  // imagen de un grupo sin haber entrado en él: el menú es el del grupo
+  if (h.gid != null && st.sel?.gid !== h.gid) { selectUnit(h); if (st.group.length > 1) return groupMenu(); }
   // táctil: lo que estaba seleccionado se ofrece para «añadir a la selección» (no hay Shift ni Ctrl)
   const prev = selected().filter((l) => l !== h);
   if (h !== st.sel) select(h);
@@ -180,7 +184,7 @@ export function initPointer(cv: HTMLCanvasElement) {
         toggleInSelection(hit);
         if (isSelected(hit)) { setPending(takeSnap()); drag = startMove(m); } else drag = { t: 'none' };
       } else if (hit) {
-        if (!isSelected(hit)) select(hit);
+        if (!isSelected(hit)) selectUnit(hit); // de un grupo: el grupo entero
         if (e.altKey) { snap(); cloneSelectedInPlace(); } // Alt + arrastrar: mueve una copia
         else setPending(takeSnap());
         drag = startMove(m);
@@ -373,6 +377,8 @@ export function initPointer(cv: HTMLCanvasElement) {
     const h = hitLayer(pos(e));
     if (!h) return;
     if (S.mode === 'crop') { applyCrop(); return; }
+    // doble clic sobre un grupo seleccionado: entra en él (queda solo esa imagen); otro doble clic ya recorta
+    if (h.gid != null && st.group.includes(h)) { select(h); return; }
     select(h); enterCrop();
   });
   cv.addEventListener('contextmenu', (e) => {

@@ -33,6 +33,9 @@ import eyeOff from 'lucide-static/icons/eye-off.svg?raw';
 import filePlus from 'lucide-static/icons/file-plus.svg?raw';
 import flip from 'lucide-static/icons/flip-horizontal-2.svg?raw';
 import grip from 'lucide-static/icons/grip-vertical.svg?raw';
+import groupIcon from 'lucide-static/icons/group.svg?raw';
+import ungroupIcon from 'lucide-static/icons/ungroup.svg?raw';
+import chevronDown from 'lucide-static/icons/chevron-down.svg?raw';
 import history from 'lucide-static/icons/history.svg?raw';
 import imagePlus from 'lucide-static/icons/image-plus.svg?raw';
 import keyboard from 'lucide-static/icons/keyboard.svg?raw';
@@ -81,7 +84,7 @@ const RAW = {
   zoomInLens, zoomOutLens,
   // varias imágenes: alinear, repartir y seleccionar
   // tamaño y posición en el panel, renombrar
-  ratioOn: link, ratioOff: linkOff, grip, warning: triangleAlert,
+  ratioOn: link, ratioOff: linkOff, grip, group: groupIcon, ungroup: ungroupIcon, chevronDown, warning: triangleAlert,
   fitContain: shrink, fitCover: expand, center: focus, rename: pencilLine,
   alignLeft, alignHCenter, alignRight, alignTop, alignVCenter, alignBottom, distributeH, distributeV, selectBox,
 } as const;

@@ -40,7 +40,8 @@ export function initListDrag(ol: HTMLElement, layerOf: (li: Element) => Layer | 
       if (Math.abs(dy) < 6) return;
       drag.started = true;
       if (!ol.hasPointerCapture(e.pointerId)) ol.setPointerCapture(e.pointerId);
-      drag.rows = [...ol.children] as HTMLElement[];
+      // solo las filas de imágenes visibles (no las de grupo ni las de un grupo plegado)
+      drag.rows = ([...ol.children] as HTMLElement[]).filter((r) => r.classList.contains('layer') && !r.hidden);
       drag.from = drag.to = drag.rows.indexOf(drag.li);
       const r = drag.li.getBoundingClientRect(), next = drag.rows[drag.from + 1] ?? drag.rows[drag.from - 1];
       const gap = next ? Math.abs(next.getBoundingClientRect().top - r.top) - r.height : 6;

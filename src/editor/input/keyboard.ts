@@ -1,7 +1,7 @@
 /** Atajos de teclado. */
 import {
-  afterChange, applyCrop, cancelCrop, copySelected, cutSelected, duplicateSelected, enterCrop, flip, removeSelected,
-  reorder, rotate90, select, selectAll, selected, setMode, shiftSelected,
+  afterChange, applyCrop, cancelCrop, copySelected, cutSelected, duplicateSelected, enterCrop, flip, groupSelected,
+  removeSelected, reorder, rotate90, select, selectAll, selected, setMode, shiftSelected, ungroupSelected,
 } from '../actions';
 import { redo, snap, undo } from '../history';
 import { S, st } from '../state';
@@ -27,6 +27,7 @@ export function initKeyboard() {
     // Ctrl+\ como en Figma (en teclado español, la tecla ç ocupa esa posición)
     if (mod && (e.code === 'Backslash' || e.key === '\\')) { e.preventDefault(); togglePanel(); return; }
     const any = selected().length > 0;
+    if (mod && k === 'g') { e.preventDefault(); if (e.shiftKey) ungroupSelected(); else groupSelected(); return; }
     if (mod && k === 'a') { e.preventDefault(); if (S.mode === 'crop') applyCrop(); selectAll(); return; }
     if (mod && k === 'd' && any) { e.preventDefault(); duplicateSelected(); return; }
     if (mod && k === 'c' && any) { e.preventDefault(); copySelected(); return; }

@@ -1,6 +1,6 @@
 /** Ventana de atajos de teclado y gestos (tecla «?» o botón del panel). */
 import { $, $$ } from '../dom';
-import { ALT, DELK, isMac, MOD } from '../platform';
+import { ALT, DELK, isMac, MOD, SHIFT } from '../platform';
 
 const SHIFT_CLICK = isMac ? '⇧ o ⌘ + clic' : 'Shift o Ctrl + clic';
 
@@ -26,6 +26,8 @@ const GROUPS: Group[] = [
     [SHIFT_CLICK, 'Agregar o quitar de la selección'],
     ['Arrastrar en el fondo', 'Recuadro: selecciona las que quedan dentro'],
     [`${MOD}A`, 'Seleccionar todas'],
+    [`${MOD}G · ${MOD}${SHIFT}G`, 'Agrupar · desagrupar'],
+    ['Doble clic en un grupo', 'Entrar en él y elegir una sola imagen'],
     ['Arrastrar una', 'Mover todas juntas'],
     ['Esquinas · círculo', 'Escalar · girar todas (Shift: de 15° en 15°)'],
     ['Mantener pulsada otra', 'Táctil: «Agregar a la selección»'],

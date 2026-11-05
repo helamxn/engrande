@@ -300,7 +300,8 @@ export function render() {
       ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(rot.x, rot.y, 6, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
       const w = Math.hypot(fr[1]!.x - fr[0]!.x, fr[1]!.y - fr[0]!.y), h = Math.hypot(fr[3]!.x - fr[0]!.x, fr[3]!.y - fr[0]!.y);
       // con varias, la calidad de la peor (es la que se notará al imprimir)
-      sizeLabel(box, `${st.group.length} imágenes · ${cm(w)} × ${cm(h)} cm`, Math.min(...st.group.map(pppAt)));
+      const g0 = st.group[0]!.gid, isGroup = g0 != null && st.group.every((l) => l.gid === g0);
+      sizeLabel(box, `${isGroup ? 'Grupo · ' : ''}${st.group.length} imágenes · ${cm(w)} × ${cm(h)} cm`, Math.min(...st.group.map(pppAt)));
     }
     if (st.marquee) {
       const { a, b } = st.marquee, x = Math.min(a.x, b.x), y = Math.min(a.y, b.y), w = Math.abs(b.x - a.x), h = Math.abs(b.y - a.y);
