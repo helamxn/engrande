@@ -58,10 +58,24 @@ test('escalar desde una esquina deja el borde que se arrastra en un mm entero', 
   expect(a.x0).toBeCloseTo(b.x0, 6); // la esquina opuesta no se mueve
 });
 
-test('con Ctrl no hay imán ni rejilla', async ({ page }) => {
+test('Ctrl + arrastrar desde el principio mueve sin imán ni rejilla (no la deselecciona)', async ({ page }) => {
   const b = await setup(page), m = await screenMap(page, b), c = m.toScreen((b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2);
-  // Ctrl se pulsa ya arrastrando (Ctrl + clic sobre la imagen la quitaría de la selección)
-  await drag(page, c, { x: c.x - 23.2, y: c.y }, ['Control']);
+  await page.keyboard.down('Control');
+  await drag(page, c, { x: c.x - 23.2, y: c.y });
+  await page.keyboard.up('Control');
   const a = await savedBox(page, (x) => Math.abs(x.x0 - b.x0) > 1);
   expect(onMm(a.x0)).toBe(false);
+  expect(await listNames(page)).toEqual(['foto*']);
+});
+
+test('Ctrl o Shift + clic sin arrastrar sobre una seleccionada la quita de la selección', async ({ page }) => {
+  const b = await setup(page), m = await screenMap(page, b), c = m.toScreen((b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2);
+  await page.keyboard.down('Control');
+  await page.mouse.click(c.x, c.y);
+  await page.keyboard.up('Control');
+  expect(await listNames(page)).toEqual(['foto']);
+  await page.keyboard.down('Shift');
+  await page.mouse.click(c.x, c.y); // ahora la vuelve a agregar
+  await page.keyboard.up('Shift');
+  expect(await listNames(page)).toEqual(['foto*']);
 });

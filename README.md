@@ -11,7 +11,7 @@ Todo ocurre en el navegador: no hay servidor, cuentas ni base de datos, y las im
 - **pdf.js 6** para leer PDF y **jsPDF 4** para exportar. Las dos librerías se cargan solo cuando se usan.
 - Fuentes Archivo e IBM Plex Mono servidas desde el propio dominio (Fontsource)
 - Iconos de **Lucide** (`lucide-static`), importados uno a uno en `src/editor/ui/icons.ts`
-- **Vitest** para la lógica pura y **Playwright** para probar la app entera en el navegador (`e2e/`): guardado, «Nuevo», gestos del lienzo, rejilla, copiar/pegar, recorte y descarga
+- **Vitest** para la lógica pura y **Playwright** para probar la app entera en el navegador (`e2e/`): guardado, «Nuevo», gestos del lienzo y rejilla, copiar/pegar, recorte, descarga, PDF de entrada (páginas, CMYK, archivos dañados), pantalla táctil con varios dedos y móvil
 
 ## Comandos
 

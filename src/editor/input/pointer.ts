@@ -42,10 +42,11 @@ type Drag =
 /**
  * Mover la imagen o todas las seleccionadas: posición inicial de cada una. altAt: Alt + arrastrar, la copia aún no
  * existe; se crea al empezar a moverse (un Alt + clic sin arrastrar no debe dejar una copia encima de la original).
+ * toggle: Shift o Ctrl sobre una ya seleccionada; si se suelta sin arrastrar, sale de la selección (ver endPtr).
  */
 interface MoveDrag {
   t: 'move'; m0: Pt; items: { l: Layer; x: number; y: number }[]; box0: Box; targets: SnapTargets; others: Box[];
-  dupOf: Layer[] | null; altAt?: Pt;
+  dupOf: Layer[] | null; altAt?: Pt; toggle?: { l: Layer; at: Pt };
 }
 
 /** Pellizco con dos dedos: zoom de la vista, transformar la imagen o (al recortar) encuadrarla en el marco. */
@@ -342,9 +343,12 @@ export function initPointer(cv: HTMLCanvasElement) {
       }
       const hit = hitLayer(p), multi = e.shiftKey || e.ctrlKey || e.metaKey;
       if (hit && multi) {
-        // Shift o Ctrl + clic: añade o quita; si queda seleccionada, se puede arrastrar todo junto
-        toggleInSelection(hit);
-        if (isSelected(hit)) { setPending(takeSnap()); drag = startMove(m); } else drag = { t: 'none' };
+        // Shift o Ctrl + clic: añade o quita. Una que no estaba se añade al pulsar y ya se puede arrastrar todo junto.
+        // Una que ya estaba se quita al soltar, y solo si no se arrastró: así Shift o Ctrl + arrastrar mueve lo
+        // seleccionado (en horizontal o vertical, o sin imán) en vez de deseleccionarla (como en Figma)
+        setPending(takeSnap());
+        if (isSelected(hit)) drag = { ...startMove(m), toggle: { l: hit, at: p } };
+        else { toggleInSelection(hit); drag = isSelected(hit) ? startMove(m) : { t: 'none' }; }
       } else if (hit) {
         if (!isSelected(hit)) selectUnit(hit); // de un grupo: el grupo entero
         // Alt + arrastrar: mueve una copia (y se mide contra la original mientras siga Alt pulsado). La copia se
@@ -444,6 +448,10 @@ export function initPointer(cv: HTMLCanvasElement) {
       case 'pan': panBy(p.x - drag.last.x, p.y - drag.last.y); drag.last = p; break;
       case 'move': {
         let d = drag;
+        if (d.toggle) {
+          if (Math.hypot(p.x - d.toggle.at.x, p.y - d.toggle.at.y) < 4) break; // aún es un clic
+          d.toggle = undefined; // es un arrastre: se mueve y no se quita de la selección
+        }
         if (d.altAt) {
           if (Math.hypot(p.x - d.altAt.x, p.y - d.altAt.y) < 4) break; // aún no es un arrastre
           const originals = selected();
@@ -581,6 +589,8 @@ export function initPointer(cv: HTMLCanvasElement) {
     if (!ptrs.has(e.pointerId)) return;
     const p = pos(e), sel = st.sel;
     if (drag?.t === 'marquee') { st.marquee = null; if (drag.moved) cv.style.cursor = 'default'; }
+    // Shift o Ctrl + clic (sin arrastrar) sobre una que ya estaba seleccionada: sale de la selección
+    const toggleOnUp = drag?.t === 'move' && drag.toggle && e.type === 'pointerup' ? drag.toggle.l : null;
     if (drag?.t === 'tap' && !drag.moved && e.type === 'pointerup') {
       if (sel && inside(sel, s2mm(p))) wandAt(p);
       else { const hit = hitLayer(p); if (hit) select(hit); else setMode('move'); }
@@ -597,6 +607,7 @@ export function initPointer(cv: HTMLCanvasElement) {
     ptrs.delete(e.pointerId);
     if (ptrs.size < 2) { if (gest) renderList(); gest = null; }
     drag = null; setPending(null);
+    if (toggleOnUp) toggleInSelection(toggleOnUp);
     if (ptrs.size === 0 && e.pointerType !== 'mouse') st.hover = null;
     if (S.mode === 'move' && e.pointerType === 'mouse') cv.style.cursor = st.sel && inside(st.sel, s2mm(p)) ? 'move' : 'default';
     dirty();

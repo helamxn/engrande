@@ -122,3 +122,63 @@ export async function drag(page: Page, from: { x: number; y: number }, to: { x: 
 
 /** Está en un mm entero (con margen para la coma flotante). */
 export const onMm = (v: number) => Math.abs(v - Math.round(v)) < 1e-6;
+
+/* ---------- PDF de prueba y archivos ---------- */
+/** Página de un PDF de prueba: color de fondo en RGB (0–255) o en CMYK (0–1). */
+export type PdfPage = { rgb: [number, number, number] } | { cmyk: [number, number, number, number] };
+
+/** PDF de varias páginas (A5 apaisado), cada una de un color y con su número, generado con jsPDF en Node. */
+export async function makePdf(pages: PdfPage[]): Promise<Buffer> {
+  const { jsPDF } = await import('jspdf');
+  const doc = new jsPDF({ unit: 'mm', format: 'a5', orientation: 'landscape' });
+  pages.forEach((p, i) => {
+    if (i) doc.addPage('a5', 'landscape');
+    if ('rgb' in p) doc.setFillColor(...p.rgb); else doc.setFillColor(...p.cmyk);
+    doc.rect(0, 0, 210, 148, 'F');
+    doc.setFontSize(60); doc.setTextColor(255, 255, 255); doc.text(`Página ${i + 1}`, 30, 80);
+  });
+  return Buffer.from(doc.output('arraybuffer'));
+}
+
+/** Agrega un archivo cualquiera con el selector de «Agregar imagen». */
+export async function addFile(page: Page, name: string, mimeType: string, buffer: Buffer) {
+  await page.locator('#file').setInputFiles({ name, mimeType, buffer });
+}
+
+/** Color (r, g, b) del centro de la miniatura de la fila i de la lista (lo que se ve de la imagen, a 88 px). */
+export function thumbColor(page: Page, i = 0) {
+  return page.locator('#layers li.layer canvas').nth(i).evaluate((c: HTMLCanvasElement) =>
+    [...c.getContext('2d')!.getImageData(44, 44, 1, 1).data].slice(0, 3));
+}
+
+/* ---------- toques de verdad ---------- */
+/**
+ * Dedos sobre la pantalla con el protocolo de Chromium (Edge y Chrome): eventos táctiles reales, con varios dedos a la
+ * vez, que el navegador convierte en pointer events con pointerType «touch» (Playwright solo sabe tocar con uno).
+ */
+export async function fingers(page: Page) {
+  const cdp = await page.context().newCDPSession(page);
+  const send = (type: 'touchStart' | 'touchMove' | 'touchEnd', pts: { x: number; y: number }[]) =>
+    cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map((p, id) => ({ x: p.x, y: p.y, id })) });
+  return {
+    /** Mantener pulsado un dedo ms milisegundos. */
+    async hold(p: { x: number; y: number }, ms: number) {
+      await send('touchStart', [p]); await page.waitForTimeout(ms); await send('touchEnd', []);
+    },
+    /** Dos dedos que van de a0/b0 a a1/b1 en varios pasos. */
+    async pinch(a0: { x: number; y: number }, b0: { x: number; y: number }, a1: { x: number; y: number }, b1: { x: number; y: number }) {
+      await send('touchStart', [a0, b0]);
+      for (let i = 1; i <= 10; i++) {
+        const t = i / 10, lerp = (p: { x: number; y: number }, q: { x: number; y: number }) => ({ x: p.x + (q.x - p.x) * t, y: p.y + (q.y - p.y) * t });
+        await send('touchMove', [lerp(a0, a1), lerp(b0, b1)]);
+      }
+      await send('touchEnd', []);
+    },
+    /** Un dedo que arrastra de p a q. */
+    async swipe(p: { x: number; y: number }, q: { x: number; y: number }) {
+      await send('touchStart', [p]);
+      for (let i = 1; i <= 10; i++) await send('touchMove', [{ x: p.x + (q.x - p.x) * i / 10, y: p.y + (q.y - p.y) * i / 10 }]);
+      await send('touchEnd', []);
+    },
+  };
+}
