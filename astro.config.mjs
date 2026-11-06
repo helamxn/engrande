@@ -5,6 +5,10 @@ import tailwindcss from '@tailwindcss/vite';
 
 // https://astro.build/config
 export default defineConfig({
+  // dirección pública: la usan la URL canónica, la imagen para compartir, robots.txt y el sitemap.
+  // Con dominio propio, basta con cambiarla aquí
+  site: 'https://pliego-omega.vercel.app',
+
   // sitio 100 % estático: todo ocurre en el navegador, no hay servidor
   output: 'static',
 

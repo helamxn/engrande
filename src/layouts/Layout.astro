@@ -9,6 +9,27 @@ const {
   title = 'Pliego · Pósters grandes impresos por hojas',
   description = 'Convierte cualquier imagen o PDF en un póster grande impreso en varias hojas A4, A3 o Carta, con marcas de corte y solape para pegar.',
 } = Astro.props;
+
+// URLs absolutas (las piden las redes al compartir): `site` en astro.config.mjs
+const url = new URL(Astro.url.pathname, Astro.site).href;
+const image = new URL('/og.png', Astro.site).href;
+const imageAlt = 'Lienzo de Pliego: un póster de 3 × 2 hojas A4 con el logo seleccionado y las franjas de solape';
+
+// datos estructurados para buscadores: una app web gratuita (es un bloque de datos: la CSP no lo ejecuta)
+const app = {
+  '@context': 'https://schema.org',
+  '@type': 'WebApplication',
+  name: 'Pliego',
+  url,
+  description,
+  image,
+  inLanguage: 'es',
+  applicationCategory: 'DesignApplication',
+  operatingSystem: 'Web',
+  browserRequirements: 'Requiere JavaScript',
+  isAccessibleForFree: true,
+  offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+};
 ---
 
 <!doctype html>
@@ -18,9 +39,33 @@ const {
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="description" content={description} />
     <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#eceff3" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0f1418" />
+    <link rel="canonical" href={url} />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta name="generator" content={Astro.generator} />
     <title>{title}</title>
+
+    <!-- vista previa al compartir (WhatsApp, Facebook, LinkedIn, Slack…) e imagen generada con `pnpm og` -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Pliego" />
+    <meta property="og:locale" content="es_LA" />
+    <meta property="og:url" content={url} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:image" content={image} />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content={imageAlt} />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={image} />
+    <meta name="twitter:image:alt" content={imageAlt} />
+
+    <script type="application/ld+json" is:inline set:html={JSON.stringify(app)} />
   </head>
   <body>
     <slot />

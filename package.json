@@ -14,6 +14,7 @@
     "check": "astro check",
     "test": "vitest run",
     "test:e2e": "tsc -p e2e && pnpm build && playwright test",
+    "og": "node scripts/og.mjs",
     "astro": "astro"
   },
   "dependencies": {

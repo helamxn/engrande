@@ -1,0 +1,148 @@
+<!doctype html>
+<!--
+  Plantilla de la imagen para compartir (public/og.png, 1200 × 630) y del icono de iOS (public/apple-touch-icon.png).
+  La genera `pnpm og` (scripts/og.mjs). Imita el lienzo de la app en modo oscuro: mesa casi negra con la rejilla de
+  1 y 5 cm, el póster en blanco (es papel: la app también lo dibuja blanco), su margen rayado, las franjas de solape
+  y una imagen seleccionada. Geometría real: 3 × 2 hojas A4 apaisadas, margen 6 mm y solape 10 mm (83,5 × 38,6 cm).
+-->
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<style>
+  @font-face {
+    font-family: Archivo; font-weight: 100 900; font-stretch: 62% 125%;
+    src: url('../../node_modules/@fontsource-variable/archivo/files/archivo-latin-wdth-normal.woff2') format('woff2-variations');
+  }
+  @font-face {
+    font-family: Plex; font-weight: 500;
+    src: url('../../node_modules/@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-500-normal.woff2') format('woff2');
+  }
+  @font-face {
+    font-family: Plex; font-weight: 500;
+    src: url('../../node_modules/@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-ext-500-normal.woff2') format('woff2');
+    unicode-range: U+0100-024F, U+1E00-1EFF, U+2000-22FF;
+  }
+  :root {
+    /* colores del tema oscuro de la app (src/styles/global.css) */
+    --desk: #0a0e11; --grid: #26313a; --muted: #8d9fae; --line: #29343e; --accent: #4db3df; --mark: #f0679a;
+    /* lo impreso en el póster: los colores de la imagen, que no cambian con el tema */
+    --ink: #16202a; --ink-muted: #5a6977; --brand: #c21a5a;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #000; }
+  svg { display: block; }
+  text { font-family: Archivo, sans-serif; }
+  .mono { font-family: Plex, ui-monospace, monospace; font-weight: 500; }
+</style>
+</head>
+<body>
+  <div id="og" style="width: 1200px; height: 630px"></div>
+  <div id="icon" style="width: 180px; height: 180px; margin-top: 20px"></div>
+
+  <script>
+    const NS = 'http://www.w3.org/2000/svg';
+    const el = (tag, attrs = {}, parent) => {
+      const e = document.createElementNS(NS, tag);
+      for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+      if (parent) parent.appendChild(e);
+      return e;
+    };
+
+    /* ---------- imagen para compartir ---------- */
+    const W = 1200, H = 630;
+    // póster en mm: 3 × 2 hojas A4 apaisadas (297 × 210), margen 6, solape 10
+    const m = 6, ov = 10, tw = 297 - 2 * m, th = 210 - 2 * m, cols = 3, rows = 2;
+    const PW = cols * tw - (cols - 1) * ov, PH = rows * th - (rows - 1) * ov; // 835 × 386
+    const k = 1040 / (PW + 2 * m); // px por mm
+    const ox = (W - (PW + 2 * m) * k) / 2 + m * k, oy = 66 + m * k; // esquina del póster impreso
+    const X = (mm) => ox + mm * k, Y = (mm) => oy + mm * k;
+
+    const svg = el('svg', { width: W, height: H, viewBox: `0 0 ${W} ${H}` }, document.querySelector('#og'));
+    const defs = el('defs', {}, svg);
+    // rejilla fija al póster, como en la app: 1 cm tenue y 5 cm marcada
+    for (const [id, step, op] of [['g1', 10, 0.35], ['g5', 50, 1]]) {
+      const p = el('pattern', { id, patternUnits: 'userSpaceOnUse', width: step * k, height: step * k, x: ox, y: oy }, defs);
+      el('path', { d: `M ${step * k} 0 H 0 V ${step * k}`, fill: 'none', stroke: 'var(--grid)', 'stroke-width': 1, opacity: op }, p);
+    }
+    // margen sin imprimir: rayado diagonal
+    const hp = el('pattern', { id: 'hatch', patternUnits: 'userSpaceOnUse', width: 8, height: 8 }, defs);
+    el('path', { d: 'M -1 9 L 9 -1 M 7 9 L 9 7 M -1 1 L 1 -1', stroke: 'rgba(110,120,135,.32)', 'stroke-width': 1 }, hp);
+    const sh = el('filter', { id: 'shadow', x: '-5%', y: '-5%', width: '110%', height: '115%' }, defs);
+    el('feDropShadow', { dx: 0, dy: 3, stdDeviation: 7, 'flood-color': '#000', 'flood-opacity': 0.45 }, sh);
+
+    el('rect', { width: W, height: H, fill: 'var(--desk)' }, svg);
+    el('rect', { width: W, height: H, fill: 'url(#g1)' }, svg);
+    el('rect', { width: W, height: H, fill: 'url(#g5)' }, svg);
+
+    // nombre del póster encima de su esquina, como el nombre de un marco
+    const label = el('text', { x: X(-m), y: Y(-m) - 10, class: 'mono', 'font-size': 15, fill: 'var(--muted)' }, svg);
+    label.textContent = 'Póster 83,5 × 38,6 cm · 3 × 2 hojas A4 · margen 6 mm';
+
+    // papel: margen rayado y póster blanco
+    const paper = { x: X(-m), y: Y(-m), width: (PW + 2 * m) * k, height: (PH + 2 * m) * k };
+    el('rect', { ...paper, fill: '#fff', filter: 'url(#shadow)' }, svg);
+    el('rect', { ...paper, fill: 'url(#hatch)' }, svg);
+    el('rect', { x: X(0), y: Y(0), width: PW * k, height: PH * k, fill: '#fff' }, svg);
+
+    // lo impreso: marca, nombre, lema y una línea en mono
+    const art = el('g', {}, svg);
+    const cx = 275, cy = 256, s = 4.3; // marca: la del favicon (30 × 30), escalada
+    const logo = el('g', { transform: `translate(${cx - 15 * s} ${cy - 15 * s}) scale(${s})`, color: 'var(--brand)' }, art);
+    el('circle', { cx: 15, cy: 15, r: 8.5, fill: 'none', stroke: 'currentColor', 'stroke-width': 2 }, logo);
+    el('circle', { cx: 15, cy: 15, r: 3.2, fill: 'currentColor' }, logo);
+    el('path', { d: 'M15 1v28M1 15h28', stroke: 'currentColor', 'stroke-width': 2 }, logo);
+    const word = el('text', { x: 372, y: 318, 'font-size': 172, 'font-weight': 800, 'font-stretch': '118%', 'letter-spacing': -2, fill: 'var(--ink)' }, art);
+    word.textContent = 'Pliego';
+    const tag = el('text', { x: W / 2, y: 391, 'text-anchor': 'middle', 'font-size': 33, 'font-weight': 700, 'font-stretch': '104%', fill: 'var(--ink)' }, art);
+    tag.textContent = 'Tu imagen, en grande. Hoja por hoja.';
+    const sub = el('text', { x: W / 2, y: 442, 'text-anchor': 'middle', class: 'mono', 'font-size': 19, fill: 'var(--ink-muted)' }, art);
+    sub.textContent = 'imagen o PDF → hojas A4, A3 o Carta · gratis, en tu navegador';
+
+    // franjas de solape (se imprimen en las dos hojas vecinas) y sus líneas discontinuas
+    const bands = el('g', { fill: 'var(--mark)', opacity: 0.13 }, svg);
+    const dash = el('g', { stroke: 'var(--mark)', 'stroke-width': 1, 'stroke-dasharray': '5 4', fill: 'none' }, svg);
+    for (let c = 1; c < cols; c++) {
+      const a = c * (tw - ov);
+      el('rect', { x: X(a), y: Y(0), width: ov * k, height: PH * k }, bands);
+      for (const x of [a, a + ov]) el('path', { d: `M ${Math.round(X(x)) + 0.5} ${Y(0)} V ${Y(PH)}` }, dash);
+    }
+    for (let r = 1; r < rows; r++) {
+      const a = r * (th - ov);
+      el('rect', { x: X(0), y: Y(a), width: PW * k, height: ov * k }, bands);
+      for (const y of [a, a + ov]) el('path', { d: `M ${X(0)} ${Math.round(Y(y)) + 0.5} H ${X(PW)}` }, dash);
+    }
+
+    // la marca y el nombre, seleccionados: marco, tiradores y el de girar
+    const sel = { x0: 190, y0: 182, x1: 1010, y1: 350 };
+    const ui = el('g', { stroke: 'var(--accent)', 'stroke-width': 1.5, fill: '#fff' }, svg);
+    el('rect', { x: sel.x0, y: sel.y0, width: sel.x1 - sel.x0, height: sel.y1 - sel.y0, fill: 'none' }, ui);
+    const mx = (sel.x0 + sel.x1) / 2, my = (sel.y0 + sel.y1) / 2;
+    el('path', { d: `M ${mx} ${sel.y0} V ${sel.y0 - 22}`, fill: 'none' }, ui);
+    el('circle', { cx: mx, cy: sel.y0 - 28, r: 6.5 }, ui);
+    for (const [x, y] of [[sel.x0, sel.y0], [sel.x1, sel.y0], [sel.x0, sel.y1], [sel.x1, sel.y1]]) el('rect', { x: x - 5, y: y - 5, width: 10, height: 10 }, ui);
+    for (const [x, y] of [[mx, sel.y0], [mx, sel.y1], [sel.x0, my], [sel.x1, my]]) el('circle', { cx: x, cy: y, r: 5 }, ui);
+
+    // etiqueta bajo el póster, como la de tamaño y calidad de la app (con un borde para que se lea en la mesa oscura)
+    const pill = el('g', {}, svg);
+    const pt = el('text', { x: 0, y: 0, class: 'mono', 'font-size': 15, fill: '#fff', 'dominant-baseline': 'middle' }, pill);
+    pt.textContent = 'Pliego · 3 × 2 hojas A4 · 300 ppp';
+
+    /* ---------- icono de iOS: la marca sobre el panel oscuro (iOS redondea las esquinas) ---------- */
+    const icon = el('svg', { width: 180, height: 180, viewBox: '0 0 180 180' }, document.querySelector('#icon'));
+    el('rect', { width: 180, height: 180, fill: '#161d23' }, icon);
+    const ig = el('g', { transform: 'translate(30 30) scale(4)', color: 'var(--mark)' }, icon);
+    el('circle', { cx: 15, cy: 15, r: 8.5, fill: 'none', stroke: 'currentColor', 'stroke-width': 2 }, ig);
+    el('circle', { cx: 15, cy: 15, r: 3.2, fill: 'currentColor' }, ig);
+    el('path', { d: 'M15 1v28M1 15h28', stroke: 'currentColor', 'stroke-width': 2 }, ig);
+
+    // la etiqueta se mide con la fuente ya cargada
+    document.fonts.ready.then(() => {
+      const w = pt.getComputedTextLength() + 52, h = 30, x = W / 2 - w / 2, y = Y(PH + m) + 18;
+      pill.prepend(el('rect', { x, y, width: w, height: h, rx: h / 2, fill: 'rgba(22,32,42,.95)', stroke: 'var(--line)' }));
+      pt.setAttribute('x', x + 18); pt.setAttribute('y', y + h / 2 + 1);
+      el('circle', { cx: x + w - 20, cy: y + h / 2, r: 5, fill: '#5cc489' }, pill);
+      document.body.dataset.ready = '1';
+    });
+  </script>
+</body>
+</html>

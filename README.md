@@ -31,6 +31,7 @@ Todo ocurre en el navegador: no hay servidor, cuentas ni base de datos, y las im
 | `pnpm test`     | Tests unitarios                                                 |
 | `pnpm test:e2e` | Build y tests de punta a punta                                  |
 | `pnpm check`    | Comprobación de tipos                                           |
+| `pnpm og`       | Regenera la imagen para compartir y el icono de iOS (`public/`) |
 
 La CSP solo se aplica en el build: pruébala con `pnpm build && pnpm preview`, no con `pnpm dev`.
 
@@ -76,5 +77,7 @@ vercel.json                       cabeceras de seguridad y caché
 - **Sin inyección de HTML:** los datos del usuario, como los nombres de archivo, se insertan siempre con `textContent`. Los SVG se cargan como `<img>`, así que su JavaScript no se ejecuta.
 
 ## Despliegue en Vercel
+
+La dirección pública (`site` en `astro.config.mjs`) da la URL canónica, la imagen para compartir, `robots.txt` y el sitemap; al pasar a un dominio propio se cambia ahí.
 
 Importa el repositorio en Vercel. `vercel.json` ya fija el framework, `pnpm install --frozen-lockfile`, `pnpm build` y la carpeta `dist`. Despliégalo en un dominio o subdominio propio, sin compartir origen con aplicaciones que tengan sesión.
