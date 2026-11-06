@@ -94,7 +94,8 @@
     const word = el('text', { x: 372, y: 318, 'font-size': 172, 'font-weight': 800, 'font-stretch': '118%', 'letter-spacing': -2, fill: 'var(--ink)' }, art);
     word.textContent = 'Pliego';
     const tag = el('text', { x: W / 2, y: 391, 'text-anchor': 'middle', 'font-size': 33, 'font-weight': 700, 'font-stretch': '104%', fill: 'var(--ink)' }, art);
-    tag.textContent = 'Tu imagen, en grande. Hoja por hoja.';
+    // el mismo lema que el título de la página (src/layouts/Layout.astro): un solo mensaje al compartir
+    tag.textContent = 'Pósters grandes impresos por hojas';
     const sub = el('text', { x: W / 2, y: 442, 'text-anchor': 'middle', class: 'mono', 'font-size': 19, fill: 'var(--ink-muted)' }, art);
     sub.textContent = 'imagen o PDF → hojas A4, A3 o Carta · gratis, en tu navegador';
 
@@ -122,10 +123,12 @@
     for (const [x, y] of [[sel.x0, sel.y0], [sel.x1, sel.y0], [sel.x0, sel.y1], [sel.x1, sel.y1]]) el('rect', { x: x - 5, y: y - 5, width: 10, height: 10 }, ui);
     for (const [x, y] of [[mx, sel.y0], [mx, sel.y1], [sel.x0, my], [sel.x1, my]]) el('circle', { cx: x, cy: y, r: 5 }, ui);
 
-    // etiqueta bajo el póster, como la de tamaño y calidad de la app (con un borde para que se lea en la mesa oscura)
+    // etiqueta bajo la selección, como en la app: tamaño de lo seleccionado en cm y calidad (con un borde para que se
+    // lea en la mesa oscura). La distribución de hojas ya está en el nombre del póster, arriba
     const pill = el('g', {}, svg);
     const pt = el('text', { x: 0, y: 0, class: 'mono', 'font-size': 15, fill: '#fff', 'dominant-baseline': 'middle' }, pill);
-    pt.textContent = 'Pliego · 3 × 2 hojas A4 · 300 ppp';
+    const cm = (px) => (px / k / 10).toFixed(1).replace('.', ',');
+    pt.textContent = `${cm(sel.x1 - sel.x0)} × ${cm(sel.y1 - sel.y0)} cm · 300 ppp`;
 
     /* ---------- icono de iOS: la marca sobre el panel oscuro (iOS redondea las esquinas) ---------- */
     const icon = el('svg', { width: 180, height: 180, viewBox: '0 0 180 180' }, document.querySelector('#icon'));

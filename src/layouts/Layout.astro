@@ -12,7 +12,8 @@ const {
 
 // URLs absolutas (las piden las redes al compartir): `site` en astro.config.mjs
 const url = new URL(Astro.url.pathname, Astro.site).href;
-const image = new URL('/og.png', Astro.site).href;
+// ?v=: las redes guardan la imagen días; al regenerarla con `pnpm og`, se sube el número para que tomen la nueva
+const image = new URL('/og.png?v=2', Astro.site).href;
 const imageAlt = 'Lienzo de Pliego: un póster de 3 × 2 hojas A4 con el logo seleccionado y las franjas de solape';
 
 // datos estructurados para buscadores: una app web gratuita (es un bloque de datos: la CSP no lo ejecuta)
