@@ -53,6 +53,7 @@ import plus from 'lucide-static/icons/plus.svg?raw';
 import printer from 'lucide-static/icons/printer.svg?raw';
 import redo from 'lucide-static/icons/redo-2.svg?raw';
 import rotateCw from 'lucide-static/icons/rotate-cw.svg?raw';
+import ruler from 'lucide-static/icons/ruler.svg?raw';
 import scaling from 'lucide-static/icons/scaling.svg?raw';
 import shrink from 'lucide-static/icons/shrink.svg?raw';
 import pencilLine from 'lucide-static/icons/pen-line.svg?raw';
@@ -84,7 +85,7 @@ const RAW = {
   zoomInLens, zoomOutLens,
   // varias imágenes: alinear, repartir y seleccionar
   // tamaño y posición en el panel, renombrar
-  ratioOn: link, ratioOff: linkOff, grip, group: groupIcon, ungroup: ungroupIcon, chevronDown, warning: triangleAlert,
+  ruler, ratioOn: link, ratioOff: linkOff, grip, group: groupIcon, ungroup: ungroupIcon, chevronDown, warning: triangleAlert,
   fitContain: shrink, fitCover: expand, center: focus, rename: pencilLine,
   alignLeft, alignHCenter, alignRight, alignTop, alignVCenter, alignBottom, distributeH, distributeV, selectBox,
 } as const;

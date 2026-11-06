@@ -96,6 +96,218 @@ export function gridLevels(k: number): { step: number; alpha: number }[] {
   }).filter((g) => g.alpha > 0.01);
 }
 
+/* ---------- imanes al mover ---------- */
+/** Líneas a las que se pega lo que se mueve: bordes y centros (mm), en x y en y; px y py, solo las del póster. */
+export interface SnapTargets { x: number[]; y: number[]; px: number[]; py: number[] }
+/** Bordes y centro de una caja. */
+const lines = (a: number, b: number) => [a, (a + b) / 2, b];
+/** Dos medidas en mm son la misma (por debajo de esto solo hay ruido de decimales). */
+const EPS = 1e-6;
+const same = (a: number, b: number) => Math.abs(a - b) < EPS;
+/** Bordes y centro del póster y de cada caja (las demás imágenes). */
+export function snapTargets(W: number, H: number, boxes: Box[]): SnapTargets {
+  const px = lines(0, W), py = lines(0, H), x = [...px], y = [...py];
+  for (const b of boxes) { x.push(...lines(b.x0, b.x1)); y.push(...lines(b.y0, b.y1)); }
+  return { x, y, px, py };
+}
+/**
+ * El ajuste de un eje al mover: el más corto que deja algún borde o el centro (own) sobre una línea. Si hay
+ * empate (p. ej. dos imágenes del mismo ancho: izquierda, centro y derecha quedan a la misma distancia), gana, en
+ * este orden: el que alinea más líneas, el que pega a una imagen antes que al póster y un borde antes que el centro.
+ * Así el resultado no depende de los decimales ni del orden de las imágenes.
+ */
+function bestShift(own: number[], all: number[], poster: number[], tol: number) {
+  type C = { d: number; g: number; n: number; img: boolean; edge: boolean };
+  let best: C | null = null;
+  const better = (a: C, b: C) =>
+    !same(Math.abs(a.d), Math.abs(b.d)) ? Math.abs(a.d) < Math.abs(b.d)
+      : a.n !== b.n ? a.n > b.n : a.img !== b.img ? a.img : a.edge !== b.edge ? a.edge : false;
+  const count = (arr: number[], v: number) => arr.filter((w) => same(w, v)).length;
+  own.forEach((o, i) => {
+    for (const v of all) {
+      const d = v - o;
+      if (Math.abs(d) > tol) continue;
+      // img: la línea es de alguna imagen (no solo del póster)
+      const c: C = { d, g: v, n: own.filter((q) => all.some((w) => same(q + d, w))).length, img: count(all, v) > count(poster, v), edge: i !== 1 };
+      if (!best || better(c, best)) best = c;
+    }
+  });
+  return best as C | null;
+}
+/**
+ * Imán: si algún borde o el centro de la caja que se mueve queda a menos de tol (mm) de una línea, devuelve cuánto
+ * desplazarla para que coincida (en cada eje por separado) y la línea; las guías salen luego de todo lo que coincide.
+ */
+export function snapBox(b: Box, t: SnapTargets, tol: number): { dx: number; dy: number; gx: number | null; gy: number | null } {
+  const sx = bestShift(lines(b.x0, b.x1), t.x, t.px, tol), sy = bestShift(lines(b.y0, b.y1), t.y, t.py, tol);
+  return { dx: sx?.d ?? 0, dy: sy?.d ?? 0, gx: sx?.g ?? null, gy: sy?.g ?? null };
+}
+/** Bordes y centro de moving (en un eje) que coinciden con el borde o el centro de alguna de las cajas. */
+export function alignedLines(moving: Box, boxes: Box[], axis: 'x' | 'y'): number[] {
+  const f = (b: Box) => (axis === 'x' ? lines(b.x0, b.x1) : lines(b.y0, b.y1));
+  return f(moving).filter((v) => boxes.some((b) => f(b).some((w) => same(v, w))));
+}
+
+/* ---------- medidas ---------- */
+/**
+ * Separación en una dirección: segmento de from a to (mm) a lo largo de su eje, dibujado a la altura at del otro eje.
+ * axis 'x': horizontal (izquierda o derecha); 'y': vertical (arriba o abajo).
+ */
+export interface Gap { axis: 'x' | 'y'; from: number; to: number; at: number }
+
+/**
+ * Imán de bordes sueltos (al escalar o recortar): el borde que se mueve más cerca de una línea, en cada eje.
+ * Devuelve el desplazamiento a aplicar a ese borde y la línea, o null si no hay ninguno a menos de tol.
+ */
+/**
+ * Imán de tamaño (al escalar): si el ancho o el alto de b queda a menos de tol del de otra imagen, devuelve cuánto
+ * cambiarlo (dw o dh) para igualarlo y con qué caja coincide. Solo en los ejes en que se mueve algún borde.
+ */
+export function snapSize(b: Box, moving: { x0: boolean; x1: boolean; y0: boolean; y1: boolean }, others: Box[], tol: number) {
+  const best = (size: number, sizes: [number, Box][]) => {
+    let d = Infinity, box: Box | null = null;
+    for (const [s, o] of sizes) { const k = s - size; if (Math.abs(k) <= tol && Math.abs(k) < Math.abs(d)) { d = k; box = o; } }
+    return box ? { d, box } : null;
+  };
+  return {
+    x: moving.x0 || moving.x1 ? best(b.x1 - b.x0, others.map((o) => [o.x1 - o.x0, o])) : null,
+    y: moving.y0 || moving.y1 ? best(b.y1 - b.y0, others.map((o) => [o.y1 - o.y0, o])) : null,
+  };
+}
+/**
+ * Mueve el puntero en un eje hasta que read(m) (un borde o un tamaño tras aplicar el gesto) valga goal. Al escalar
+ * desde una esquina sin deformar, mover el puntero en x no mueve el borde lo mismo (la escala sigue la diagonal), así
+ * que se corrige con lo que de verdad responde (secante): en un gesto lineal, dos pasos. first: primer intento.
+ * null si no se alcanza (tamaño mínimo, tope del recorte…).
+ */
+export function solvePointer(m: Pt, axis: 'x' | 'y', read: (m: Pt) => number, goal: number, first: number): Pt | null {
+  const at = (q: Pt, k: number): Pt => (axis === 'x' ? { x: k, y: q.y } : { x: q.x, y: k });
+  let a = m[axis], va = read(m), b = a + first;
+  for (let i = 0; i < 6; i++) {
+    const vb = read(at(m, b));
+    if (Math.abs(goal - vb) < 1e-6) return at(m, b);
+    const r = (vb - va) / (b - a);
+    if (!Number.isFinite(r) || Math.abs(r) < 1e-9) return null;
+    a = b; va = vb; b += (goal - vb) / r;
+  }
+  return null;
+}
+
+export function snapEdges(b: Box, moving: { x0: boolean; x1: boolean; y0: boolean; y1: boolean }, t: SnapTargets, tol: number) {
+  const best = (edges: number[], targets: number[]) => {
+    let d = Infinity, g: number | null = null;
+    for (const e of edges) for (const v of targets) { const k = v - e; if (Math.abs(k) <= tol && Math.abs(k) < Math.abs(d)) { d = k; g = v; } }
+    return g === null ? null : { d, g };
+  };
+  return {
+    x: best([...(moving.x0 ? [b.x0] : []), ...(moving.x1 ? [b.x1] : [])], t.x),
+    y: best([...(moving.y0 ? [b.y0] : []), ...(moving.y1 ? [b.y1] : [])], t.y),
+  };
+}
+
+/* ---------- guías, medir y separación igual (como en Figma) ---------- */
+/**
+ * Tramo de guía: línea en at (x si axis 'x' = vertical; y si 'y' = horizontal) de from a to, con una × en cada
+ * punto de marks (los extremos de cada caja alineada). No cruza todo el lienzo: une solo lo que está alineado.
+ */
+export interface GuideSeg { axis: 'x' | 'y'; at: number; from: number; to: number; marks: number[] }
+const feat3 = (a: number, b: number) => [a, (a + b) / 2, b];
+/**
+ * Tramos de las guías en x = gx y en y = gy (una o varias líneas por eje, como en Figma: con dos imágenes del mismo
+ * ancho, izquierda, centro y derecha). Cada tramo abarca todas las cajas (la que se mueve incluida) con ese borde o centro.
+ */
+export function guideSegments(moving: Box, boxes: Box[], gx: number | number[] | null, gy: number | number[] | null): GuideSeg[] {
+  const out: GuideSeg[] = [], all = [moving, ...boxes];
+  const list = (g: number | number[] | null) => (g === null ? [] : Array.isArray(g) ? g : [g]);
+  for (const at of list(gx)) {
+    const inv = all.filter((b) => feat3(b.x0, b.x1).some((v) => same(v, at)));
+    out.push({ axis: 'x', at, from: Math.min(...inv.map((b) => b.y0)), to: Math.max(...inv.map((b) => b.y1)), marks: inv.flatMap((b) => [b.y0, b.y1]) });
+  }
+  for (const at of list(gy)) {
+    const inv = all.filter((b) => feat3(b.y0, b.y1).some((v) => same(v, at)));
+    out.push({ axis: 'y', at, from: Math.min(...inv.map((b) => b.x0)), to: Math.max(...inv.map((b) => b.x1)), marks: inv.flatMap((b) => [b.x0, b.x1]) });
+  }
+  return out;
+}
+
+/**
+ * La caja más cercana a b (distancia entre bordes), dando preferencia a las que quedan enfrente (se solapan en
+ * algún eje). Para medir mientras se arrastra cuando el cursor no está sobre otra imagen.
+ */
+export function nearestBox(b: Box, others: Box[]): Box | null {
+  const dist = (o: Box) => Math.hypot(Math.max(0, o.x0 - b.x1, b.x0 - o.x1), Math.max(0, o.y0 - b.y1, b.y0 - o.y1));
+  const facing = others.filter((o) => (o.x0 < b.x1 && b.x0 < o.x1) || (o.y0 < b.y1 && b.y0 < o.y1));
+  const pool = facing.length ? facing : others;
+  return pool.reduce<Box | null>((a, o) => (!a || dist(o) < dist(a) ? o : a), null);
+}
+
+/** Línea discontinua de proyección (mm). */
+export interface Dash { x0: number; y0: number; x1: number; y1: number }
+/**
+ * Medir (Alt al pasar el ratón): distancias entre la selección s y la caja t.
+ * - Si no se solapan en un eje, la separación entre ellas en ese eje; si tampoco se solapan en el otro, la medida va
+ *   a la altura del centro de s y una línea discontinua prolonga el borde de t hasta ella (como en Figma).
+ * - Si se solapan (p. ej. t es el póster que contiene a s), la distancia entre los bordes del mismo lado.
+ */
+export function measureBetween(s: Box, t: Box): { gaps: Gap[]; dashes: Dash[] } {
+  const gaps: Gap[] = [], dashes: Dash[] = [];
+  const axis = (sa0: number, sa1: number, ta0: number, ta1: number, sb0: number, sb1: number, tb0: number, tb1: number,
+    mk: (from: number, to: number, at: number) => Gap, dash: (a: number, b0: number, b1: number) => Dash) => {
+    const overlapB = sb0 < tb1 && tb0 < sb1, at = overlapB ? (Math.max(sb0, tb0) + Math.min(sb1, tb1)) / 2 : (sb0 + sb1) / 2;
+    const proj = (edge: number) => { if (!overlapB) dashes.push(dash(edge, tb0 > at ? tb0 : tb1, at)); };
+    if (ta1 <= sa0) { gaps.push(mk(ta1, sa0, at)); proj(ta1); }
+    else if (ta0 >= sa1) { gaps.push(mk(sa1, ta0, at)); proj(ta0); }
+    else {
+      if (Math.abs(ta0 - sa0) > 1e-6) gaps.push(mk(Math.min(ta0, sa0), Math.max(ta0, sa0), at));
+      if (Math.abs(ta1 - sa1) > 1e-6) gaps.push(mk(Math.min(ta1, sa1), Math.max(ta1, sa1), at));
+    }
+  };
+  axis(s.x0, s.x1, t.x0, t.x1, s.y0, s.y1, t.y0, t.y1,
+    (from, to, at) => ({ axis: 'x', from, to, at }), (a, b0, b1) => ({ x0: a, y0: b0, x1: a, y1: b1 }));
+  axis(s.y0, s.y1, t.y0, t.y1, s.x0, s.x1, t.x0, t.x1,
+    (from, to, at) => ({ axis: 'y', from, to, at }), (a, b0, b1) => ({ x0: b0, y0: a, x1: b1, y1: a }));
+  return { gaps, dashes };
+}
+
+/**
+ * Separación igual en x (al mover la caja b): si el hueco con su vecina de la izquierda o de la derecha puede igualar
+ * otro hueco entre imágenes de la misma fila, o quedar centrada entre ambas vecinas, devuelve cuánto moverla (d, a
+ * menos de tol) y las medidas iguales para mostrarlas. Para y se usa con las cajas traspuestas (equalSpacing).
+ */
+function equalSpacingX(b: Box, others: Box[], tol: number): { d: number; gaps: Gap[] } | null {
+  const rowOf = (o: Box) => others.filter((x) => x !== o && x.y0 < o.y1 && o.y0 < x.y1);
+  const midY = (p: Box, q: Box) => (Math.max(p.y0, q.y0) + Math.min(p.y1, q.y1)) / 2;
+  // huecos de referencia: cada imagen con su vecina inmediata a la derecha en su fila
+  const refs: { g: number; a: Box; n: Box }[] = [];
+  for (const o of others) {
+    const n = rowOf(o).filter((x) => x.x0 >= o.x1).sort((p, q) => p.x0 - q.x0)[0];
+    if (n && n.x0 - o.x1 > 1e-6) refs.push({ g: n.x0 - o.x1, a: o, n });
+  }
+  const facing = others.filter((o) => o.y0 < b.y1 && b.y0 < o.y1);
+  const L = facing.filter((o) => o.x1 <= b.x0 + tol).sort((p, q) => q.x1 - p.x1)[0];
+  const R = facing.filter((o) => o.x0 >= b.x1 - tol).sort((p, q) => p.x0 - q.x0)[0];
+  let best: { d: number; gaps: (d: number) => Gap[] } | null = null;
+  const consider = (d: number, gaps: (d: number) => Gap[]) => { if (Math.abs(d) <= tol && (!best || Math.abs(d) < Math.abs(best.d))) best = { d, gaps }; };
+  const refGap = (r: { g: number; a: Box; n: Box }): Gap => ({ axis: 'x', from: r.a.x1, to: r.n.x0, at: midY(r.a, r.n) });
+  for (const r of refs) {
+    if (L && r.a !== L) consider(L.x1 + r.g - b.x0, (d) => [{ axis: 'x', from: L.x1, to: b.x0 + d, at: midY(L, b) }, refGap(r)]);
+    if (R && r.n !== R) consider(R.x0 - r.g - b.x1, (d) => [{ axis: 'x', from: b.x1 + d, to: R.x0, at: midY(R, b) }, refGap(r)]);
+  }
+  if (L && R && R.x0 - L.x1 > b.x1 - b.x0) {
+    consider((L.x1 + R.x0) / 2 - (b.x0 + b.x1) / 2, (d) => [
+      { axis: 'x', from: L.x1, to: b.x0 + d, at: midY(L, b) }, { axis: 'x', from: b.x1 + d, to: R.x0, at: midY(R, b) }]);
+  }
+  const res = best as { d: number; gaps: (d: number) => Gap[] } | null;
+  return res ? { d: res.d, gaps: res.gaps(res.d) } : null;
+}
+const flip = (b: Box): Box => ({ x0: b.y0, y0: b.x0, x1: b.y1, y1: b.x1 });
+/** Separación igual en el eje pedido (ver equalSpacingX). */
+export function equalSpacing(b: Box, others: Box[], axis: 'x' | 'y', tol: number): { d: number; gaps: Gap[] } | null {
+  if (axis === 'x') return equalSpacingX(b, others, tol);
+  const r = equalSpacingX(flip(b), others.map(flip), tol);
+  return r && { d: r.d, gaps: r.gaps.map((g) => ({ ...g, axis: 'y' as const })) };
+}
+
 /* ---------- varias imágenes: caja común, alinear y distribuir ---------- */
 export interface Box { x0: number; y0: number; x1: number; y1: number }
 export type AlignEdge = 'left' | 'hcenter' | 'right' | 'top' | 'vcenter' | 'bottom';

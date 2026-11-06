@@ -15,7 +15,7 @@ import {
 import { focusGroupName, focusName } from './panel';
 import { $, toast } from '../dom';
 import { isStretched } from '../geometry';
-import { DELK, isTouch, MOD, SHIFT } from '../platform';
+import { ALT, DELK, isTouch, MOD, SHIFT } from '../platform';
 import { st } from '../state';
 import { fitView, zoomCenter } from '../view';
 import { loadFiles } from '../io/load';
@@ -29,6 +29,15 @@ export type MenuItem = '-' | { head: string } | ActionItem | SubmenuItem;
 const isSub = (it: ActionItem | SubmenuItem): it is SubmenuItem => 'submenu' in it;
 
 /* ---------- contenido ---------- */
+/**
+ * «Medir distancias»: con ratón basta con Alt al pasar por encima; en táctil no hay Alt, así que el siguiente toque
+ * en otra imagen (o en el póster) muestra las distancias, hasta tocar fuera del póster o pulsar Esc.
+ */
+function startMeasureMode() {
+  st.measureMode = true;
+  toast(isTouch() ? 'Toca otra imagen o el póster para medir · toca fuera del póster para terminar'
+    : `Pasa el ratón por otra imagen o el póster · también con ${ALT} pulsado · Esc para terminar`, 6000);
+}
 /** "Pegar" primero intenta una imagen del portapapeles del sistema (como Ctrl+V); si no hay, la copiada en Pliego. */
 const canPaste = () => !!st.clip?.length || !!navigator.clipboard?.read;
 async function pasteAny() {
@@ -76,6 +85,7 @@ export function layerMenu(l: Layer, prev: Layer[] = []): MenuItem[] {
     { label: l.hidden ? 'Mostrar' : 'Ocultar', icon: l.hidden ? 'eye' : 'eyeOff', fn: () => toggleHidden(l) },
     { label: l.locked ? 'Desbloquear' : 'Bloquear', icon: l.locked ? 'lockOpen' : 'lock', fn: () => toggleLocked(l) },
     { label: 'Renombrar…', icon: 'rename', fn: () => { select(l); focusName(); } },
+    { label: 'Medir distancias', icon: 'ruler', kbd: isTouch() ? undefined : ALT, fn: startMeasureMode },
     ...(l.gid != null ? [
       { label: 'Seleccionar el grupo', icon: 'group', fn: () => selectMany(unitOf(l)) } satisfies ActionItem,
       { label: 'Sacar del grupo', icon: 'ungroup', fn: () => leaveGroup(l) } satisfies ActionItem,
@@ -137,6 +147,7 @@ export function groupMenu(): MenuItem[] {
     { label: 'Copiar', icon: 'copy', kbd: MOD + 'C', fn: copySelected },
     { label: 'Cortar', icon: 'cut', kbd: MOD + 'X', fn: cutSelected },
     { label: 'Duplicar', icon: 'dup', kbd: MOD + 'D', fn: duplicateSelected },
+    { label: 'Medir distancias', icon: 'ruler', kbd: isTouch() ? undefined : ALT, fn: startMeasureMode },
     whole != null
       ? { label: 'Desagrupar', icon: 'ungroup', kbd: MOD + SHIFT + 'G', fn: ungroupSelected }
       : { label: 'Agrupar', icon: 'group', kbd: MOD + 'G', fn: groupSelected },

@@ -143,7 +143,7 @@ export function positionBar() {
   if (!bar || bar.hidden || (!sel && st.group.length < 2)) return;
   const docked = !!dockMQ?.matches;
   if (bar.classList.contains('dock') !== docked) { bar.classList.toggle('dock', docked); barSize = null; }
-  bar.classList.toggle('ghost', isGesturing());
+  bar.classList.toggle('ghost', isGesturing() || !!st.measure); // al medir, la barra no tapa las distancias
   $('#hint').hidden = docked;
   // acoplada: encima del panel inferior (móvil), que puede estar más o menos abierto
   if (docked) { bar.style.left = ''; bar.style.top = ''; bar.style.bottom = `${view.ins.b + 8}px`; bar.style.maxWidth = ''; return; }

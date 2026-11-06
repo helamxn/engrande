@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
-  alignShifts, applyCropDrag, gridLevels, applyFit, boxInside, distributeShifts, unionBox, applyScale, bboxMM, conformCrop, cropCenter, cropPtsMM, fitLayer, geo, hasCutMarks, inside,
+  alignShifts, alignedLines, applyCropDrag, equalSpacing, guideSegments, measureBetween, nearestBox, gridLevels, snapBox, snapEdges, snapSize, snapTargets, applyFit, boxInside, distributeShifts, unionBox, applyScale, bboxMM, conformCrop, cropCenter, cropPtsMM, fitLayer, geo, hasCutMarks, inside,
   displaySide, flipOnScreen, isStretched, localToMM, markLen, mmToLocal, newLayoutMemory, normDeg, panInFrame, pppOf, relayout,
-  rotateLayer, srcDims, startScale, type RelayoutMode,
+  rotateLayer, solvePointer, srcDims, startScale, type RelayoutMode,
   unstretch, visH, visW, zoomInFrame,
 } from './geometry';
 import type { Fit, LayerGeom, Settings, Source } from './types';
@@ -382,5 +382,190 @@ describe('rejilla del fondo (gridLevels)', () => {
       expect(Math.abs(a - prev)).toBeLessThan(0.05);
       prev = a;
     }
+  });
+});
+
+describe('imanes al mover (snapBox)', () => {
+  const t = snapTargets(400, 300, [{ x0: 100, y0: 50, x1: 150, y1: 90 }]);
+  it('pega el borde izquierdo al borde del póster si está cerca', () => {
+    const r = snapBox({ x0: 3, y0: 200, x1: 53, y1: 240 }, t, 5);
+    expect(r.dx).toBe(-3); expect(r.gx).toBe(0);
+  });
+  it('pega el centro al centro del póster', () => {
+    const r = snapBox({ x0: 176, y0: 10, x1: 226, y1: 30 }, t, 5); // centro x = 201
+    expect(r.dx).toBe(-1); expect(r.gx).toBe(200);
+  });
+  it('pega a los bordes y al centro de otra imagen, en cada eje por separado', () => {
+    const r = snapBox({ x0: 152, y0: 88, x1: 172, y1: 108 }, t, 5); // x0 cerca de 150, y0 cerca de 90
+    expect(r.dx).toBe(-2); expect(r.gx).toBe(150);
+    expect(r.dy).toBe(2); expect(r.gy).toBe(90);
+  });
+  it('lejos de todo no se mueve ni hay guía', () => {
+    const r = snapBox({ x0: 30, y0: 120, x1: 60, y1: 130 }, t, 2);
+    expect(r).toEqual({ dx: 0, dy: 0, gx: null, gy: null });
+  });
+});
+
+describe('guías como tramos (guideSegments)', () => {
+  it('une solo las cajas alineadas y marca sus extremos', () => {
+    const moving = { x0: 10, y0: 100, x1: 50, y1: 140 };
+    const other = { x0: 10, y0: 20, x1: 30, y1: 60 }, far = { x0: 200, y0: 0, x1: 220, y1: 300 };
+    const [g] = guideSegments(moving, [other, far], 10, null);
+    expect(g).toEqual({ axis: 'x', at: 10, from: 20, to: 140, marks: [100, 140, 20, 60] });
+  });
+  it('alineado al centro de otra caja también cuenta', () => {
+    const [g] = guideSegments({ x0: 0, y0: 50, x1: 20, y1: 60 }, [{ x0: 100, y0: 40, x1: 140, y1: 70 }], null, 55);
+    expect(g!.from).toBe(0); expect(g!.to).toBe(140);
+  });
+});
+
+describe('medir con Alt (measureBetween)', () => {
+  it('dos cajas una encima de otra: la separación vertical, sin proyección', () => {
+    const r = measureBetween({ x0: 0, y0: 0, x1: 100, y1: 40 }, { x0: 10, y0: 58, x1: 110, y1: 98 });
+    const v = r.gaps.find((g) => g.axis === 'y')!;
+    expect([v.from, v.to]).toEqual([40, 58]);
+    expect(r.dashes).toHaveLength(0);
+  });
+  it('en diagonal: medida y línea discontinua de proyección', () => {
+    const r = measureBetween({ x0: 0, y0: 0, x1: 50, y1: 50 }, { x0: 80, y0: 90, x1: 120, y1: 130 });
+    expect(r.gaps.find((g) => g.axis === 'x')).toMatchObject({ from: 50, to: 80, at: 25 });
+    expect(r.dashes.length).toBe(2);
+  });
+  it('dentro del póster: distancia a los cuatro bordes', () => {
+    const r = measureBetween({ x0: 14, y0: 20, x1: 386, y1: 100 }, { x0: 0, y0: 0, x1: 400, y1: 300 });
+    expect(r.gaps.map((g) => g.to - g.from)).toEqual([14, 14, 20, 200]);
+  });
+});
+
+describe('separación igual (equalSpacing)', () => {
+  const a = { x0: 0, y0: 0, x1: 40, y1: 30 }, b = { x0: 60, y0: 0, x1: 100, y1: 30 }; // hueco de referencia 20
+  it('pega a la misma separación que hay entre otras dos imágenes de la fila', () => {
+    const moving = { x0: 118, y0: 0, x1: 150, y1: 30 }; // hueco con b: 18
+    const r = equalSpacing(moving, [a, b], 'x', 5)!;
+    expect(r.d).toBe(2);
+    expect(r.gaps.map((g) => g.to - g.from)).toEqual([20, 20]);
+  });
+  it('centra entre dos vecinas si queda cerca', () => {
+    const moving = { x0: 47, y0: 0, x1: 53, y1: 30 }; // entre a (x1 40) y b (x0 60): centro 50
+    const r = equalSpacing(moving, [a, b], 'x', 3)!;
+    expect(r.d).toBe(0); // ya está centrada
+    expect(r.gaps.map((g) => g.to - g.from)).toEqual([7, 7]);
+  });
+  it('funciona en vertical', () => {
+    const c = { x0: 0, y0: 0, x1: 30, y1: 40 }, d = { x0: 0, y0: 60, x1: 30, y1: 100 };
+    const r = equalSpacing({ x0: 0, y0: 121, x1: 30, y1: 150 }, [c, d], 'y', 5)!;
+    expect(r.d).toBe(-1);
+    expect(r.gaps.every((g) => g.axis === 'y')).toBe(true);
+  });
+  it('lejos de cualquier separación igual, nada', () => {
+    expect(equalSpacing({ x0: 150, y0: 0, x1: 180, y1: 30 }, [a, b], 'x', 3)).toBeNull();
+  });
+});
+
+describe('imán de bordes sueltos (snapEdges)', () => {
+  it('pega solo los bordes que se mueven', () => {
+    const t = snapTargets(400, 300, []); // x: 0, 200, 400 · y: 0, 150, 300
+    const r = snapEdges({ x0: 3, y0: 100, x1: 197, y1: 148 }, { x0: false, x1: true, y0: false, y1: true }, t, 5);
+    expect(r.x).toEqual({ d: 3, g: 200 }); // el borde derecho, no el izquierdo (que también está cerca de 0)
+    expect(r.y).toEqual({ d: 2, g: 150 });
+  });
+});
+
+describe('la caja más cercana para medir (nearestBox)', () => {
+  const b = { x0: 100, y0: 100, x1: 150, y1: 140 };
+  it('prefiere una que queda enfrente aunque otra en diagonal esté algo más cerca', () => {
+    const facing = { x0: 200, y0: 110, x1: 240, y1: 130 }; // a 50 a la derecha
+    const diag = { x0: 160, y0: 150, x1: 180, y1: 170 }; // en diagonal, a ~14
+    expect(nearestBox(b, [diag, facing])).toBe(facing);
+  });
+  it('sin ninguna enfrente, la más cercana', () => {
+    const d1 = { x0: 160, y0: 150, x1: 180, y1: 170 }, d2 = { x0: 300, y0: 300, x1: 310, y1: 310 };
+    expect(nearestBox(b, [d2, d1])).toBe(d1);
+  });
+  it('sin otras, ninguna', () => { expect(nearestBox(b, [])).toBeNull(); });
+});
+
+describe('imán de tamaño (snapSize)', () => {
+  const other = { x0: 200, y0: 0, x1: 260, y1: 45 }; // 60 × 45
+  it('iguala el ancho de otra imagen si queda cerca', () => {
+    const r = snapSize({ x0: 0, y0: 0, x1: 58, y1: 30 }, { x0: false, x1: true, y0: false, y1: false }, [other], 4);
+    expect(r.x).toEqual({ d: 2, box: other });
+    expect(r.y).toBeNull(); // el alto no se está cambiando
+  });
+  it('iguala el alto', () => {
+    const r = snapSize({ x0: 0, y0: 0, x1: 30, y1: 47 }, { x0: false, x1: false, y0: false, y1: true }, [other], 4);
+    expect(r.y).toEqual({ d: -2, box: other });
+  });
+  it('lejos de cualquier tamaño, nada', () => {
+    const r = snapSize({ x0: 0, y0: 0, x1: 30, y1: 30 }, { x0: false, x1: true, y0: false, y1: true }, [other], 4);
+    expect(r).toEqual({ x: null, y: null });
+  });
+});
+
+describe('imán al escalar desde una esquina (solvePointer)', () => {
+  // read: aplica el gesto con el puntero en m y devuelve el borde que se quiere pegar
+  type K = 'x0' | 'x1' | 'y0' | 'y1';
+  const edgeOf = (id: 'nw' | 'ne' | 'se' | 'sw', alt: boolean, axis: 'x' | 'y', rot = 0, k?: K) => {
+    const l = layer({ rot }), d = startScale(l, id);
+    const key: K = k ?? (axis === 'x' ? (id.includes('w') ? 'x0' : 'x1') : id.includes('n') ? 'y0' : 'y1');
+    const read = (m: { x: number; y: number }) => { applyScale(l, d, m, false, alt); return bboxMM(l)[key]; };
+    return { l, read };
+  };
+  for (const id of ['nw', 'ne', 'se', 'sw'] as const) {
+    for (const alt of [false, true]) {
+      it(`${id}${alt ? ' con Alt' : ''}: el borde queda justo sobre la guía (sin deformar)`, () => {
+        const { l, read } = edgeOf(id, alt, 'x');
+        const handle = localToMM(l, id.includes('w') ? 0 : 1, id.includes('n') ? 0 : 1);
+        const m = { x: handle.x + (id.includes('w') ? -20 : 20), y: handle.y + (id.includes('n') ? -5 : 5) };
+        const v0 = read(m), goal = v0 + 3; // una guía a 3 mm del borde
+        // mover el puntero solo 3 mm no basta: desde una esquina el borde sigue la diagonal
+        expect(Math.abs(read({ x: m.x + 3, y: m.y }) - goal)).toBeGreaterThan(0.1);
+        const p = solvePointer(m, 'x', read, goal, 3)!;
+        expect(p).not.toBeNull();
+        close(read(p), goal);
+        close(l.w / l.h, 2); // sigue sin deformar
+      });
+    }
+  }
+  it('también en y, y con la imagen girada 180°', () => {
+    const { read } = edgeOf('se', false, 'y', 180, 'y0'); // girada, la esquina «se» queda arriba a la izquierda
+    const m = { x: -10, y: -10 }, goal = read(m) - 4;
+    close(read(solvePointer(m, 'y', read, goal, -4)!), goal);
+  });
+  it('si el tamaño mínimo lo impide, no hay imán', () => {
+    const { read } = edgeOf('se', false, 'x');
+    expect(solvePointer({ x: 10, y: 10 }, 'x', read, -500, -500)).toBeNull();
+  });
+});
+
+describe('guías sin dudas al mover (como en Figma)', () => {
+  // otra imagen de 120 × 60 arriba; la que se mueve, del mismo ancho, debajo y casi alineada
+  const other = { x0: 20, y0: 10, x1: 140, y1: 70 };
+  const t = snapTargets(386, 285, [other]);
+  const moving = (dx: number) => ({ x0: 20 + dx, y0: 100, x1: 140 + dx, y1: 160 });
+  it('con el mismo ancho se pega y salen las tres guías: izquierda, centro y derecha', () => {
+    for (const dx of [1.5, -1.5, 1.5 + 1e-13, 1.5 - 1e-13]) {
+      const r = snapBox(moving(dx), t, 4);
+      expect(r.dx).toBeCloseTo(-dx, 9);
+      expect(alignedLines(moving(dx + r.dx), [other], 'x')).toHaveLength(3);
+    }
+  });
+  it('en un empate gana el ajuste que alinea más, aunque los decimales digan otra cosa', () => {
+    // otra imagen estrecha con el borde izquierdo a la misma distancia, al otro lado (y más cerca por decimales)
+    const narrow = { x0: 21 + 1e-12, y0: 200, x1: 30, y1: 220 };
+    const r = snapBox(moving(0.5 + 1e-12), snapTargets(386, 285, [narrow, other]), 4);
+    expect(r.dx).toBeCloseTo(-0.5, 9); // alinea los tres con other en vez de solo el izquierdo con narrow
+  });
+  it('a igual distancia, una imagen gana al póster', () => {
+    // centro del póster en x = 193; el borde derecho (192) queda a 1 de él y a 1 del de una imagen (191)
+    const img = { x0: 150, y0: 200, x1: 191, y1: 240 };
+    const r = snapBox({ x0: 172, y0: 100, x1: 192, y1: 110 }, snapTargets(386, 285, [img]), 3);
+    expect(r.gx).toBe(191);
+    expect(r.dx).toBe(-1);
+  });
+  it('las guías juntan todas las líneas que coinciden', () => {
+    const b = moving(0), segs = guideSegments(b, [other], alignedLines(b, [other], 'x'), null);
+    expect(segs.map((g) => g.at)).toEqual([20, 80, 140]);
+    for (const g of segs) { expect(g.from).toBe(10); expect(g.to).toBe(160); }
   });
 });

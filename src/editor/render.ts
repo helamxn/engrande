@@ -9,7 +9,7 @@ import { C, posterGeo, S, sheetsVisible, st, V, view } from './state';
 import { mm2s } from './view';
 import { positionBar } from './ui/contextbar';
 import { renderList } from './ui/panel';
-import { HI_AREA } from './platform';
+import { HI_AREA, isTouch } from './platform';
 import type { HandleId, Layer, Pt } from './types';
 
 let cv: HTMLCanvasElement;
@@ -194,6 +194,7 @@ function sizeLabel(l: Layer | Pt[], txt: string, ppp?: number) {
   const dot = ppp !== undefined ? 14 : 0;
   const { ins } = view, w = ctx.measureText(txt).width + 16 + dot, y = Math.min(maxY + 20, view.CH - ins.b - 14);
   const x = Math.min(Math.max(cx, ins.l + w / 2 + 4), view.CW - ins.r - w / 2 - 4);
+  sizeRect = { x: x - w / 2, y: y - 10, w, h: 20 };
   ctx.fillStyle = 'rgba(22,32,42,.9)'; ctx.beginPath(); ctx.roundRect(x - w / 2, y - 10, w, 20, 10); ctx.fill();
   ctx.fillStyle = '#ffffff'; ctx.fillText(txt, x - dot / 2, y + 0.5);
   if (ppp !== undefined) {
@@ -204,8 +205,66 @@ const dims = (l: Layer) => `${cm(visW(l))} × ${cm(visH(l))} cm` + (Math.round(l
 /** Calidad de impresión (ppp al tamaño impreso, con el archivo original). */
 const pppAt = (l: Layer) => pppOf(l, HI_AREA);
 
+/* ---------- imanes y medidas ---------- */
+/** Etiqueta de tamaño de la selección dibujada en este fotograma: las medidas no la tapan. */
+let sizeRect: { x: number; y: number; w: number; h: number } | null = null;
+const overlaps = (a: { x: number; y: number; w: number; h: number }, b: typeof a) =>
+  a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+
+function drawHelpers() {
+  const { guides, gaps, measure } = st;
+  if (!guides && !gaps && !measure) return;
+  ctx.save();
+  ctx.strokeStyle = C.mark!; ctx.fillStyle = C.mark!; ctx.lineWidth = 1;
+  // guías del imán: tramos entre lo alineado, con una × en cada punto que coincide
+  for (const g of guides ?? []) {
+    const P = (v: number) => (g.axis === 'x' ? mm2s({ x: g.at, y: v }) : mm2s({ x: v, y: g.at }));
+    const a = P(g.from), b = P(g.to), o = 0.5;
+    ctx.beginPath();
+    if (g.axis === 'x') { const X = Math.round(a.x) + o; ctx.moveTo(X, a.y); ctx.lineTo(X, b.y); }
+    else { const Y = Math.round(a.y) + o; ctx.moveTo(a.x, Y); ctx.lineTo(b.x, Y); }
+    for (const v of g.marks) { const q = P(v), r = 3; ctx.moveTo(q.x - r, q.y - r); ctx.lineTo(q.x + r, q.y + r); ctx.moveTo(q.x + r, q.y - r); ctx.lineTo(q.x - r, q.y + r); }
+    ctx.stroke();
+  }
+  // medir: contorno de aquello con lo que se mide y líneas discontinuas de proyección
+  if (measure) {
+    const a = mm2s({ x: measure.target.x0, y: measure.target.y0 }), b = mm2s({ x: measure.target.x1, y: measure.target.y1 });
+    ctx.strokeRect(Math.round(a.x) + 0.5, Math.round(a.y) + 0.5, Math.round(b.x - a.x), Math.round(b.y - a.y));
+    ctx.setLineDash([4, 3]); ctx.beginPath();
+    for (const d of measure.dashes) { const p0 = mm2s({ x: d.x0, y: d.y0 }), p1 = mm2s({ x: d.x1, y: d.y1 }); ctx.moveTo(p0.x, p0.y); ctx.lineTo(p1.x, p1.y); }
+    ctx.stroke(); ctx.setLineDash([]);
+  }
+  // distancias (separación igual al mover, o medir): línea con remates y la medida en cm
+  const list = [...(gaps ?? []), ...(measure?.gaps ?? [])];
+  if (list.length) {
+    const touch = isTouch(), fs = touch ? 12.5 : 11, lh = touch ? 20 : 18;
+    ctx.font = `600 ${fs}px "IBM Plex Mono", ui-monospace, monospace`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    for (const g of list) {
+      const a = g.axis === 'x' ? mm2s({ x: g.from, y: g.at }) : mm2s({ x: g.at, y: g.from });
+      const b = g.axis === 'x' ? mm2s({ x: g.to, y: g.at }) : mm2s({ x: g.at, y: g.to });
+      const len = g.axis === 'x' ? b.x - a.x : b.y - a.y;
+      if (len < 2) continue;
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
+      if (g.axis === 'x') { ctx.moveTo(a.x, a.y - 4); ctx.lineTo(a.x, a.y + 4); ctx.moveTo(b.x, b.y - 4); ctx.lineTo(b.x, b.y + 4); }
+      else { ctx.moveTo(a.x - 4, a.y); ctx.lineTo(a.x + 4, a.y); ctx.moveTo(b.x - 4, b.y); ctx.lineTo(b.x + 4, b.y); }
+      ctx.stroke();
+      const txt = cm(g.to - g.from), w = ctx.measureText(txt).width + 10;
+      // si el hueco es más corto que la etiqueta, o la etiqueta taparía la de tamaño, va al lado de la línea
+      let mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+      if (len < (g.axis === 'x' ? w : lh) + 8) { if (g.axis === 'x') my -= lh - 4; else mx += w / 2 + 8; }
+      if (sizeRect && overlaps({ x: mx - w / 2, y: my - lh / 2, w, h: lh }, sizeRect)) {
+        if (g.axis === 'x') my = sizeRect.y - lh / 2 - 4; else mx = sizeRect.x + sizeRect.w + w / 2 + 6;
+      }
+      ctx.beginPath(); ctx.roundRect(mx - w / 2, my - lh / 2, w, lh, 4); ctx.fill();
+      ctx.fillStyle = '#ffffff'; ctx.fillText(txt, mx, my + 0.5); ctx.fillStyle = C.mark!;
+    }
+  }
+  ctx.restore();
+}
+
 export function render() {
   dirtyFlag = false;
+  sizeRect = null;
   const g = posterGeo(), { dpr } = view, sel = st.sel;
   const editing = S.mode === 'erase' || S.mode === 'wand', cropping = S.mode === 'crop' && !!sel;
 
@@ -322,6 +381,9 @@ export function render() {
   } else if (sel) {
     ctx.strokeStyle = C.accent!; ctx.lineWidth = 1; ctx.setLineDash([4, 4]); poly(cropPts(sel)); ctx.stroke(); ctx.setLineDash([]);
   }
+
+  // guías del imán, separación igual y medir (ver measure.ts)
+  drawHelpers();
 
   // círculo del pincel
   if (st.hover && S.mode === 'erase') {

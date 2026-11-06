@@ -10,11 +10,23 @@ import { isMenuOpen } from '../ui/menu';
 import { togglePanel } from '../ui/layout';
 import { isShortcutsOpen, openShortcuts } from '../ui/shortcuts';
 import { setSpaceDown } from './pointer';
+import { stopMeasure } from '../measure';
+import { altChangedDuringDrag, refreshMeasure } from './pointer';
 
 /** Una serie de pulsaciones de flecha seguidas cuenta como un solo paso de deshacer. */
 let nudge: { l: unknown; t: number } = { l: null, t: 0 };
 
 export function initKeyboard() {
+  // Alt: medir al pasar el ratón (con algo seleccionado). Se evita que el navegador active su menú al soltarlo.
+  const altOn = (on: boolean) => {
+    if (st.altDown === on) return;
+    st.altDown = on;
+    if (altChangedDuringDrag(on)) return; // arrastrando: se mide desde el estado actual
+    if (on) refreshMeasure(); else stopMeasure();
+  };
+  document.addEventListener('keydown', (e) => { if (e.key === 'Alt') { e.preventDefault(); altOn(true); } });
+  document.addEventListener('keyup', (e) => { if (e.key === 'Alt') { e.preventDefault(); altOn(false); } });
+  addEventListener('blur', () => altOn(false));
   document.addEventListener('keydown', (e) => {
     if (isMenuOpen() || isShortcutsOpen()) return;
     const mod = e.ctrlKey || e.metaKey, k = e.key.toLowerCase(), sel = st.sel;
@@ -35,6 +47,7 @@ export function initKeyboard() {
     if (mod && (e.key === ']' || e.code === 'BracketRight') && sel) { e.preventDefault(); reorder(sel, e.shiftKey ? 'front' : 1); return; }
     if (mod && (e.key === '[' || e.code === 'BracketLeft') && sel) { e.preventDefault(); reorder(sel, e.shiftKey ? 'back' : -1); return; }
     if (e.key === 'Enter' && S.mode === 'crop') { e.preventDefault(); applyCrop(); return; }
+    if (e.key === 'Escape' && st.measureMode) { st.measureMode = false; stopMeasure(); return; }
     if (e.key === 'Escape') {
       if (S.mode === 'crop') cancelCrop(); else if (S.mode !== 'move') setMode('move'); else select(null);
       return;

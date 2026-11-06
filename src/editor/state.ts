@@ -1,5 +1,5 @@
 /** Estado compartido del editor. Un único objeto mutable: lo leen el render, la interfaz y la entrada. */
-import { geo } from './geometry';
+import { geo, type Box, type Dash, type Gap, type GuideSeg } from './geometry';
 import type { Layer, LayoutSettings, Pt, Settings } from './types';
 
 /** Ajustes de un póster nuevo (los que se guardan y se restablecen con "Nuevo póster"). */
@@ -26,6 +26,16 @@ export const st = {
   sheetsOn: false,
   /** Marco del grupo mientras se gira (esquinas en mm); null = la caja común, alineada con la pantalla. */
   groupFrame: null as Pt[] | null,
+  /** Guías del imán durante un gesto: tramos entre lo alineado, con × en los puntos que coinciden (ver measure.ts). */
+  guides: null as GuideSeg[] | null,
+  /** Separación igual durante un gesto: las medidas iguales, en rojo. */
+  gaps: null as Gap[] | null,
+  /** Medir (Alt al pasar el ratón, o «Medir» en el menú en táctil): distancias de la selección a target. */
+  measure: null as { gaps: Gap[]; dashes: Dash[]; target: Box } | null,
+  /** Alt pulsado (para medir al pasar el ratón). */
+  altDown: false,
+  /** Táctil: «Medir» activado desde el menú; el siguiente toque elige con qué medir. */
+  measureMode: false,
   /** Recuadro de selección mientras se arrastra (px de pantalla). */
   marquee: null as { a: Pt; b: Pt } | null,
   nextId: 1,
