@@ -20,6 +20,11 @@ describe('grupos de imágenes', () => {
     expect(out.find((l) => l.name === 'a')!.gid).toBeNull();
     expect(out.filter((l) => l.gid === 2)).toHaveLength(2);
   });
+  it('al deshacerse un grupo, su imagen suelta pierde también el nombre del grupo', () => {
+    const ls = [{ name: 'a', gid: 4, gname: 'Logo' }, { name: 'b', gid: null, gname: '' }];
+    normalizeGroups(ls);
+    expect(ls[0]).toEqual({ name: 'a', gid: null, gname: '' });
+  });
   it('sin grupos no cambia nada', () => {
     const ls = [L('a'), L('b'), L('c')];
     expect(names(normalizeGroups(ls))).toBe('a,b,c');

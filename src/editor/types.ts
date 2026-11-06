@@ -56,6 +56,8 @@ export interface Layer extends LayerGeom {
   opacity: number;
   /** Grupo al que pertenece (Ctrl+G); null = suelta. Ver groups.ts. */
   gid: number | null;
+  /** Nombre del grupo (el mismo en todas sus imágenes); vacío = «Grupo». */
+  gname: string;
 }
 
 export interface Settings {
@@ -102,6 +104,7 @@ export interface LayerProps extends Transform {
   opacity: number;
   hidden: boolean;
   gid: number | null;
+  gname: string;
 }
 
 /** Ajustes que definen la geometría del póster (se guardan en el historial). */

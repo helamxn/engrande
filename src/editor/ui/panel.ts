@@ -1,8 +1,8 @@
 /** Panel lateral: pestañas, ajustes de hojas, propiedades de la imagen, lista de imágenes, exportación y lectura. */
 import {
-  afterChange, centerSel, fitSel, hideSelected, lockSelected, markManual, renameLayer, reorder, select,
-  selectedGroup, selectMany, setOpacity, toggleGroupFlag, toggleHidden, toggleInSelection, toggleLocked,
-  unstretchSel,
+  afterChange, centerSel, fitSel, groupName, hideSelected, lockSelected, markManual, renameGroup, renameLayer,
+  reorder, select, selectedGroup, selectMany, setOpacity, toggleGroupFlag, toggleHidden, toggleInSelection,
+  toggleLocked, unstretchSel,
 } from '../actions';
 import { MAX_COLS_ROWS, PRESETS } from '../constants';
 import { $, $$, toast } from '../dom';
@@ -12,13 +12,13 @@ import {
   rotateLayer, scaleLayer, visH, visW,
 } from '../geometry';
 import { snap } from '../history';
-import { ALT, dockMQ, HI_AREA, isTouch } from '../platform';
+import { ALT, deskMQ, dockMQ, HI_AREA, isTouch } from '../platform';
 import { C, posterGeo, S, st } from '../state';
 import { fitView } from '../view';
 import { renderPdfPage } from '../io/pdf';
 import { canvasRevision, scheduleSave } from '../io/persist';
 import { ICON } from './icons';
-import { isPanelOff, openSheet, togglePanel } from './layout';
+import { isPanelOff, isSheetOpen, openSheet, togglePanel } from './layout';
 import { initListDrag } from './listdrag';
 import { groupMenu, layerMenu, openMenu } from './menu';
 import type { Quality, RelayoutMode } from '../geometry';
@@ -26,6 +26,25 @@ import { getPref, setPref } from '../prefs';
 import type { Geo, Layer, LayoutSettings, Orient, Paper } from '../types';
 
 /* ---------- pestañas (patrón ARIA tabs) ---------- */
+/**
+ * Pestaña que sigue a la selección, con memoria:
+ * - al seleccionar algo estando en Hojas, pasa a Imágenes (en Descargar no se mueve: estarías leyendo o eligiendo);
+ * - al soltar la selección vuelve a Hojas, pero solo si el cambio anterior fue automático;
+ * - lo que eliges a mano se respeta; en móvil solo cambia si el panel inferior está abierto (nunca lo abre).
+ */
+let autoTab = false, hadSel = false;
+const activeTab = () => $$<HTMLButtonElement>('[role=tab]').find((b) => b.getAttribute('aria-selected') === 'true')?.dataset.tab;
+function followSelection(has: boolean) {
+  // punto en «Imágenes» si hay selección y se está en otra pestaña
+  $('#tab-image').classList.toggle('dot', has && activeTab() !== 'image');
+  if (has === hadSel) return;
+  hadSel = has;
+  if (!deskMQ?.matches && !isSheetOpen()) return;
+  if (has && activeTab() === 'sheets') { showTab('image'); autoTab = true; }
+  else if (!has && autoTab && activeTab() === 'image') { showTab('sheets'); autoTab = false; }
+  $('#tab-image').classList.toggle('dot', has && activeTab() !== 'image');
+}
+
 function showTab(t: string) {
   for (const b of $$<HTMLButtonElement>('[role=tab]')) {
     const on = b.dataset.tab === t;
@@ -33,6 +52,15 @@ function showTab(t: string) {
     b.tabIndex = on ? 0 : -1;
   }
   for (const p of $$('[role=tabpanel]')) p.hidden = p.dataset.pane !== t;
+}
+/** Renombrar un grupo: lo selecciona entero y lleva al campo «Nombre del grupo». */
+export function focusGroupName(gid: number) {
+  selectMany(st.layers.filter((l) => l.gid === gid));
+  if (isPanelOff()) togglePanel(true);
+  openSheet('half');
+  showTab('image');
+  const el = $<HTMLInputElement>('#gName');
+  el.focus(); el.select();
 }
 /** Renombrar: lleva al campo «Nombre» de la imagen seleccionada (abre la pestaña y, si estaba plegado, el panel). */
 export function focusName() {
@@ -116,6 +144,10 @@ export function syncSel() {
   document.body.classList.toggle('no-sel', !sel);
   document.body.classList.toggle('sel-locked', !!sel?.locked);
   document.body.classList.toggle('has-group', st.group.length > 1);
+  followSelection(!!sel || st.group.length > 1);
+  const gsel = selectedGroup();
+  $('#gNameField').hidden = gsel == null;
+  if (gsel != null) setField('#gName', st.layers.find((l) => l.gid === gsel)?.gname ?? '');
   if (st.group.length > 1) {
     // opacidad común; si son distintas se muestra «varias» y el deslizador en la mayor
     const ops = st.group.map((l) => Math.round(l.opacity * 100)), same = ops.every((o) => o === ops[0]);
@@ -235,10 +267,11 @@ function groupRow(gid: number): HTMLLIElement {
   b.type = 'button'; b.className = 'layer-main';
   b.setAttribute('aria-pressed', String(selectedGroup() === gid));
   b.insertAdjacentHTML('afterbegin', ICON.group.replace('class="', 'class="gicon ')); // constante del código
-  const nm = document.createElement('span'); nm.textContent = 'Grupo';
+  const nm = document.createElement('span'); nm.textContent = groupName(gid); // dato del usuario: textContent
   const sm = document.createElement('small'); sm.textContent = `${members.length} imágenes` + (allHidden ? ' · oculto' : allLocked ? ' · bloqueado' : '');
   nm.appendChild(sm); b.appendChild(nm);
   b.addEventListener('click', pick);
+  b.addEventListener('dblclick', () => focusGroupName(gid)); // doble clic: renombrar, como con las imágenes
   b.addEventListener('contextmenu', (e) => { e.preventDefault(); pick(); if (st.group.length > 1) openMenu(e.clientX, e.clientY, groupMenu()); });
   li.append(chev, b);
   const acts: [keyof typeof ICON, string, (e: MouseEvent) => void][] = [
@@ -423,7 +456,10 @@ export function updateHint() {
 
 export function initPanel() {
   // pestañas
-  for (const b of $$<HTMLButtonElement>('[role=tab]')) b.addEventListener('click', () => showTab(b.dataset.tab!));
+  // elegida a mano: se respeta (deja de ser un cambio automático)
+  for (const b of $$<HTMLButtonElement>('[role=tab]')) {
+    b.addEventListener('click', () => { autoTab = false; showTab(b.dataset.tab!); $('#tab-image').classList.toggle('dot', hadSel && b.dataset.tab !== 'image'); });
+  }
   $('[role=tablist]').addEventListener('keydown', (e) => {
     const tabs = $$<HTMLButtonElement>('[role=tab]'), i = tabs.indexOf(document.activeElement as HTMLButtonElement);
     if (i < 0) return;
@@ -431,7 +467,7 @@ export function initPanel() {
       : e.key === 'Home' ? 0 : e.key === 'End' ? tabs.length - 1 : -1;
     if (j < 0) return;
     e.preventDefault(); e.stopPropagation();
-    tabs[j]!.focus(); showTab(tabs[j]!.dataset.tab!);
+    tabs[j]!.focus(); autoTab = false; showTab(tabs[j]!.dataset.tab!);
   });
 
   // hojas
@@ -478,6 +514,14 @@ export function initPanel() {
     $('#pOpacityOut').textContent = `${opacity.value} %`;
   });
   opacity.addEventListener('change', () => renderList());
+  // nombre del grupo: se aplica al confirmar (Enter o al salir); Esc deshace lo escrito
+  const gName = $<HTMLInputElement>('#gName');
+  const gNow = () => { const g = selectedGroup(); return g == null ? '' : st.layers.find((l) => l.gid === g)?.gname ?? ''; };
+  gName.addEventListener('change', () => { const g = selectedGroup(); if (g == null || !renameGroup(g, gName.value)) gName.value = gNow(); });
+  gName.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); gName.blur(); }
+    if (e.key === 'Escape') { gName.value = gNow(); gName.blur(); }
+  });
   const gOpacity = $<HTMLInputElement>('#gOpacity');
   gOpacity.addEventListener('input', () => {
     if (st.group.length < 2) return;

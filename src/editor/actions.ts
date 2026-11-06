@@ -42,7 +42,7 @@ export function newLayer(img: HTMLCanvasElement, name: string, extra: Partial<La
   return {
     id: st.nextId++, name, img, orig: img, cx: g.W / 2, cy: g.H / 2, w: g.W, h: (g.W * img.height) / img.width,
     rot: 0, flipX: false, flipY: false, crop: { x0: 0, y0: 0, x1: 1, y1: 1 },
-    pdf: null, page: 1, pages: 1, src: null as Source | null, fit: null, hidden: false, locked: false, opacity: 1, gid: null, ...extra,
+    pdf: null, page: 1, pages: 1, src: null as Source | null, fit: null, hidden: false, locked: false, opacity: 1, gid: null, gname: '', ...extra,
   };
 }
 /** Coloca una imagen nueva ajustada al póster. Si va desplazada (varias a la vez), queda como colocada a mano. */
@@ -181,6 +181,17 @@ export function selectUnit(l: Layer) {
   if (l.gid == null || inside(l)) select(l);
   else selectMany(unitOf(l));
 }
+/** Nombre visible de un grupo (el que puso el usuario o «Grupo»). */
+export const groupName = (gid: number) => st.layers.find((l) => l.gid === gid)?.gname || 'Grupo';
+/** Cambia el nombre del grupo (en todas sus imágenes; paso de deshacer). Devuelve false si no hay nada que cambiar. */
+export function renameGroup(gid: number, name: string) {
+  const ls = st.layers.filter((l) => l.gid === gid), n = name.replace(/\s+/g, ' ').trim().slice(0, 80);
+  if (!ls.length || ls.every((l) => l.gname === n)) return false;
+  snap();
+  for (const l of ls) l.gname = n;
+  afterChange(); renderBar();
+  return true;
+}
 /** Doble clic dentro de un grupo seleccionado: entra en él y deja solo esa imagen. */
 export const enterGroup = (l: Layer) => select(l);
 /** Ordena las capas para que cada grupo quede junto y quita los grupos de una sola imagen. */
@@ -193,7 +204,7 @@ export function groupSelected() {
   if (selectedGroup() != null) return; // ya es un grupo
   snap();
   const gid = nextGid(st.layers);
-  for (const l of ls) l.gid = gid;
+  for (const l of ls) { l.gid = gid; l.gname = ''; }
   tidyGroups();
   selectMany(ls);
   scheduleSave();
@@ -205,7 +216,7 @@ export function ungroupSelected() {
   if (!gids.size) return;
   snap();
   const freed = st.layers.filter((l) => l.gid != null && gids.has(l.gid));
-  for (const l of freed) l.gid = null;
+  for (const l of freed) { l.gid = null; l.gname = ''; }
   selectMany(freed);
   scheduleSave();
   toast(gids.size > 1 ? `${gids.size} grupos deshechos` : 'Grupo deshecho', 6000, { label: 'Deshacer', fn: undo });
@@ -214,7 +225,7 @@ export function ungroupSelected() {
 export function leaveGroup(l: Layer) {
   if (l.gid == null) return;
   snap();
-  l.gid = null;
+  l.gid = null; l.gname = '';
   tidyGroups();
   afterChange();
 }

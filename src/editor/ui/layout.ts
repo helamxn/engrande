@@ -57,6 +57,8 @@ export function togglePanel(on = isPanelOff()) {
 /* ---------- móvil: panel inferior con tres alturas ---------- */
 export type SheetState = 'peek' | 'half' | 'full';
 let sheet: SheetState = 'peek';
+/** El panel inferior (móvil) está abierto a media altura o completo. */
+export const isSheetOpen = () => sheet !== 'peek';
 
 /** Alturas (px): solo asa y pestañas; media pantalla; hasta debajo de las herramientas. */
 function sheetHeights() {

@@ -8,11 +8,11 @@
  */
 import {
   alignSelected, autoBackground, centerSel, copyLayer, copySelected, cutSelected, distributeSelected, duplicateLayer,
-  duplicateSelected, enterCrop, fitSel, flip, groupSelected, hideSelected, leaveGroup, lockSelected, newPoster,
-  pasteLayer, removeLayer, removeSelected, reorder, resetOriginal, rotate90, select, selectAll, selectedGroup,
-  selectMany, setMode, toggleHidden, toggleLocked, ungroupSelected, unitOf, unstretchSel,
+  duplicateSelected, enterCrop, fitSel, flip, groupName, groupSelected, hideSelected, leaveGroup, lockSelected,
+  newPoster, pasteLayer, removeLayer, removeSelected, reorder, resetOriginal, rotate90, select, selectAll,
+  selectedGroup, selectMany, setMode, toggleHidden, toggleLocked, ungroupSelected, unitOf, unstretchSel,
 } from '../actions';
-import { focusName } from './panel';
+import { focusGroupName, focusName } from './panel';
 import { $, toast } from '../dom';
 import { isStretched } from '../geometry';
 import { DELK, isTouch, MOD, SHIFT } from '../platform';
@@ -133,13 +133,14 @@ export const ratioMenu = (ratios: ReadonlyArray<readonly [string, unknown]>, cur
 export function groupMenu(): MenuItem[] {
   const n = st.group.length, whole = selectedGroup();
   return [
-    { head: whole != null ? `Grupo · ${n} imágenes` : `${n} imágenes` },
+    { head: whole != null ? `${groupName(whole)} · ${n} imágenes` : `${n} imágenes` },
     { label: 'Copiar', icon: 'copy', kbd: MOD + 'C', fn: copySelected },
     { label: 'Cortar', icon: 'cut', kbd: MOD + 'X', fn: cutSelected },
     { label: 'Duplicar', icon: 'dup', kbd: MOD + 'D', fn: duplicateSelected },
     whole != null
       ? { label: 'Desagrupar', icon: 'ungroup', kbd: MOD + SHIFT + 'G', fn: ungroupSelected }
       : { label: 'Agrupar', icon: 'group', kbd: MOD + 'G', fn: groupSelected },
+    ...(whole != null ? [{ label: 'Renombrar grupo…', icon: 'rename', fn: () => focusGroupName(whole) } satisfies ActionItem] : []),
     '-',
     { label: 'Alinear', icon: 'alignLeft', submenu: alignMenu() },
     { label: 'Repartir', icon: 'distributeH', disabled: n < 3, submenu: distributeMenu() },

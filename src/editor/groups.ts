@@ -6,7 +6,7 @@
  * Estas funciones no dependen del navegador: se pueden probar sin canvas.
  */
 
-export interface Groupable { gid: number | null }
+export interface Groupable { gid: number | null; gname?: string }
 
 /**
  * Deja los grupos en regla: quita el grupo a las imágenes que se quedaron solas y junta las de cada grupo
@@ -15,7 +15,7 @@ export interface Groupable { gid: number | null }
 export function normalizeGroups<T extends Groupable>(layers: T[]): T[] {
   const count = new Map<number, number>();
   for (const l of layers) if (l.gid != null) count.set(l.gid, (count.get(l.gid) ?? 0) + 1);
-  for (const l of layers) if (l.gid != null && (count.get(l.gid) ?? 0) < 2) l.gid = null;
+  for (const l of layers) if (l.gid != null && (count.get(l.gid) ?? 0) < 2) { l.gid = null; if (l.gname !== undefined) l.gname = ''; }
   // posición de la imagen más al frente de cada grupo (la última en el orden de dibujo)
   const top = new Map<number, number>();
   layers.forEach((l, i) => { if (l.gid != null) top.set(l.gid, i); });

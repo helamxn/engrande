@@ -182,6 +182,8 @@
     @apply min-w-0 flex-1 cursor-pointer overflow-hidden text-ellipsis whitespace-nowrap border-0 bg-transparent px-1 pt-3 pb-[11px] text-[.9rem] font-bold text-muted;
     box-shadow: inset 0 -2px 0 transparent;
     &[aria-selected="true"] { @apply text-fg; box-shadow: inset 0 -2px 0 var(--mark); }
+    /* hay algo seleccionado y se está en otra pestaña: sus propiedades están en «Imágenes» */
+    &.dot::after { content: ''; @apply ml-1.5 inline-block size-1.5 rounded-full bg-accent align-middle; }
   }
 
   /* aviso estándar: icono, título y texto sobre un fondo tenue del color del estado */

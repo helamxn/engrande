@@ -1,8 +1,8 @@
 /** Barra de herramientas que flota junto a la imagen seleccionada (o acoplada abajo en móvil). */
 import {
   alignSelected, applyCrop, autoBackground, cancelCrop, distributeSelected, duplicateSelected, enterCrop, flip,
-  groupSelected, removeLayer, removeSelected, rotate90, selectedGroup, setCropRatio, setMode, toggleLocked,
-  ungroupSelected,
+  groupName, groupSelected, removeLayer, removeSelected, rotate90, selectedGroup, setCropRatio, setMode,
+  toggleLocked, ungroupSelected,
 } from '../actions';
 import type { AlignEdge } from '../geometry';
 import { RATIOS } from '../constants';
@@ -28,6 +28,8 @@ function tb(icon: IconName | null, label: string, act: string, title = label, cl
   return `<button type="button" class="tb ${cls}" data-act="${act}" title="${title}" aria-label="${title}">${icon ? ICON[icon] : ''}${lab}</button>`;
 }
 const SEP = '<span class="sep"></span>';
+/** El nombre del grupo es dato del usuario: se escapa antes de meterlo en el HTML de la barra. */
+const escapeHtml = (t: string) => t.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 /** Separador que solo se ve junto a botones «dw» (barra acoplada con sitio). */
 const SEP_DW = '<span class="sep dw"></span>';
 
@@ -76,7 +78,8 @@ function groupBar() {
     `<button type="button" class="tb" data-act="dist" data-a="${axis}" title="${t}" aria-label="${t}"${dis}>${ICON[icon]}</button>`;
   const whole = selectedGroup() != null;
   // compacta: junto al panel queda poco sitio. Quitar va en «Más» (y con Supr).
-  return `<span class="mini">${whole ? 'Grupo · ' : ''}<b class="text-fg">${n}</b>${whole ? '' : ' imágenes'}</span>`
+  const gid = selectedGroup(), label = gid != null ? escapeHtml(groupName(gid)) + ' · ' : '';
+  return `<span class="mini">${label}<b class="text-fg">${n}</b>${whole ? '' : ' imágenes'}</span>`
     + (whole ? tb('ungroup', '', 'ungroup', `Desagrupar (${MOD}${SHIFT}G)`) : tb('group', '', 'group', `Agrupar (${MOD}G)`))
     + SEP + al('alignLeft', 'left', 'Alinear a la izquierda') + al('alignHCenter', 'hcenter', 'Alinear al centro (horizontal)')
     + al('alignRight', 'right', 'Alinear a la derecha') + al('alignTop', 'top', 'Alinear arriba')
