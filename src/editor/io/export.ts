@@ -2,7 +2,7 @@
 import type { jsPDF as JsPDF } from 'jspdf';
 import { $, freeCanvas, tick, toast } from '../dom';
 import { cm } from '../format';
-import { hasCutMarks, markLen, rowName, srcDims } from '../geometry';
+import { hasCutMarks, markLen, sheetNo, srcDims } from '../geometry';
 import { markExported } from '../history';
 import { HI_AREA, SINGLE_AREA } from '../platform';
 import { drawAll } from '../render';
@@ -112,14 +112,14 @@ function guidePage(pdf: JsPDF, g: Geo) {
     ? [
       `1. Imprime en papel ${S.paper}. En Escala deja «Predeterminado» o ${nb('«Ajustar al tamaño del papel»')}, no ${nb('«Ajustar al área de impresión»')}. La regla de abajo debe medir 10 cm.`,
       `2. En cada hoja, recorta el borde izquierdo y el superior ${by}`,
-      '    (excepto la columna 1 y la fila A, que se quedan con su margen o lo recortas al final).',
+      '    (excepto las de la primera columna y la primera fila, que se quedan con su margen o lo recortas al final).',
       `3. Pon cada hoja encima de su vecina, con el borde recortado ${dashed}, y pega.`,
-      '4. Arma fila por fila: A1, A2, A3... y luego une las filas entre sí.',
+      '4. Arma fila por fila, en orden: 1, 2, 3... (cada hoja lleva su número en el borde y en el mapa), y luego une las filas entre sí.',
     ]
     : [
       `1. Imprime en papel ${S.paper}. En Escala deja «Predeterminado» o ${nb('«Ajustar al tamaño del papel»')}, no ${nb('«Ajustar al área de impresión»')}. La regla de abajo debe medir 10 cm.`,
       `2. Recorta los cuatro bordes de cada hoja ${by}.`,
-      '3. Une las hojas borde con borde y pégalas con cinta por detrás, siguiendo las letras y números.',
+      '3. Une las hojas borde con borde y pégalas con cinta por detrás, siguiendo los números del mapa.',
     ];
   // pasos en líneas que caben en el ancho (las que siguen a la primera de un paso, sangradas)
   pdf.setFont('helvetica', 'normal'); pdf.setFontSize(9.5);
@@ -135,7 +135,7 @@ function guidePage(pdf: JsPDF, g: Geo) {
   for (let r = 0; r < S.rows; r++) for (let c = 0; c < S.cols; c++) {
     const cx = x + (c * (g.tw - g.ov) + g.tw / 2) * s, cy = y + (r * (g.th - g.ov) + g.th / 2) * s;
     pdf.setFillColor(255, 255, 255); pdf.roundedRect(cx - 5, cy - 3, 10, 6, 1.5, 1.5, 'F'); pdf.setTextColor(194, 26, 90);
-    pdf.text(rowName(r) + (c + 1), cx, cy, { align: 'center', baseline: 'middle' });
+    pdf.text(String(sheetNo(r, c, S.cols)), cx, cy, { align: 'center', baseline: 'middle' });
   }
   pdf.setFont('helvetica', 'normal'); pdf.setFontSize(9.5); pdf.setTextColor(40, 50, 60);
   lines.forEach((t, i) => pdf.text(t, m, y + h + 9 + i * 5));
@@ -162,7 +162,7 @@ function ruler(pdf: JsPDF, x: number, y: number, withText: boolean) {
   }
 }
 /**
- * Regla en la hoja A1, dentro de la franja de solape que tapará la hoja de abajo (se imprime seguro y no se
+ * Regla en la hoja 1, dentro de la franja de solape que tapará la hoja de abajo (se imprime seguro y no se
  * ve en el póster armado). Solo si la franja cabe; la guía de armado la lleva siempre.
  */
 function sheetRuler(pdf: JsPDF, g: Geo) {
@@ -177,7 +177,7 @@ function sheetRuler(pdf: JsPDF, g: Geo) {
  * (se imprime seguro y no se ve en el póster armado); si no hay franja, en el margen, pegado a la imagen.
  */
 function sheetLabel(pdf: JsPDF, g: Geo, r: number, c: number, i: number, N: number) {
-  const txt = `${rowName(r)}${c + 1} · fila ${rowName(r)}, columna ${c + 1} · hoja ${i} de ${N}`;
+  const txt = `Hoja ${i} de ${N} · fila ${r + 1}, columna ${c + 1}`;
   pdf.setFont('helvetica', 'normal'); pdf.setFontSize(6.5);
   const tw = pdf.getTextWidth(txt) + 3, th = 3.6;
   if (g.ov >= th + 1 && r < S.rows - 1) {

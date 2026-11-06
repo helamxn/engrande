@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   alignShifts, alignedLines, applyCropDrag, equalSpacing, guideSegments, measureBetween, nearestBox, gridLevels, snapBox, snapEdges, snapSize, snapTargets, applyFit, boxInside, distributeShifts, unionBox, applyScale, bboxMM, conformCrop, cropCenter, cropPtsMM, fitLayer, geo, hasCutMarks, inside,
   displaySide, flipOnScreen, isStretched, localToMM, markLen, mmToLocal, newLayoutMemory, normDeg, panInFrame, pppOf, relayout,
-  rotateLayer, solvePointer, srcDims, startScale, stepToLines, gridStep, onGrid, toGrid, type RelayoutMode,
+  rotateLayer, sheetNo, solvePointer, srcDims, startScale, stepToLines, gridStep, onGrid, toGrid, type RelayoutMode,
   unstretch, visH, visW, zoomInFrame,
 } from './geometry';
 import type { Fit, LayerGeom, Settings, Source } from './types';
@@ -637,5 +637,16 @@ describe('rejilla de 1 mm', () => {
   it('un error de coma flotante no cuenta como estar fuera de la rejilla', () => {
     expect(13.0000000001 + gridStep(13.0000000001, 1)).toBeCloseTo(14, 9);
     expect(12.9999999999 + gridStep(12.9999999999, 1)).toBeCloseTo(14, 9);
+  });
+});
+
+describe('número de hoja (sheetNo)', () => {
+  it('1, 2, 3… de izquierda a derecha y de arriba abajo, el orden del PDF', () => {
+    // 3 columnas × 2 filas
+    const n = [0, 1].flatMap((r) => [0, 1, 2].map((c) => sheetNo(r, c, 3)));
+    expect(n).toEqual([1, 2, 3, 4, 5, 6]);
+  });
+  it('8 × 8 llega a 64', () => {
+    expect(sheetNo(7, 7, 8)).toBe(64);
   });
 });

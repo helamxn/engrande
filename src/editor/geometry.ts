@@ -12,8 +12,12 @@ export const normDeg = (d: number) => {
   const n = (((d + 180) % 360) + 360) % 360 - 180;
   return n === -180 ? 180 : n;
 };
-/** Fila 0 → "A", 1 → "B"… */
-export const rowName = (r: number) => String.fromCharCode(65 + r);
+/**
+ * Número de la hoja de la fila r y la columna c (desde 0): 1, 2, 3… de izquierda a derecha y de arriba abajo, el
+ * mismo orden en que salen del PDF. Antes eran A1, B2…, que se confundían con los tamaños de papel (A1, A2) y se
+ * leían al revés que una celda de Excel (B4 = columna B).
+ */
+export const sheetNo = (r: number, c: number, cols: number) => r * cols + c + 1;
 
 export function geo(s: Pick<Settings, 'paper' | 'orient' | 'cols' | 'rows' | 'margin' | 'overlap'>): Geo {
   let [pw, ph] = PAPERS[s.paper];
