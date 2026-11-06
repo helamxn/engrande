@@ -318,15 +318,50 @@
     }
     & .chev { @apply -mr-1 size-4 flex-none text-muted; }
     & .micon { @apply size-4 flex-none text-muted; }
-    & kbd { @apply pl-4 font-mono text-[.74rem] text-muted; }
+    & .keys { @apply ml-4 flex-none text-[.76rem]; }
     & hr { @apply mx-0.5 my-1 border-0 border-t border-line; }
     & .mhead { @apply px-2.5 pt-1.5 pb-0.5 text-[.7rem] font-bold uppercase tracking-[.07em] text-muted; }
   }
 
+  /* ventana de atajos: acción a la izquierda, teclas a la derecha; dos columnas sin huecos desde sm */
+  .sk-search {
+    @apply flex items-center gap-2 rounded-lg border border-line px-3;
+    &:focus-within { @apply border-accent; }
+    & input {
+      @apply w-full min-w-0 border-0 bg-transparent py-2 text-[.9rem] text-fg outline-none;
+      &::placeholder { @apply text-muted; }
+    }
+  }
+  .sk-body { @apply gap-8 sm:columns-2; }
+  .sk-sec {
+    @apply mb-5 break-inside-avoid;
+    & h3 { @apply m-0 mb-1 text-[.72rem] font-bold uppercase tracking-[.07em] text-muted; }
+    & dl { @apply m-0; }
+  }
+  .sk-row {
+    @apply flex items-center justify-between gap-3 border-b border-line py-[6px] text-[.84rem] last-of-type:border-b-0;
+    & dt { @apply min-w-0 text-fg; }
+    & dd { @apply m-0 flex max-w-[60%] flex-none flex-wrap items-center justify-end gap-x-1.5 gap-y-1 text-right; }
+  }
+  .sk-row dd .keys { @apply justify-end text-[.8rem]; }
+
+  /*
+   * Teclas: el mismo aspecto en toda la app (ayuda, menú, pistas, avisos, panel). Medidas en em: crecen o
+   * se encogen con el texto que las rodea. Las combinaciones se arman en ui/keys.ts.
+   */
+  kbd {
+    @apply inline-grid h-[1.9em] min-w-[1.9em] place-items-center rounded-[5px] border border-b-2 border-line bg-page px-[.5em] align-middle font-mono text-[.88em] font-normal leading-none text-fg;
+  }
   .keys {
-    @apply m-0 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[.8rem] text-muted;
-    & dt { @apply whitespace-nowrap font-mono text-fg; }
-    & dd { @apply m-0; }
+    @apply inline-flex flex-wrap items-center gap-x-1.5 gap-y-1 align-middle;
+    & .combo { @apply inline-flex items-center gap-[.25em] whitespace-nowrap text-muted; }
+    & .gest { @apply text-muted; }
+    & .or { @apply mr-[.15em] text-muted; }
+  }
+  /* en el aviso (fondo oscuro sobre tema claro, y al revés) las teclas toman su color */
+  #toast {
+    & kbd { @apply border-current/35 bg-current/10 text-inherit; }
+    & .keys .combo, & .keys .or { @apply text-inherit opacity-80; }
   }
 }
 

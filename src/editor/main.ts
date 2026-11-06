@@ -8,6 +8,7 @@ import { flushSave, initPersistence, isWorkSafe, restoreProject, scheduleSave } 
 import { initKeyboard } from './input/keyboard';
 import { initPointer } from './input/pointer';
 import { dockMQ, isMac, MOD } from './platform';
+import { hydrateKeys } from './ui/keys';
 import { initRender, readColors } from './render';
 import { st, V } from './state';
 import { initContextBar } from './ui/contextbar';
@@ -25,6 +26,7 @@ function macTitles() {
 
 export function startEditor() {
   macTitles();
+  hydrateKeys(); // teclas del marcado (data-keys), con el mismo aspecto que en el resto de la app
   const cv = $<HTMLCanvasElement>('#cv'), stage = $('#stage');
 
   initRender(cv);

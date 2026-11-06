@@ -15,15 +15,16 @@ import {
 import { focusGroupName, focusName } from './panel';
 import { $, toast } from '../dom';
 import { isStretched } from '../geometry';
-import { ALT, DELK, isTouch, MOD, SHIFT } from '../platform';
+import { isTouch } from '../platform';
 import { isFreshPoster, st } from '../state';
 import { fitView, zoomCenter } from '../view';
 import { loadFiles } from '../io/load';
 import { ICON, type IconName } from './icons';
+import { gesture, k, keysEl, rich, type Part } from './keys';
 import type { Layer, Pt } from '../types';
 
 /** icon: solo en las opciones principales (primer nivel); los submenús van sin iconos. */
-export interface ActionItem { label: string; icon?: IconName; kbd?: string; fn: () => void; disabled?: boolean; danger?: boolean }
+export interface ActionItem { label: string; icon?: IconName; kbd?: Part[]; fn: () => void; disabled?: boolean; danger?: boolean }
 export interface SubmenuItem { label: string; icon?: IconName; submenu: MenuItem[]; disabled?: boolean }
 export type MenuItem = '-' | { head: string } | ActionItem | SubmenuItem;
 const isSub = (it: ActionItem | SubmenuItem): it is SubmenuItem => 'submenu' in it;
@@ -36,7 +37,7 @@ const isSub = (it: ActionItem | SubmenuItem): it is SubmenuItem => 'submenu' in 
 function startMeasureMode() {
   st.measureMode = true;
   toast(isTouch() ? 'Toca otra imagen o el póster para medir · toca fuera del póster para terminar'
-    : `Pasa el ratón por otra imagen o el póster · también con ${ALT} pulsado · Esc para terminar`, 6000);
+    : rich('Pasa el ratón por otra imagen o el póster · también con {alt} pulsado · {esc} para terminar'), 6000);
 }
 /** "Pegar" primero intenta una imagen del portapapeles del sistema (como Ctrl+V); si no hay, la copiada en Pliego. */
 const canPaste = () => !!st.clip?.length || !!navigator.clipboard?.read;
@@ -51,7 +52,7 @@ async function pasteAny() {
       if (files.length) { void loadFiles(files); return; }
     }
   } catch { /* permiso denegado o API no disponible: se usa la copia interna */ }
-  if (!pasteLayer()) toast(`No hay ninguna imagen para pegar. Copia una imagen o usa ${MOD}C sobre una del póster.`);
+  if (!pasteLayer()) toast(rich('No hay ninguna imagen para pegar. Copia una imagen o usa {mod+c} sobre una del póster.'));
 }
 
 /**
@@ -69,23 +70,23 @@ export function layerMenu(l: Layer, prev: Layer[] = []): MenuItem[] {
       { label: `Agregar a la selección (${addTo.length + 1})`, icon: 'selectBox', fn: () => selectMany([...addTo, l]) } satisfies ActionItem,
       '-' as const,
     ] : []),
-    { label: 'Recortar', icon: 'crop', kbd: isTouch() ? 'Doble toque' : 'Doble clic', fn: () => { select(l); enterCrop(); }, disabled: locked },
+    { label: 'Recortar', icon: 'crop', kbd: [gesture(isTouch() ? 'Doble toque' : 'Doble clic')], fn: () => { select(l); enterCrop(); }, disabled: locked },
     { label: 'Quitar fondo', icon: 'bg', fn: () => { select(l); autoBackground(); }, disabled: locked },
     {
       label: 'Borrar zonas', icon: 'erase', disabled: locked, submenu: [
-        { label: 'Borrador', kbd: 'E', fn: () => { select(l); setMode('erase'); } },
-        { label: 'Varita', kbd: 'W', fn: () => { select(l); setMode('wand'); } },
+        { label: 'Borrador', kbd: k('e'), fn: () => { select(l); setMode('erase'); } },
+        { label: 'Varita', kbd: k('w'), fn: () => { select(l); setMode('wand'); } },
       ],
     },
     '-',
-    { label: 'Copiar', icon: 'copy', kbd: MOD + 'C', fn: () => copyLayer(l) },
-    { label: 'Cortar', icon: 'cut', kbd: MOD + 'X', fn: () => { select(l); cutSelected(); }, disabled: l.locked },
-    { label: 'Pegar', icon: 'paste', kbd: MOD + 'V', fn: () => void pasteAny(), disabled: !canPaste() },
-    { label: 'Duplicar', icon: 'dup', kbd: MOD + 'D', fn: () => duplicateLayer(l) },
+    { label: 'Copiar', icon: 'copy', kbd: k('mod+c'), fn: () => copyLayer(l) },
+    { label: 'Cortar', icon: 'cut', kbd: k('mod+x'), fn: () => { select(l); cutSelected(); }, disabled: l.locked },
+    { label: 'Pegar', icon: 'paste', kbd: k('mod+v'), fn: () => void pasteAny(), disabled: !canPaste() },
+    { label: 'Duplicar', icon: 'dup', kbd: k('mod+d'), fn: () => duplicateLayer(l) },
     { label: l.hidden ? 'Mostrar' : 'Ocultar', icon: l.hidden ? 'eye' : 'eyeOff', fn: () => toggleHidden(l) },
     { label: l.locked ? 'Desbloquear' : 'Bloquear', icon: l.locked ? 'lockOpen' : 'lock', fn: () => toggleLocked(l) },
     { label: 'Renombrar…', icon: 'rename', fn: () => { select(l); focusName(); } },
-    { label: 'Medir distancias', icon: 'ruler', kbd: isTouch() ? undefined : ALT, fn: startMeasureMode },
+    { label: 'Medir distancias', icon: 'ruler', kbd: isTouch() ? undefined : k('alt'), fn: startMeasureMode },
     ...(l.gpath.length ? [
       { label: 'Seleccionar el grupo', icon: 'group', fn: () => selectMany(groupMembers(l.gpath.at(-1)!.id)) } satisfies ActionItem,
       { label: 'Sacar del grupo', icon: 'ungroup', fn: () => leaveGroup(l) } satisfies ActionItem,
@@ -93,18 +94,18 @@ export function layerMenu(l: Layer, prev: Layer[] = []): MenuItem[] {
     '-',
     ...(st.layers.length > 1 ? [{
       label: 'Orden', icon: 'layers', submenu: [
-        { label: 'Traer al frente', kbd: MOD + SHIFT + ']', fn: () => reorder(l, 'front'), disabled: top },
-        { label: 'Traer adelante', kbd: MOD + ']', fn: () => reorder(l, 1), disabled: top },
-        { label: 'Enviar atrás', kbd: MOD + '[', fn: () => reorder(l, -1), disabled: bottom },
-        { label: 'Enviar al fondo', kbd: MOD + SHIFT + '[', fn: () => reorder(l, 'back'), disabled: bottom },
+        { label: 'Traer al frente', kbd: k('mod+shift+]'), fn: () => reorder(l, 'front'), disabled: top },
+        { label: 'Traer adelante', kbd: k('mod+]'), fn: () => reorder(l, 1), disabled: top },
+        { label: 'Enviar atrás', kbd: k('mod+['), fn: () => reorder(l, -1), disabled: bottom },
+        { label: 'Enviar al fondo', kbd: k('mod+shift+['), fn: () => reorder(l, 'back'), disabled: bottom },
       ],
     } satisfies SubmenuItem] : []),
     {
       label: 'Girar y voltear', icon: 'rot', disabled: l.locked, submenu: [
-        { label: 'Girar 90° a la derecha', kbd: 'R', fn: rotate90(1) },
-        { label: 'Girar 90° a la izquierda', kbd: SHIFT + 'R', fn: rotate90(-1) },
-        { label: 'Voltear en horizontal', kbd: 'H', fn: flip('x') },
-        { label: 'Voltear en vertical', kbd: SHIFT + 'H', fn: flip('y') },
+        { label: 'Girar 90° a la derecha', kbd: k('r'), fn: rotate90(1) },
+        { label: 'Girar 90° a la izquierda', kbd: k('shift+r'), fn: rotate90(-1) },
+        { label: 'Voltear en horizontal', kbd: k('h'), fn: flip('x') },
+        { label: 'Voltear en vertical', kbd: k('shift+h'), fn: flip('y') },
       ],
     },
     {
@@ -117,7 +118,7 @@ export function layerMenu(l: Layer, prev: Layer[] = []): MenuItem[] {
     },
     '-',
     { label: 'Volver a la imagen original', icon: 'history', fn: () => resetOriginal(l), disabled: locked },
-    { label: 'Quitar del póster', icon: 'del', kbd: DELK, fn: () => removeLayer(l), danger: true },
+    { label: 'Quitar del póster', icon: 'del', kbd: k('del'), fn: () => removeLayer(l), danger: true },
   ];
 }
 /** Menú de varias imágenes seleccionadas. */
@@ -144,13 +145,13 @@ export function groupMenu(): MenuItem[] {
   const n = st.group.length, whole = selectedGroup();
   return [
     { head: whole != null ? `${groupName(whole)} · ${n} imágenes` : `${n} imágenes` },
-    { label: 'Copiar', icon: 'copy', kbd: MOD + 'C', fn: copySelected },
-    { label: 'Cortar', icon: 'cut', kbd: MOD + 'X', fn: cutSelected },
-    { label: 'Duplicar', icon: 'dup', kbd: MOD + 'D', fn: duplicateSelected },
-    { label: 'Medir distancias', icon: 'ruler', kbd: isTouch() ? undefined : ALT, fn: startMeasureMode },
+    { label: 'Copiar', icon: 'copy', kbd: k('mod+c'), fn: copySelected },
+    { label: 'Cortar', icon: 'cut', kbd: k('mod+x'), fn: cutSelected },
+    { label: 'Duplicar', icon: 'dup', kbd: k('mod+d'), fn: duplicateSelected },
+    { label: 'Medir distancias', icon: 'ruler', kbd: isTouch() ? undefined : k('alt'), fn: startMeasureMode },
     whole != null
-      ? { label: 'Desagrupar', icon: 'ungroup', kbd: MOD + SHIFT + 'G', fn: ungroupSelected }
-      : { label: 'Agrupar', icon: 'group', kbd: MOD + 'G', fn: groupSelected },
+      ? { label: 'Desagrupar', icon: 'ungroup', kbd: k('mod+shift+g'), fn: ungroupSelected }
+      : { label: 'Agrupar', icon: 'group', kbd: k('mod+g'), fn: groupSelected },
     ...(whole != null ? [{ label: 'Renombrar grupo…', icon: 'rename', fn: () => focusGroupName(whole) } satisfies ActionItem] : []),
     '-',
     { label: 'Alinear', icon: 'alignLeft', submenu: alignMenu() },
@@ -159,21 +160,21 @@ export function groupMenu(): MenuItem[] {
     { label: 'Ocultar las ' + n, icon: 'eyeOff', fn: hideSelected },
     { label: 'Bloquear las ' + n, icon: 'lock', fn: lockSelected },
     '-',
-    { label: 'Deseleccionar', icon: 'x', kbd: 'Esc', fn: () => select(null) },
-    { label: `Quitar ${n} del póster`, icon: 'del', kbd: DELK, fn: removeSelected, danger: true },
+    { label: 'Deseleccionar', icon: 'x', kbd: k('esc'), fn: () => select(null) },
+    { label: `Quitar ${n} del póster`, icon: 'del', kbd: k('del'), fn: removeSelected, danger: true },
   ];
 }
 export function emptyMenu(): MenuItem[] {
   const visible = st.layers.filter((l) => !l.hidden).length;
   return [
-    { label: 'Pegar', icon: 'paste', kbd: MOD + 'V', fn: () => void pasteAny(), disabled: !canPaste() },
-    { label: 'Seleccionar todas', icon: 'selectBox', kbd: MOD + 'A', fn: selectAll, disabled: visible < 1 },
+    { label: 'Pegar', icon: 'paste', kbd: k('mod+v'), fn: () => void pasteAny(), disabled: !canPaste() },
+    { label: 'Seleccionar todas', icon: 'selectBox', kbd: k('mod+a'), fn: selectAll, disabled: visible < 1 },
     { label: 'Agregar imagen…', icon: 'addImage', fn: () => $<HTMLInputElement>('#file').click() },
     { label: 'Nuevo póster', icon: 'newPoster', fn: newPoster, disabled: isFreshPoster() },
     '-',
-    { label: 'Ver todo el póster', icon: 'fitAll', kbd: MOD + '0', fn: fitView },
-    { label: 'Acercar', icon: 'zoomInLens', kbd: '+', fn: () => zoomCenter(1.4) },
-    { label: 'Alejar', icon: 'zoomOutLens', kbd: '−', fn: () => zoomCenter(1 / 1.4) },
+    { label: 'Ver todo el póster', icon: 'fitAll', kbd: k('mod+0'), fn: fitView },
+    { label: 'Acercar', icon: 'zoomInLens', kbd: k('+'), fn: () => zoomCenter(1.4) },
+    { label: 'Alejar', icon: 'zoomOutLens', kbd: k('−'), fn: () => zoomCenter(1 / 1.4) },
   ];
 }
 
@@ -240,8 +241,7 @@ function build(container: HTMLElement, items: MenuItem[], level: 0 | 1) {
     } else {
       if (it.danger) b.className = 'danger';
       // en táctil no se muestran atajos de teclado; sí gestos como «Doble toque»
-      const showKbd = it.kbd && (!drill || it.kbd.includes(' '));
-      if (showKbd) { const k = document.createElement('kbd'); k.textContent = it.kbd!; b.appendChild(k); }
+      if (it.kbd && (!drill || it.kbd.every((p) => typeof p !== 'string'))) b.appendChild(keysEl([it.kbd]));
       b.addEventListener('click', () => {
         const back = returnTo;
         closeMenu(true);

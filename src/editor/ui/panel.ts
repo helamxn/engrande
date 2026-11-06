@@ -13,7 +13,8 @@ import {
   rotateLayer, scaleLayer, visH, visW,
 } from '../geometry';
 import { snap } from '../history';
-import { ALT, deskMQ, dockMQ, HI_AREA, isTouch } from '../platform';
+import { deskMQ, dockMQ, HI_AREA, isTouch } from '../platform';
+import { rich } from './keys';
 import { C, isFreshPoster, posterGeo, S, st } from '../state';
 import { dirty } from '../render';
 import { fitView } from '../view';
@@ -482,17 +483,17 @@ export function updateHint() {
     move: !st.layers.length ? 'Agrega una imagen para empezar'
       : st.group.length > 1 ? (t
         ? `${st.group.length} seleccionadas · arrastra para moverlas · pellizca para escalar y girar · toca fuera para deseleccionar`
-        : `${st.group.length} seleccionadas · arrastra para moverlas · esquinas: escalar · círculo: girar · Esc: deseleccionar`)
+        : `${st.group.length} seleccionadas · arrastra para moverlas · esquinas: escalar · círculo: girar · {esc}: deseleccionar`)
       : sel?.hidden ? 'Imagen oculta: no se imprime · muéstrala con el ojo de la lista'
       : sel ? (t ? 'Arrastra para mover · pellizca sobre la imagen para escalar y girar · toca fuera para deseleccionar' : 'Esquinas: escalar · lados: estirar · círculo: girar · clic fuera para deseleccionar')
         : (t ? 'Toca una imagen para seleccionarla · mantén pulsado para más opciones' : 'Clic en una imagen para seleccionarla · arrastra en el fondo para elegir varias · clic derecho: más opciones'),
     crop: t
       ? 'Arrastra la imagen para encuadrarla · pellizca para ampliarla · bordes: tamaño del recorte'
-      : `Arrastra la imagen para encuadrarla · rueda: ampliarla · bordes: tamaño del recorte (Shift: proporción, ${ALT}: desde el centro) · Enter: aplicar`,
+      : 'Arrastra la imagen para encuadrarla · rueda: ampliarla · bordes: tamaño del recorte ({shift}: proporción, {alt}: desde el centro) · {enter}: aplicar',
     erase: S.brushMode === 'erase' ? 'Pinta sobre la imagen para borrar' : 'Pinta para recuperar lo borrado',
     wand: t ? 'Toca un color de la imagen para borrarlo' : 'Haz clic en un color de la imagen para borrarlo',
   };
-  hint.textContent = H[S.mode] ?? '';
+  hint.replaceChildren(rich(H[S.mode] ?? ''));
   // con el póster vacío la pista sobra: la pantalla de inicio ya explica qué hacer
   hint.classList.toggle('invisible', !st.layers.length);
 }

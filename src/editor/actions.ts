@@ -16,7 +16,7 @@ import type { PixelJob, PixelResult } from './pixels';
 import { dirty } from './render';
 import { DEFAULT_EXPORT, freshLayout, isFreshPoster, posterGeo, S, st, V } from './state';
 import { s2mm } from './view';
-import { MOD, SHIFT } from './platform';
+import { rich } from './ui/keys';
 import { renderBar } from './ui/contextbar';
 import { layoutChanged, layoutRestored, renderList, syncExportUI, syncSel } from './ui/panel';
 import type { FitMode, Layer, LayerProps, Mode, Pt, Snapshot, Source } from './types';
@@ -224,7 +224,10 @@ export function groupSelected() {
   tidyGroups();
   selectMany(members);
   scheduleSave();
-  toast(`${name} · ${MOD}${SHIFT}G para desagrupar`, 4000);
+  // el nombre va como texto: si llevara llaves, rich() las tomaría por teclas
+  const msg = rich(' · {mod+shift+g} para desagrupar');
+  msg.prepend(name);
+  toast(msg, 4000);
 }
 /** Desagrupa los grupos seleccionados, un solo nivel: lo que tenían dentro (también subgrupos) queda suelto. */
 export function ungroupSelected() {
