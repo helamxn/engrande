@@ -1,4 +1,4 @@
-/** Dibujo del lienzo: póster, imágenes, franjas de solape, nombres de hoja y tiradores. */
+/** Dibujo del lienzo: póster, imágenes, franjas de solape, guías y medidas, y tiradores. */
 import { findGroup, groupOf } from './groups';
 import { cm, cmGap, TOUCH_MM } from './format';
 import { isGesturing } from './input/pointer';

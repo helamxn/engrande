@@ -4,50 +4,67 @@ Convierte una imagen o un PDF en un póster grande impreso en varias hojas (A4, 
 
 Todo ocurre en el navegador: no hay servidor, cuentas ni base de datos, y las imágenes nunca salen del equipo del usuario. El póster se guarda automáticamente en el propio navegador (IndexedDB) y se restaura al volver; el botón «Nuevo» lo borra.
 
+## Qué se puede hacer
+
+- Póster de varias hojas A4, A3 o Carta, con margen de impresora y solape ajustables.
+- Varias imágenes o páginas de PDF que se colocan, recortan, agrupan y retocan (quitar el fondo, borrador, varita).
+- Ayudas de precisión: imán, rejilla de 1 mm y medidas.
+- Descarga en PDF por hojas, con marcas de corte y guía de armado, o en una sola hoja grande para imprenta.
+- Funciona con ratón, teclado, pantalla táctil y móvil. La tecla `?` muestra todos los atajos y gestos.
+
 ## Stack
 
 - **Astro 7** (sitio estático) + **TypeScript** estricto
-- **Tailwind CSS 4**: tokens del tema en `src/styles/global.css` (`@theme`) y unas pocas clases de componente para lo que el editor genera desde TypeScript
-- **pdf.js 6** para leer PDF y **jsPDF 4** para exportar. Las dos librerías se cargan solo cuando se usan.
-- Fuentes Archivo e IBM Plex Mono servidas desde el propio dominio (Fontsource)
-- Iconos de **Lucide** (`lucide-static`), importados uno a uno en `src/editor/ui/icons.ts`
-- **Vitest** para la lógica pura y **Playwright** para probar la app entera en el navegador (`e2e/`): guardado, «Nuevo», gestos del lienzo y rejilla, copiar/pegar, recorte, descarga, PDF de entrada (páginas, CMYK, archivos dañados), pantalla táctil con varios dedos y móvil
+- **Tailwind CSS 4**, con los tokens del tema en `src/styles/global.css`
+- **pdf.js** para leer PDF y **jsPDF** para exportar, cargados solo cuando se usan
+- Fuentes de Fontsource e iconos de Lucide, servidos desde el propio dominio
+- **Vitest** para la lógica pura y **Playwright** para probar la app entera en el navegador
 
 ## Comandos
 
-| Comando        | Qué hace                                                                    |
-| :------------- | :-------------------------------------------------------------------------- |
-| `pnpm install` | Instala dependencias                                                        |
-| `pnpm dev`     | Servidor de desarrollo en `localhost:4321`                                  |
-| `pnpm build`   | Copia los recursos de pdf.js, comprueba los tipos y genera `dist/`          |
-| `pnpm preview` | Sirve `dist/` para probar el build (con la CSP activa)                      |
-| `pnpm test`    | Tests de la lógica pura: geometría, grupos, historial, formato              |
-| `pnpm test:e2e` | Build y tests de punta a punta con Playwright en Edge (`PW_CHANNEL=chrome` para Chrome) |
-| `pnpm check`   | Comprobación de tipos de Astro y TypeScript                                 |
+| Comando         | Qué hace                                                        |
+| :-------------- | :-------------------------------------------------------------- |
+| `pnpm install`  | Instala dependencias                                            |
+| `pnpm dev`      | Servidor de desarrollo                                          |
+| `pnpm build`    | Comprueba los tipos y genera `dist/`                            |
+| `pnpm preview`  | Sirve `dist/` para probar el build (con la CSP activa)          |
+| `pnpm test`     | Tests unitarios                                                 |
+| `pnpm test:e2e` | Build y tests de punta a punta                                  |
+| `pnpm check`    | Comprobación de tipos                                           |
 
 La CSP solo se aplica en el build: pruébala con `pnpm build && pnpm preview`, no con `pnpm dev`.
+
+## Pruebas
+
+- **Unitarias** (`src/editor/*.test.ts`): la lógica pura, como la geometría, los grupos, el historial y los píxeles.
+- **De punta a punta** (`e2e/`): la app compilada, en el Edge instalado en el equipo (`PW_CHANNEL=chrome` para Chrome). Cubren el guardado, los gestos del lienzo, la edición, el PDF de entrada, la pantalla táctil y el móvil.
 
 ## Estructura
 
 ```text
 src/
-  pages/index.astro          monta el editor
-  layouts/Layout.astro       <html lang="es">, metadatos
-  components/                Header, Workspace (lienzo), Panel (Hojas / Imágenes / Exportar)
-  styles/global.css          Tailwind, tema claro/oscuro y componentes
+  pages/, layouts/, components/   página, marcado del editor y su panel
+  styles/global.css               tema claro/oscuro y componentes
   editor/
-    main.ts                  arranque: conecta módulos y eventos
-    state.ts, types.ts       estado compartido y tipos
-    geometry.ts              geometría pura (mm ↔ imagen, recorte, escala, resolución) + tests
-    history.ts               deshacer/rehacer con límite de memoria + tests
-    actions.ts               selección, capas, modos, recorte, borrador y varita
-    render.ts, view.ts       dibujo del lienzo, zoom y encuadre
-    input/                   puntero y gestos, teclado
-    io/                      carga de archivos, pdf.js, exportación con jsPDF
-    ui/                      barra contextual, menú, panel, iconos
-scripts/copy-pdfjs.mjs       copia cmaps, fuentes y WASM de pdf.js a public/pdfjs (no se versiona)
-vercel.json                  cabeceras de seguridad y caché
+    main.ts                       arranque: conecta módulos y eventos
+    state.ts                      estado compartido
+    geometry.ts                   geometría pura del póster y las imágenes
+    input/                        ratón, táctil y teclado
+    io/                           carga de archivos, PDF, guardado y exportación
+    ui/                           barra contextual, menú y panel
+    workers/                      procesamiento de píxeles fuera del hilo principal
+e2e/                              tests de punta a punta
+scripts/                          copia los recursos de pdf.js a public/ (no se versionan)
+vercel.json                       cabeceras de seguridad y caché
 ```
+
+## Cómo funciona
+
+- **Guardado:** el póster se guarda solo en IndexedDB, con los archivos originales. El historial de deshacer no se guarda.
+- **Calidad:** las imágenes grandes se editan en una copia más ligera. Al descargar se vuelve al archivo original.
+- **Precisión:** las posiciones caen en mm enteros. El imán a otras imágenes y al póster tiene prioridad sobre la rejilla, y Ctrl/⌘ desactiva los dos.
+- **Hojas:** se numeran 1, 2, 3… en el mismo orden que las páginas del PDF.
+- **Color:** todo se trabaja en sRGB. Los PDF en CMYK se convierten con perfil, y el PDF descargado va en RGB sin perfil ICC.
 
 ## Seguridad
 
@@ -55,7 +72,7 @@ vercel.json                  cabeceras de seguridad y caché
 - **Sin CDN:** todas las dependencias, fuentes y recursos de pdf.js se sirven desde el propio dominio.
 - **Content-Security-Policy por `<meta>`**, generada por Astro con hashes (`security.csp` en `astro.config.mjs`): solo se permiten scripts y estilos propios, sin `object`, `base` ni formularios.
 - **Cabeceras HTTP en Vercel** (`vercel.json`): `frame-ancestors 'none'`, `nosniff`, `Referrer-Policy`, `Permissions-Policy`, HSTS y COOP.
-- **Límites de entrada:** archivos de hasta 150 MB e imágenes de hasta 200 MP. pdf.js limita las imágenes internas de cada PDF.
+- **Límites de entrada:** archivos de hasta 150 MB e imágenes de hasta 200 MP (menos en equipos con poca memoria). pdf.js limita las imágenes internas de cada PDF.
 - **Sin inyección de HTML:** los datos del usuario, como los nombres de archivo, se insertan siempre con `textContent`. Los SVG se cargan como `<img>`, así que su JavaScript no se ejecuta.
 
 ## Despliegue en Vercel

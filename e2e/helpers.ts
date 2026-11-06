@@ -60,9 +60,15 @@ export function saved(page: Page): Promise<Saved | null> {
   }));
 }
 
-/** Espera a que lo guardado tenga estas imágenes (el guardado va 1,2 s después del último cambio). */
+/**
+ * Cuánto esperar a un guardado: va 1,2 s después del último cambio y escribe las imágenes en IndexedDB, que con
+ * todos los tests en paralelo puede tardar varios segundos.
+ */
+const SAVE_WAIT = { timeout: 15_000 };
+
+/** Espera a que lo guardado tenga estas imágenes. */
 export async function expectSavedNames(page: Page, names: string[] | null) {
-  await expect.poll(async () => (await saved(page))?.names ?? null).toEqual(names);
+  await expect.poll(async () => (await saved(page))?.names ?? null, SAVE_WAIT).toEqual(names);
 }
 
 /** Espera al siguiente guardado y devuelve la caja de la imagen i (por defecto, la última). */
@@ -72,7 +78,7 @@ export async function savedBox(page: Page, check: (b: SavedBox) => boolean = () 
     const s = await saved(page);
     box = s?.boxes.at(i);
     return !!box && check(box);
-  }).toBe(true);
+  }, SAVE_WAIT).toBe(true);
   return box!;
 }
 
