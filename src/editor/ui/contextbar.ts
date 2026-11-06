@@ -1,7 +1,7 @@
 /** Barra de herramientas que flota junto a la imagen seleccionada (o acoplada abajo en móvil). */
 import {
   alignSelected, applyCrop, autoBackground, cancelCrop, distributeSelected, duplicateSelected, enterCrop, flip,
-  groupName, groupSelected, removeLayer, removeSelected, rotate90, selectedGroup, setCropRatio, setMode,
+  groupName, groupSelected, removeLayer, rotate90, selectedGroup, setCropRatio, setMode,
   toggleLocked, ungroupSelected,
 } from '../actions';
 import type { AlignEdge } from '../geometry';
@@ -60,10 +60,10 @@ function dockBar(): string {
     case 'erase':
       return `<button type="button" class="tb" data-act="bm" data-m="erase" aria-pressed="${S.brushMode === 'erase'}">${ICON.erase}<span>Borrar</span></button>`
         + `<button type="button" class="tb" data-act="bm" data-m="restore" aria-pressed="${S.brushMode === 'restore'}">${ICON.restore}<span>Restaurar</span></button>`
-        + `${SEP}<label class="mini" aria-label="Tamaño del pincel"><input type="range" id="bBrush" min="4" max="90" value="${S.brush}"><output id="bBrushOut">${S.brush} px</output></label>`
+        + `${SEP}<label class="mini"><input type="range" id="bBrush" aria-label="Tamaño del pincel" min="4" max="90" value="${S.brush}"><output id="bBrushOut">${S.brush} px</output></label>`
         + SEP + tb('check', 'Listo', 'done', 'Listo', 'primary');
     case 'wand':
-      return `<label class="mini" aria-label="Tolerancia"><input type="range" id="bTol" min="5" max="140" value="${S.tol}"><output id="bTolOut">${S.tol}</output></label>`
+      return `<label class="mini"><input type="range" id="bTol" aria-label="Tolerancia" min="5" max="140" value="${S.tol}"><output id="bTolOut">${S.tol}</output></label>`
         + `<label class="mini"><input type="checkbox" id="bContig" ${S.contig ? 'checked' : ''}> Solo zona</label>`
         + SEP_DW + tb('bg', 'Quitar fondo', 'autobg', 'Quitar el fondo', 'dw') + SEP + tb('check', 'Listo', 'done', 'Listo', 'primary');
   }
@@ -177,7 +177,6 @@ export function initContextBar() {
         case 'align': alignSelected(b.dataset.e as AlignEdge); break;
         case 'dist': distributeSelected(b.dataset.a === 'y' ? 'y' : 'x'); break;
         case 'dupGroup': duplicateSelected(); break;
-        case 'delGroup': removeSelected(); break;
         case 'more': { const r = b.getBoundingClientRect(); openMenu(r.left, r.bottom + 4, groupMenu()); break; }
         case 'group': groupSelected(); break;
         case 'ungroup': ungroupSelected(); break;

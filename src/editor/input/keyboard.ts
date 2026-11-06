@@ -1,7 +1,7 @@
 /** Atajos de teclado. */
 import {
-  afterChange, applyCrop, cancelCrop, copySelected, cutSelected, duplicateSelected, enterCrop, flip, groupSelected,
-  removeSelected, reorder, rotate90, select, selectAll, selected, setMode, shiftSelected, ungroupSelected,
+  afterChange, applyCrop, cancelCrop, copySelected, cutSelected, duplicateSelected, enterCrop, exitGroup, flip, groupSelected,
+  removeSelected, reorder, rotate90, selectAll, selected, setMode, shiftSelected, ungroupSelected,
 } from '../actions';
 import { redo, snap, undo } from '../history';
 import { S, st } from '../state';
@@ -10,13 +10,28 @@ import { isMenuOpen } from '../ui/menu';
 import { togglePanel } from '../ui/layout';
 import { isShortcutsOpen, openShortcuts } from '../ui/shortcuts';
 import { setSpaceDown } from './pointer';
-import { stopMeasure } from '../measure';
+import { measureCtx, stopMeasure } from '../measure';
+import { bboxMM, stepToLines, unionBox } from '../geometry';
 import { altChangedDuringDrag, refreshMeasure } from './pointer';
+
+/**
+ * Botón que tiene el foco porque se pulsó con el ratón o el dedo (no con el teclado). No sirve :focus-visible: el
+ * navegador lo activa en cuanto se pulsa una tecla, también Espacio.
+ */
+let pointerFocused: Element | null = null;
+/** Espacio sirve para mover la vista: sin foco, o con el foco en un botón al que se llegó con el ratón. */
+function spaceTarget(t: EventTarget | null) {
+  if (t === document.body) return true;
+  return t instanceof HTMLButtonElement && t === pointerFocused && !t.closest('#menu, .menu, dialog');
+}
 
 /** Una serie de pulsaciones de flecha seguidas cuenta como un solo paso de deshacer. */
 let nudge: { l: unknown; t: number } = { l: null, t: 0 };
 
 export function initKeyboard() {
+  document.addEventListener('pointerdown', (e) => { pointerFocused = (e.target as Element).closest?.('button') ?? null; }, true);
+  // el foco llegó a otro sitio (Tab, o lo movió el editor): ese ya no se pulsó con el ratón
+  document.addEventListener('focusin', (e) => { if (e.target !== pointerFocused) pointerFocused = null; });
   // Alt: medir al pasar el ratón (con algo seleccionado). Se evita que el navegador active su menú al soltarlo.
   const altOn = (on: boolean) => {
     if (st.altDown === on) return;
@@ -49,7 +64,8 @@ export function initKeyboard() {
     if (e.key === 'Enter' && S.mode === 'crop') { e.preventDefault(); applyCrop(); return; }
     if (e.key === 'Escape' && st.measureMode) { st.measureMode = false; stopMeasure(); return; }
     if (e.key === 'Escape') {
-      if (S.mode === 'crop') cancelCrop(); else if (S.mode !== 'move') setMode('move'); else select(null);
+      // en un grupo abierto, Esc sale un nivel (selecciona el grupo); en el póster, deselecciona
+      if (S.mode === 'crop') cancelCrop(); else if (S.mode !== 'move') setMode('move'); else exitGroup();
       return;
     }
     const arrow = e.key.startsWith('Arrow');
@@ -65,7 +81,14 @@ export function initKeyboard() {
       if (!(e.repeat || (nudge.l === key && now - nudge.t < 800))) snap();
       nudge = { l: key, t: now };
       const d = e.shiftKey ? 10 : 1;
-      shiftSelected(e.key === 'ArrowLeft' ? -d : e.key === 'ArrowRight' ? d : 0, e.key === 'ArrowUp' ? -d : e.key === 'ArrowDown' ? d : 0);
+      let dx = e.key === 'ArrowLeft' ? -d : e.key === 'ArrowRight' ? d : 0, dy = e.key === 'ArrowUp' ? -d : e.key === 'ArrowDown' ? d : 0;
+      // el paso se para en los bordes y centros (del póster y de las demás) que cruzaría: así se alinea con exactitud
+      const mv = selected().filter((l) => !l.locked);
+      if (mv.length) {
+        const c = measureCtx(mv), b = unionBox(mv.map((l) => bboxMM(l)));
+        dx = stepToLines(b, c.targets, 'x', dx); dy = stepToLines(b, c.targets, 'y', dy);
+      }
+      shiftSelected(dx, dy);
       afterChange();
       // con Alt (como en Figma): se mueve midiendo y las distancias siguen a la imagen
       if (e.altKey || st.altDown) refreshMeasure();
@@ -74,7 +97,9 @@ export function initKeyboard() {
     if (arrow && e.altKey) return; // sin nada que mover: Alt + flecha no hace nada más
     if (k === '+' || k === '=') { zoomCenter(1.25); return; }
     if (k === '-') { zoomCenter(1 / 1.25); return; }
-    if (e.code === 'Space' && !e.repeat && e.target === document.body) { setSpaceDown(true); e.preventDefault(); return; }
+    // Espacio + arrastrar mueve la vista. También con el foco en un botón pulsado con el ratón:
+    // si no, Espacio lo volvería a pulsar (p. ej. «Acercar»). Con el foco puesto con el teclado, Espacio pulsa el botón.
+    if (e.code === 'Space' && spaceTarget(e.target)) { if (!e.repeat) setSpaceDown(true); e.preventDefault(); return; }
     if (!sel) return;
     if (k === 'c') enterCrop();
     else if (k === 'e') setMode('erase');
@@ -83,6 +108,6 @@ export function initKeyboard() {
     else if (k === 'r') rotate90(e.shiftKey ? -1 : 1)();
     else if (k === 'h') flip(e.shiftKey ? 'y' : 'x')();
   });
-  document.addEventListener('keyup', (e) => { if (e.code === 'Space') setSpaceDown(false); });
+  document.addEventListener('keyup', (e) => { if (e.code === 'Space') { if (spaceTarget(e.target)) e.preventDefault(); setSpaceDown(false); } });
   addEventListener('blur', () => setSpaceDown(false));
 }

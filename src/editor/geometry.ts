@@ -142,6 +142,21 @@ export function snapBox(b: Box, t: SnapTargets, tol: number): { dx: number; dy: 
   const sx = bestShift(lines(b.x0, b.x1), t.x, t.px, tol), sy = bestShift(lines(b.y0, b.y1), t.y, t.py, tol);
   return { dx: sx?.d ?? 0, dy: sy?.d ?? 0, gx: sx?.g ?? null, gy: sy?.g ?? null };
 }
+/**
+ * Flechas: un paso d (mm) en un eje que no se salta ninguna línea del imán. Si por el camino un borde o el centro de
+ * b cruzaría una (borde o centro del póster o de otra imagen), se para justo en ella; la siguiente pulsación sigue.
+ * Así se puede alinear con exactitud aunque la posición tenga décimas y el paso sea de 1 mm.
+ */
+export function stepToLines(b: Box, t: SnapTargets, axis: 'x' | 'y', d: number): number {
+  if (!d) return 0;
+  const own = axis === 'x' ? lines(b.x0, b.x1) : lines(b.y0, b.y1), all = axis === 'x' ? t.x : t.y;
+  let best = d;
+  for (const o of own) for (const v of all) {
+    const k = v - o;
+    if (Math.sign(k) === Math.sign(d) && Math.abs(k) > EPS && Math.abs(k) < Math.abs(best) - EPS) best = k;
+  }
+  return best;
+}
 /** Bordes y centro de moving (en un eje) que coinciden con el borde o el centro de alguna de las cajas. */
 export function alignedLines(moving: Box, boxes: Box[], axis: 'x' | 'y'): number[] {
   const f = (b: Box) => (axis === 'x' ? lines(b.x0, b.x1) : lines(b.y0, b.y1));
@@ -248,8 +263,9 @@ export interface Dash { x0: number; y0: number; x1: number; y1: number }
  * - Si no se solapan en un eje, la separación entre ellas en ese eje; si tampoco se solapan en el otro, la medida va
  *   a la altura del centro de s y una línea discontinua prolonga el borde de t hasta ella (como en Figma).
  * - Si se solapan (p. ej. t es el póster que contiene a s), la distancia entre los bordes del mismo lado.
+ * container: t es el póster (contiene a lo seleccionado): se mide a sus cuatro bordes aunque se salga.
  */
-export function measureBetween(s: Box, t: Box): { gaps: Gap[]; dashes: Dash[] } {
+export function measureBetween(s: Box, t: Box, container = false): { gaps: Gap[]; dashes: Dash[] } {
   const gaps: Gap[] = [], dashes: Dash[] = [];
   const axis = (sa0: number, sa1: number, ta0: number, ta1: number, sb0: number, sb1: number, tb0: number, tb1: number,
     mk: (from: number, to: number, at: number) => Gap, dash: (a: number, b0: number, b1: number) => Dash) => {
@@ -258,8 +274,11 @@ export function measureBetween(s: Box, t: Box): { gaps: Gap[]; dashes: Dash[] } 
     if (ta1 <= sa0) { gaps.push(mk(ta1, sa0, at)); proj(ta1); }
     else if (ta0 >= sa1) { gaps.push(mk(sa1, ta0, at)); proj(ta0); }
     else {
-      if (Math.abs(ta0 - sa0) > 1e-6) gaps.push(mk(Math.min(ta0, sa0), Math.max(ta0, sa0), at));
-      if (Math.abs(ta1 - sa1) > 1e-6) gaps.push(mk(Math.min(ta1, sa1), Math.max(ta1, sa1), at));
+      // se solapan en este eje. Si una abarca a la otra (o t es el póster), la distancia de cada lado; si se cruzan,
+      // como en Figma, solo el lado en el que el borde de lo seleccionado queda dentro de t (al cruzarse, salta)
+      const nested = container || (ta0 <= sa0 && sa1 <= ta1) || (sa0 <= ta0 && ta1 <= sa1);
+      if (Math.abs(ta0 - sa0) > 1e-6 && (nested || sa0 > ta0)) gaps.push(mk(Math.min(ta0, sa0), Math.max(ta0, sa0), at));
+      if (Math.abs(ta1 - sa1) > 1e-6 && (nested || sa1 < ta1)) gaps.push(mk(Math.min(ta1, sa1), Math.max(ta1, sa1), at));
     }
   };
   axis(s.x0, s.x1, t.x0, t.x1, s.y0, s.y1, t.y0, t.y1,
@@ -443,14 +462,22 @@ export function applyCropDrag(l: LayerGeom, d: CropDrag, m: Pt, shift: boolean, 
   l.crop = k;
 }
 /** Encoge el recorte actual (centrado) hasta la proporción pedida. */
-export function conformCrop(l: LayerGeom, ratio: number | null) {
-  if (!ratio) return;
-  const [cu, cv] = cropMid(l);
-  let cw = visW(l), ch = visH(l);
-  if (cw / ch > ratio) cw = ch * ratio; else ch = cw / ratio;
+/**
+ * Da al recorte la proporción ratio: el mayor marco con esa proporción que cabe en ref (tamaño en mm del marco de
+ * referencia; por defecto, el actual), centrado donde está el recorte. ratio null: vuelve al marco de referencia.
+ * Partir siempre de la misma referencia hace que ir y venir entre proporciones no encoja el recorte (antes cada
+ * proporción se encajaba dentro de la anterior). Si el marco se saldría de la imagen, se desplaza para caber y solo
+ * se reduce si no cabe ni así. Devuelve el tamaño final en mm.
+ */
+export function conformCrop(l: LayerGeom, ratio: number | null, ref = { w: visW(l), h: visH(l) }) {
+  let cw = ref.w, ch = ref.h;
+  if (ratio) { if (cw / ch > ratio) cw = ch * ratio; else ch = cw / ratio; }
   let fw = cw / l.w, fh = ch / l.h;
-  const t = Math.min(1, (2 * Math.min(cu, 1 - cu)) / fw, (2 * Math.min(cv, 1 - cv)) / fh); fw *= t; fh *= t;
+  const t = Math.min(1, 1 / fw, 1 / fh); fw *= t; fh *= t;
+  const [mu, mv] = cropMid(l);
+  const cu = clamp(mu, fw / 2, 1 - fw / 2), cv = clamp(mv, fh / 2, 1 - fh / 2);
   l.crop = { x0: cu - fw / 2, x1: cu + fw / 2, y0: cv - fh / 2, y1: cv + fh / 2 };
+  return { w: visW(l), h: visH(l) };
 }
 
 /** Ajusta o llena el póster y, si scale < 1, lo reduce desde el centro (p. ej. la imagen de ejemplo al 94 %). */

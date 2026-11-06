@@ -9,6 +9,7 @@ import type { PDFDocumentProxy } from 'pdfjs-dist';
 import { makeCanvas, newLayer } from '../actions';
 import { toast } from '../dom';
 import { S, st } from '../state';
+import { clonePath, nextGroupName, normalizeGroups, type GroupRef, type Groupable } from '../groups';
 import { loadImg } from './load';
 import { openPdf, renderPdfPage } from './pdf';
 import type { Crop, Fit, Layer, LayoutSettings } from '../types';
@@ -26,7 +27,9 @@ interface SavedLayer {
   /** Opcionales por la misma razón (bloquear y opacidad llegaron después). */
   locked?: boolean;
   opacity?: number;
-  /** Grupo (Ctrl+G); opcional por la misma razón. */
+  /** Grupos (Ctrl+G), del más externo al más interno; opcional por la misma razón. */
+  gpath?: { id: number; name: string }[];
+  /** Formato anterior (un solo grupo por imagen): se convierte al leer. */
   gid?: number | null;
   gname?: string;
   /** null solo en proyectos antiguos con la imagen de ejemplo (ya no existe): esas capas se omiten al restaurar. */
@@ -144,7 +147,7 @@ async function save() {
     layers.push({
       name: l.name, cx: l.cx, cy: l.cy, w: l.w, h: l.h, rot: l.rot, flipX: l.flipX, flipY: l.flipY,
       crop: { ...l.crop }, page: l.page, pages: l.pages, fit: l.fit && { ...l.fit }, hidden: l.hidden,
-      locked: l.locked, opacity: l.opacity, gid: l.gid, gname: l.gname, src, edit,
+      locked: l.locked, opacity: l.opacity, gpath: clonePath(l.gpath), src, edit,
     });
   }
   const project: SavedProject = {
@@ -258,19 +261,40 @@ export async function restoreProject(): Promise<{ failed: string[] } | null> {
         ...extra, img, orig, cx: r.cx, cy: r.cy, w: r.w, h: r.h, rot: r.rot, flipX: r.flipX, flipY: r.flipY,
         crop: { ...r.crop }, page: r.page, pages: r.pages, fit: r.fit && { ...r.fit }, hidden: !!r.hidden,
         locked: !!r.locked, opacity: typeof r.opacity === 'number' ? Math.min(1, Math.max(0, r.opacity)) : 1,
-        gid: typeof r.gid === 'number' ? r.gid : null, gname: typeof r.gname === 'string' ? r.gname.slice(0, 80) : '',
+        gpath: readPath(r),
       }));
     } catch (err) {
       console.warn('No se pudo recuperar', r.name, err);
       failedNames.push(r.name);
     }
   }
+  // grupos en regla (p. ej. si alguna imagen no se pudo recuperar) y con nombre los de antes
+  st.layers = normalizeGroups(st.layers);
+  nameUnnamedGroups(st.layers);
   Object.assign(S, project.layout, { dpi: project.dpi, marks: project.marks, guide: project.guide });
   stored = used;
   // si algo falló, el próximo guardado limpia lo que ya no se usa
   if (failedNames.length) scheduleSave();
   showInfo();
   return { failed: failedNames };
+}
+
+/* ---------- grupos guardados ---------- */
+/** Cadena de grupos de una imagen guardada; los proyectos de antes (un solo grupo, nombre vacío) se convierten. */
+function readPath(r: SavedLayer): GroupRef[] {
+  const name = (v: unknown) => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, 80) : '');
+  if (Array.isArray(r.gpath)) {
+    return r.gpath.filter((g) => g && Number.isInteger(g.id)).slice(0, 32).map((g) => ({ id: g.id, name: name(g.name) }));
+  }
+  return typeof r.gid === 'number' ? [{ id: r.gid, name: name(r.gname) }] : [];
+}
+/** Grupos sin nombre (guardados antes de que lo tuvieran): «Grupo 1», «Grupo 2»…, por orden. */
+export function nameUnnamedGroups(layers: Groupable[]) {
+  for (const l of layers) for (const g of l.gpath) {
+    if (g.name) continue;
+    const n = nextGroupName(layers);
+    for (const x of layers) for (const y of x.gpath) if (y.id === g.id) y.name = n;
+  }
 }
 
 /* ---------- indicador en el panel ---------- */

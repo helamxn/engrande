@@ -1,5 +1,7 @@
 /** Dibujo del lienzo: póster, imágenes, franjas de solape, nombres de hoja y tiradores. */
-import { cm } from './format';
+import { findGroup, groupOf } from './groups';
+import { cm, cmGap, TOUCH_MM } from './format';
+import { isGesturing } from './input/pointer';
 import {
   gridLevels, HANDLES, bboxMM, cropCenter, cropPtsMM, displaySide, handleLocal, localToMM, pppOf, qualityOf, rad, rowName,
   unionBox, visH, visW, type Quality,
@@ -15,6 +17,8 @@ import type { HandleId, Layer, Pt } from './types';
 let cv: HTMLCanvasElement;
 let ctx: CanvasRenderingContext2D;
 let checker: CanvasPattern | null = null;
+/** Rayado del margen sin imprimir (papel que no se imprime). */
+let hatch: CanvasPattern | null = null;
 let dirtyFlag = false;
 
 export function initRender(canvas: HTMLCanvasElement) {
@@ -40,6 +44,12 @@ export function readColors() {
   x.fillStyle = C.chk1!; x.fillRect(0, 0, 16, 16);
   x.fillStyle = C.chk2!; x.fillRect(0, 0, 8, 8); x.fillRect(8, 8, 8, 8);
   checker = ctx.createPattern(p, 'repeat');
+  const h = document.createElement('canvas');
+  h.width = h.height = 8;
+  const y = h.getContext('2d')!;
+  y.strokeStyle = 'rgba(110,120,135,.22)'; y.lineWidth = 1;
+  y.beginPath(); y.moveTo(-1, 9); y.lineTo(9, -1); y.stroke();
+  hatch = ctx.createPattern(h, 'repeat');
   dirty();
   renderList();
 }
@@ -243,15 +253,16 @@ function drawHelpers() {
       const a = g.axis === 'x' ? mm2s({ x: g.from, y: g.at }) : mm2s({ x: g.at, y: g.from });
       const b = g.axis === 'x' ? mm2s({ x: g.to, y: g.at }) : mm2s({ x: g.at, y: g.to });
       const len = g.axis === 'x' ? b.x - a.x : b.y - a.y;
-      if (len < 2) continue;
+      if (len < 2 || g.to - g.from < TOUCH_MM) continue; // se tocan: no hay distancia que mostrar
       ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
       if (g.axis === 'x') { ctx.moveTo(a.x, a.y - 4); ctx.lineTo(a.x, a.y + 4); ctx.moveTo(b.x, b.y - 4); ctx.lineTo(b.x, b.y + 4); }
       else { ctx.moveTo(a.x - 4, a.y); ctx.lineTo(a.x + 4, a.y); ctx.moveTo(b.x - 4, b.y); ctx.lineTo(b.x + 4, b.y); }
       ctx.stroke();
-      const txt = cm(g.to - g.from), w = ctx.measureText(txt).width + 10;
-      // si el hueco es más corto que la etiqueta, o la etiqueta taparía la de tamaño, va al lado de la línea
+      const txt = cmGap(g.to - g.from), w = ctx.measureText(txt).width + 10;
+      // si el hueco es más corto que la etiqueta, o la etiqueta taparía la de tamaño, va al lado de la línea (lo
+      // bastante lejos para no pisar el tirador del lado, que está justo ahí)
       let mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
-      if (len < (g.axis === 'x' ? w : lh) + 8) { if (g.axis === 'x') my -= lh - 4; else mx += w / 2 + 8; }
+      if (len < (g.axis === 'x' ? w : lh) + 8) { if (g.axis === 'x') my -= lh / 2 + 10; else mx += w / 2 + 12; }
       if (sizeRect && overlaps({ x: mx - w / 2, y: my - lh / 2, w, h: lh }, sizeRect)) {
         if (g.axis === 'x') my = sizeRect.y - lh / 2 - 4; else mx = sizeRect.x + sizeRect.w + w / 2 + 6;
       }
@@ -276,8 +287,15 @@ export function render() {
   if (sheetsVisible()) {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     const tl = mm2s({ x: 0, y: 0 }), pwS = g.W * V.k, phS = g.H * V.k;
+    // el papel: el póster impreso y, alrededor, el margen sin imprimir de las hojas de fuera (rayado). Entre hojas
+    // no hay margen a la vista: al pegar, cada hoja tapa el de su vecina
+    const mS = g.m * V.k, pt = { x: tl.x - mS, y: tl.y - mS };
     ctx.save(); ctx.shadowColor = 'rgba(0,0,0,.22)'; ctx.shadowBlur = 14; ctx.shadowOffsetY = 3;
-    ctx.fillStyle = '#ffffff'; ctx.fillRect(tl.x, tl.y, pwS, phS); ctx.restore();
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(pt.x, pt.y, pwS + 2 * mS, phS + 2 * mS); ctx.restore();
+    if (mS > 0 && hatch) {
+      ctx.fillStyle = hatch; ctx.fillRect(pt.x, pt.y, pwS + 2 * mS, phS + 2 * mS);
+      ctx.fillStyle = '#ffffff'; ctx.fillRect(tl.x, tl.y, pwS, phS);
+    }
     if (editing && checker) { ctx.save(); ctx.translate(tl.x, tl.y); ctx.fillStyle = checker; ctx.fillRect(0, 0, pwS, phS); ctx.restore(); }
 
     // imágenes: atenuadas fuera del póster, completas dentro
@@ -311,6 +329,16 @@ export function render() {
     }
     ctx.stroke(); ctx.setLineDash([]);
 
+    // al ajustar el margen o el solape: el papel entero de cada hoja, para ver cómo encajan y cuánto se pierde
+    if (st.showPaper) {
+      ctx.strokeStyle = C.mark!; ctx.lineWidth = 1; ctx.globalAlpha = 0.75; ctx.setLineDash([3, 3]);
+      for (let r = 0; r < S.rows; r++) for (let c = 0; c < S.cols; c++) {
+        const a = mm2s({ x: c * (g.tw - g.ov) - g.m, y: r * (g.th - g.ov) - g.m });
+        ctx.strokeRect(Math.round(a.x) + 0.5, Math.round(a.y) + 0.5, Math.round(g.pw * V.k), Math.round(g.ph * V.k));
+      }
+      ctx.setLineDash([]); ctx.globalAlpha = 1;
+    }
+
     // nombre de cada hoja (A1, A2…)
     if (g.tw * V.k > 44 && g.th * V.k > 30) {
       ctx.font = '500 11px "IBM Plex Mono", ui-monospace, monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -323,10 +351,19 @@ export function render() {
 
     // tamaño del póster y hojas, encima de su esquina (como el nombre de un marco en Figma); si no cabe, solo el tamaño
     const n = S.cols * S.rows, size = `${cm(g.W)} × ${cm(g.H)} cm`;
-    const full = `Póster ${size} · ${n} ${n === 1 ? 'hoja' : 'hojas'} ${S.paper}`;
+    const full = `Póster ${size} · ${n} ${n === 1 ? 'hoja' : 'hojas'} ${S.paper}` + (g.m > 0 ? ` · margen ${Math.round(g.m)} mm` : '');
     ctx.font = '500 11.5px "IBM Plex Mono", ui-monospace, monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-    const txt = ctx.measureText(full).width <= pwS ? full : size, ly = tl.y - 8;
-    if (ly > view.ins.t + 12 && ctx.measureText(txt).width <= pwS + 40) { ctx.fillStyle = C.muted!; ctx.fillText(txt, tl.x, ly); }
+    const paperW = pwS + 2 * mS, txt = ctx.measureText(full).width <= paperW ? full : size, ly = pt.y - 8;
+    if (ly > view.ins.t + 12 && ctx.measureText(txt).width <= paperW + 40) { ctx.fillStyle = C.muted!; ctx.fillText(txt, pt.x, ly); }
+    // sobre la franja: qué es
+    if (st.hoverBand && st.hover) {
+      const t = `Margen sin imprimir · ${Math.round(g.m)} mm · se recorta`;
+      ctx.font = '500 11px "IBM Plex Mono", ui-monospace, monospace';
+      const w = ctx.measureText(t).width + 14, x = Math.min(st.hover.x + 14, view.CW - w - 6), yy = st.hover.y + 20;
+      ctx.fillStyle = C.panel!; ctx.beginPath(); ctx.roundRect(x, yy, w, 22, 6); ctx.fill();
+      ctx.strokeStyle = C.line!; ctx.lineWidth = 1; ctx.stroke();
+      ctx.fillStyle = C.fg!; ctx.textBaseline = 'middle'; ctx.fillText(t, x + 7, yy + 11.5);
+    }
   }
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
@@ -335,17 +372,21 @@ export function render() {
     if (st.hoverL && st.hoverL !== sel && !st.group.includes(st.hoverL)) {
       ctx.strokeStyle = C.accent!; ctx.globalAlpha = 0.55; ctx.lineWidth = 1; poly(cropPts(st.hoverL)); ctx.stroke(); ctx.globalAlpha = 1;
     }
+    const busy = isGesturing(); // arrastrando, escalando, girando o con el recuadro de selección
     if (sel?.hidden || sel?.locked) {
       // oculta o bloqueada: solo un contorno discontinuo para saber dónde está (sin tiradores)
       ctx.strokeStyle = C.muted!; ctx.lineWidth = 1; ctx.setLineDash([4, 4]); poly(cropPts(sel)); ctx.stroke(); ctx.setLineDash([]);
       if (sel.locked && !sel.hidden) sizeLabel(sel, 'Bloqueada · ' + dims(sel));
     } else if (sel) {
       ctx.strokeStyle = C.accent!; ctx.lineWidth = 1.5; poly(cropPts(sel)); ctx.stroke();
-      const hs = boxHandles(sel, true), rot = hs.pop()!;
-      ctx.beginPath(); ctx.moveTo(rot.base!.x, rot.base!.y); ctx.lineTo(rot.x, rot.y); ctx.stroke();
-      const small = visW(sel) * V.k < 60 || visH(sel) * V.k < 60;
-      hs.forEach((h) => { if (!(small && h.id.length === 1)) handleDot(h, 9); });
-      ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(rot.x, rot.y, 6, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      // mientras se mueve, escala o gira, solo el contorno (como en Figma): los tiradores taparían guías y medidas
+      if (!busy) {
+        const hs = boxHandles(sel, true), rot = hs.pop()!;
+        ctx.beginPath(); ctx.moveTo(rot.base!.x, rot.base!.y); ctx.lineTo(rot.x, rot.y); ctx.stroke();
+        const small = visW(sel) * V.k < 60 || visH(sel) * V.k < 60;
+        hs.forEach((h) => { if (!(small && h.id.length === 1)) handleDot(h, 9); });
+        ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(rot.x, rot.y, 6, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      }
       sizeLabel(sel, dims(sel), pppAt(sel));
     } else if (st.group.length > 1) {
       // varias: el contorno de cada una, el marco común y sus tiradores (esquinas para escalar, círculo para girar)
@@ -353,14 +394,16 @@ export function render() {
       for (const l of st.group) { poly(cropPts(l)); ctx.stroke(); }
       const fr = groupFrameMM(), box = fr.map(mm2s);
       ctx.lineWidth = 1; ctx.setLineDash([5, 4]); poly(box); ctx.stroke(); ctx.setLineDash([]);
-      const hs = groupHandles(), rot = hs.pop()!;
-      ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(rot.base!.x, rot.base!.y); ctx.lineTo(rot.x, rot.y); ctx.stroke();
-      hs.forEach((h) => handleDot(h, 9));
-      ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(rot.x, rot.y, 6, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      if (!busy) {
+        const hs = groupHandles(), rot = hs.pop()!;
+        ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(rot.base!.x, rot.base!.y); ctx.lineTo(rot.x, rot.y); ctx.stroke();
+        hs.forEach((h) => handleDot(h, 9));
+        ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(rot.x, rot.y, 6, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      }
       const w = Math.hypot(fr[1]!.x - fr[0]!.x, fr[1]!.y - fr[0]!.y), h = Math.hypot(fr[3]!.x - fr[0]!.x, fr[3]!.y - fr[0]!.y);
       // con varias, la calidad de la peor (es la que se notará al imprimir)
-      const g0 = st.group[0]!.gid, isGroup = g0 != null && st.group.every((l) => l.gid === g0);
-      sizeLabel(box, `${isGroup ? (st.group[0]!.gname || 'Grupo') + ' · ' : ''}${st.group.length} imágenes · ${cm(w)} × ${cm(h)} cm`, Math.min(...st.group.map(pppAt)));
+      const gid = groupOf(st.layers, st.group, (l) => !l.hidden && !l.locked), gname = gid != null ? findGroup(st.layers, gid)?.name : null;
+      sizeLabel(box, `${gname ? gname + ' · ' : ''}${st.group.length} imágenes · ${cm(w)} × ${cm(h)} cm`, Math.min(...st.group.map(pppAt)));
     }
     if (st.marquee) {
       const { a, b } = st.marquee, x = Math.min(a.x, b.x), y = Math.min(a.y, b.y), w = Math.abs(b.x - a.x), h = Math.abs(b.y - a.y);

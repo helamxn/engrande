@@ -1,18 +1,19 @@
 /** Ratón, táctil y lápiz sobre el lienzo: seleccionar, mover, escalar, girar, recortar, pintar y gestos. */
 import {
   applyCrop, beginPixelEdit, cloneSelectedInPlace, enterCrop, isSelected, markManual, paint, select, selected,
-  selectMany, selectUnit, setMode, toggleInSelection, unitOf, wandAt,
+  selectedGroup, selectMany, selectUnit, setMode, toggleInSelection, unitOf, wandAt, enterGroup,
 } from '../actions';
 import {
   applyCropDrag, applyScale, bboxMM, boxInside, cropCenter, equalSpacing, inside, insideImage, measureBetween,
   mmToLocal, nearestBox, normDeg, panInFrame, rotateLayer, scaleLayer, snapBox, snapEdges, snapSize, solvePointer,
   startScale, unionBox, zoomInFrame, type Box, type Gap, type SnapTargets,
 } from '../geometry';
+import { unitAt } from '../groups';
 import { commitPending, setPending, snap, takeSnap, undo } from '../history';
 import { scheduleSave } from '../io/persist';
 import { lastPointerType, setLastPointer } from '../platform';
 import { boxHandles, dirty, groupCorner, groupCursor, groupFrameMM, groupHandles, handleCursor, nearest } from '../render';
-import { posterGeo, S, st, V } from '../state';
+import { posterGeo, S, sheetsVisible, st, V } from '../state';
 import { panBy, s2mm, zoomAt } from '../view';
 import { clearHelpers, measureCtx, measureTo, setGuides, snapPx, stopMeasure, type MeasureCtx } from '../measure';
 import { closeMenu, emptyMenu, groupMenu, layerMenu, openMenu } from '../ui/menu';
@@ -23,7 +24,7 @@ type Drag =
   | { t: 'none' }
   | { t: 'pan'; last: Pt }
   /** Mover la imagen o todas las seleccionadas: posición inicial de cada una. */
-  | { t: 'move'; m0: Pt; items: { l: Layer; x: number; y: number }[]; box0: Box; targets: SnapTargets; others: Box[]; dupOf: Layer[] | null }
+  | MoveDrag
   /** Recuadro de selección (ratón o lápiz sobre el fondo). add: con Shift/Ctrl se suma a lo que ya había. */
   | { t: 'marquee'; a: Pt; add: boolean; base: Layer[]; moved: boolean }
   /** Escalar el grupo desde una esquina: corner (la que se arrastra), opp (la opuesta) y center, en mm. */
@@ -37,6 +38,15 @@ type Drag =
   | { t: 'tap'; x: number; y: number; moved: boolean }
   | ScaleDrag
   | CropDrag;
+
+/**
+ * Mover la imagen o todas las seleccionadas: posición inicial de cada una. altAt: Alt + arrastrar, la copia aún no
+ * existe; se crea al empezar a moverse (un Alt + clic sin arrastrar no debe dejar una copia encima de la original).
+ */
+interface MoveDrag {
+  t: 'move'; m0: Pt; items: { l: Layer; x: number; y: number }[]; box0: Box; targets: SnapTargets; others: Box[];
+  dupOf: Layer[] | null; altAt?: Pt;
+}
 
 /** Pellizco con dos dedos: zoom de la vista, transformar la imagen o (al recortar) encuadrarla en el marco. */
 interface Gesture { cx: number; cy: number; d: number; a: number; mode: 'view' | 'layer' | 'frame' | 'group' }
@@ -56,6 +66,13 @@ export const setSpaceDown = (v: boolean) => { spaceDown = v; };
 /** Durante un gesto la barra contextual se oculta para no estorbar. */
 export const isGesturing = () => !!gest || !!(drag && !['none', 'tap', 'pan'].includes(drag.t));
 
+/** El punto (mm) cae en el margen sin imprimir: fuera del póster pero dentro del papel de las hojas de fuera. */
+function inBand(m: Pt) {
+  const g = posterGeo();
+  if (!sheetsVisible() || g.m <= 0) return false;
+  const out = m.x < 0 || m.y < 0 || m.x > g.W || m.y > g.H;
+  return out && m.x >= -g.m && m.y >= -g.m && m.x <= g.W + g.m && m.y <= g.H + g.m;
+}
 /** Se puede tocar en el lienzo: ni oculta ni bloqueada. */
 const touchable = (l: Layer) => !l.hidden && !l.locked;
 /** Imagen bajo el punto. precise: ignora las zonas transparentes (salvo de la seleccionada). Salta las bloqueadas. */
@@ -93,7 +110,7 @@ function inGroupFrame(m: Pt) {
  * Empieza a mover lo seleccionado. Para los imanes se guardan la caja de lo que se mueve y las líneas del póster y de
  * las demás imágenes visibles (se calculan una vez, no en cada movimiento).
  */
-function startMove(m: Pt, dupOf: Layer[] | null = null): Drag {
+function startMove(m: Pt, dupOf: Layer[] | null = null): MoveDrag {
   const sel = selected(), c = measureCtx(sel);
   return {
     t: 'move', m0: m, items: sel.map((l) => ({ l, x: l.cx, y: l.cy })),
@@ -125,7 +142,7 @@ function measureDuring(d: Drag, p: Pt) {
     t = h ? bboxMM(h) : d.t === 'move' ? nearestBox(b, d.others) : null;
   }
   const g = posterGeo(), target = t ?? { x0: 0, y0: 0, x1: g.W, y1: g.H };
-  st.measure = { ...measureBetween(b, target), target };
+  st.measure = { ...measureBetween(b, target, !t), target };
 }
 /** Gestos en los que Alt mide en vivo. */
 const measurable = (d: Drag | null): d is Drag => !!d && (d.t === 'move' || d.t === 'scale' || d.t === 'gscale');
@@ -216,14 +233,14 @@ function inMarquee(a: Pt, b: Pt): Layer[] {
   const p = s2mm(a), q = s2mm(b);
   const box = { x0: Math.min(p.x, q.x), y0: Math.min(p.y, q.y), x1: Math.max(p.x, q.x), y1: Math.max(p.y, q.y) };
   const ins = st.layers.filter((l) => touchable(l) && boxInside(bboxMM(l), box));
-  // un grupo solo entra si caben todas sus imágenes (como en Figma)
-  return ins.filter((l) => l.gid == null || unitOf(l).every((x) => !touchable(x) || ins.includes(x)));
+  // un grupo (el de más afuera) solo entra si caben todas sus imágenes (como en Figma)
+  return ins.filter((l) => unitAt(st.layers, l, null).every((x) => !touchable(x) || ins.includes(x)));
 }
 /** Menú de una imagen: si forma parte de un grupo, el del grupo; si no, se selecciona sola. */
 function menuFor(h: Layer) {
   if (st.group.length > 1 && st.group.includes(h)) return groupMenu();
-  // imagen de un grupo sin haber entrado en él: el menú es el del grupo
-  if (h.gid != null && st.sel?.gid !== h.gid) { selectUnit(h); if (st.group.length > 1) return groupMenu(); }
+  // imagen de un grupo sin haber entrado en él: el menú es el del grupo (el del nivel en el que se está)
+  if (unitOf(h).length > 1) { selectUnit(h); if (st.group.length > 1) return groupMenu(); }
   // táctil: lo que estaba seleccionado se ofrece para «añadir a la selección» (no hay Shift ni Ctrl)
   const prev = selected().filter((l) => l !== h);
   if (h !== st.sel) select(h);
@@ -242,6 +259,7 @@ export function initPointer(cv: HTMLCanvasElement) {
     cv.setPointerCapture(e.pointerId);
     const p = pos(e);
     ptrs.set(e.pointerId, p);
+    if (st.hoverBand) { st.hoverBand = false; dirty(); } // al pulsar, el aviso del margen estorba
     if (e.pointerType === 'mouse') st.hover = p;
     const R = e.pointerType === 'mouse' ? 11 : 22;
     clearLP();
@@ -320,11 +338,10 @@ export function initPointer(cv: HTMLCanvasElement) {
         if (isSelected(hit)) { setPending(takeSnap()); drag = startMove(m); } else drag = { t: 'none' };
       } else if (hit) {
         if (!isSelected(hit)) selectUnit(hit); // de un grupo: el grupo entero
-        // Alt + arrastrar: mueve una copia (y se mide contra la original mientras siga Alt pulsado)
-        let originals: Layer[] | null = null;
-        if (e.altKey) { originals = selected(); snap(); cloneSelectedInPlace(); }
-        else setPending(takeSnap());
-        drag = startMove(m, originals);
+        // Alt + arrastrar: mueve una copia (y se mide contra la original mientras siga Alt pulsado). La copia se
+        // crea al empezar a arrastrar (ver el caso 'move' de pointermove): un Alt + clic solo selecciona.
+        if (e.altKey) drag = { ...startMove(m), altAt: p };
+        else { setPending(takeSnap()); drag = startMove(m); }
         cv.style.cursor = e.altKey ? 'copy' : 'grabbing';
       } else if (e.pointerType !== 'touch') {
         // ratón o lápiz sobre el fondo: recuadro de selección (la vista se mueve con Espacio, la rueda o el botón central)
@@ -366,6 +383,10 @@ export function initPointer(cv: HTMLCanvasElement) {
           const h = sel && touchable(sel) && nearest(boxHandles(sel, true), p, 11);
           st.hoverL = h ? null : hitLayer(p, false);
           setCursor(h && sel ? handleCursor(sel, h.id) : st.hoverL ? (e.altKey ? 'copy' : 'move') : 'default');
+          // sobre el margen sin imprimir (la franja alrededor del póster), sin imagen encima: se explica qué es
+          const band = !h && !st.hoverL && inBand(s2mm(p));
+          if (band !== st.hoverBand) { st.hoverBand = band; dirty(); }
+          else if (band) dirty(); // el aviso sigue al ratón
         } else if (S.mode === 'crop' && sel) {
           const h = nearest(boxHandles(sel, false), p, 11);
           setCursor(h ? handleCursor(sel, h.id) : insideImage(sel, s2mm(p)) ? 'grab' : 'default');
@@ -413,22 +434,29 @@ export function initPointer(cv: HTMLCanvasElement) {
     switch (drag.t) {
       case 'pan': panBy(p.x - drag.last.x, p.y - drag.last.y); drag.last = p; break;
       case 'move': {
+        let d = drag;
+        if (d.altAt) {
+          if (Math.hypot(p.x - d.altAt.x, p.y - d.altAt.y) < 4) break; // aún no es un arrastre
+          const originals = selected();
+          snap(); cloneSelectedInPlace();
+          d = drag = startMove(d.m0, originals); // ahora se mueven las copias y las originales son referencia del imán
+        }
         commitPending();
-        let dx = m.x - drag.m0.x, dy = m.y - drag.m0.y;
+        let dx = m.x - d.m0.x, dy = m.y - d.m0.y;
         const lockX = e.shiftKey && Math.abs(dx) <= Math.abs(dy), lockY = e.shiftKey && !lockX;
         if (lockX) dx = 0;
         if (lockY) dy = 0;
         // imanes: bordes y centros del póster y de las demás imágenes, o separación igual (lo más cercano en cada
         // eje). Sin distancias al arrastrar, como en Figma. Ctrl o ⌘: sin ayudas.
         st.guides = null; st.gaps = null;
-        const g = posterGeo(), c: MeasureCtx = { others: drag.others, targets: drag.targets, W: g.W, H: g.H };
-        const b0 = drag.box0, at = (x: number, y: number) => ({ x0: b0.x0 + x, y0: b0.y0 + y, x1: b0.x1 + x, y1: b0.y1 + y });
+        const g = posterGeo(), c: MeasureCtx = { others: d.others, targets: d.targets, W: g.W, H: g.H };
+        const b0 = d.box0, at = (x: number, y: number) => ({ x0: b0.x0 + x, y0: b0.y0 + y, x1: b0.x1 + x, y1: b0.y1 + y });
         if (!(e.ctrlKey || e.metaKey)) {
-          const tol = snapPx(e.pointerType) / V.k, s = snapBox(at(dx, dy), drag.targets, tol);
+          const tol = snapPx(e.pointerType) / V.k, s = snapBox(at(dx, dy), d.targets, tol);
           // con Alt se mide: no se mezclan los números de la separación igual
           const measuring = e.altKey || st.altDown;
-          const ex = lockX || measuring ? null : equalSpacing(at(dx, dy), drag.others, 'x', tol);
-          const ey = lockY || measuring ? null : equalSpacing(at(dx, dy), drag.others, 'y', tol);
+          const ex = lockX || measuring ? null : equalSpacing(at(dx, dy), d.others, 'x', tol);
+          const ey = lockY || measuring ? null : equalSpacing(at(dx, dy), d.others, 'y', tol);
           // en cada eje gana el ajuste más corto: borde o centro (guía) o separación igual (medidas)
           const useEx = !!ex && (s.gx === null || Math.abs(ex.d) < Math.abs(s.dx));
           const useEy = !!ey && (s.gy === null || Math.abs(ey.d) < Math.abs(s.dy));
@@ -438,9 +466,9 @@ export function initPointer(cv: HTMLCanvasElement) {
           const eq = [...(useEx ? ex!.gaps : []), ...(useEy ? ey!.gaps : [])];
           if (eq.length) st.gaps = eq;
         }
-        for (const it of drag.items) { it.l.cx = it.x + dx; it.l.cy = it.y + dy; markManual(it.l); }
+        for (const it of d.items) { it.l.cx = it.x + dx; it.l.cy = it.y + dy; markManual(it.l); }
         lastDragPt = p;
-        if (e.altKey || st.altDown) measureDuring(drag, p); else st.measure = null;
+        if (e.altKey || st.altDown) measureDuring(d, p); else st.measure = null;
         syncSel(); break;
       }
       case 'gscale': {
@@ -560,8 +588,8 @@ export function initPointer(cv: HTMLCanvasElement) {
   cv.addEventListener('pointercancel', endPtr);
   cv.addEventListener('pointerleave', (e) => {
     if (e.pointerType !== 'mouse' || ptrs.size) return;
-    const had = !!st.hoverL || S.mode === 'erase';
-    st.hover = null; st.hoverL = null;
+    const had = !!st.hoverL || S.mode === 'erase' || st.hoverBand;
+    st.hover = null; st.hoverL = null; st.hoverBand = false;
     if (had) dirty();
   });
 
@@ -583,8 +611,8 @@ export function initPointer(cv: HTMLCanvasElement) {
     const h = hitLayer(pos(e));
     if (!h) return;
     if (S.mode === 'crop') { applyCrop(); return; }
-    // doble clic sobre un grupo seleccionado: entra en él (queda solo esa imagen); otro doble clic ya recorta
-    if (h.gid != null && st.group.includes(h)) { select(h); return; }
+    // doble clic sobre un grupo seleccionado: un nivel más adentro (su subgrupo o la imagen); sobre una sola, recorta
+    if (st.group.includes(h) && selectedGroup() != null) { enterGroup(h); return; }
     select(h); enterCrop();
   });
   cv.addEventListener('contextmenu', (e) => {

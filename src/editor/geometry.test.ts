@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   alignShifts, alignedLines, applyCropDrag, equalSpacing, guideSegments, measureBetween, nearestBox, gridLevels, snapBox, snapEdges, snapSize, snapTargets, applyFit, boxInside, distributeShifts, unionBox, applyScale, bboxMM, conformCrop, cropCenter, cropPtsMM, fitLayer, geo, hasCutMarks, inside,
   displaySide, flipOnScreen, isStretched, localToMM, markLen, mmToLocal, newLayoutMemory, normDeg, panInFrame, pppOf, relayout,
-  rotateLayer, solvePointer, srcDims, startScale, type RelayoutMode,
+  rotateLayer, solvePointer, srcDims, startScale, stepToLines, type RelayoutMode,
   unstretch, visH, visW, zoomInFrame,
 } from './geometry';
 import type { Fit, LayerGeom, Settings, Source } from './types';
@@ -115,6 +115,23 @@ describe('recorte', () => {
     conformCrop(l, 1);
     close(visW(l), 100); close(visH(l), 100);
     close((l.crop.x0 + l.crop.x1) / 2, 0.5);
+  });
+  it('ir y venir entre proporciones no encoge el recorte (se parte siempre del marco de referencia)', () => {
+    const l = layer(), ref = { w: visW(l), h: visH(l) };
+    conformCrop(l, 16 / 9, ref);
+    const first = [visW(l), visH(l)];
+    for (let i = 0; i < 5; i++) { conformCrop(l, 3 / 4, ref); conformCrop(l, 16 / 9, ref); }
+    close(visW(l), first[0]!); close(visH(l), first[1]!);
+    // «Libre» devuelve el marco de referencia entero
+    conformCrop(l, null, ref);
+    close(visW(l), 200); close(visH(l), 100);
+  });
+  it('cerca del borde de la imagen, el marco se desplaza para caber en vez de encogerse', () => {
+    const l = layer({ crop: { x0: 0.7, y0: 0, x1: 1, y1: 1 } }); // marco de 60 × 100 mm pegado a la derecha
+    conformCrop(l, 1, { w: 100, h: 100 });
+    close(visW(l), 100); close(visH(l), 100);
+    expect(l.crop.x1).toBeLessThanOrEqual(1 + 1e-9);
+    expect(l.crop.x0).toBeGreaterThanOrEqual(-1e-9);
   });
 });
 
@@ -431,6 +448,17 @@ describe('medir con Alt (measureBetween)', () => {
     expect(r.gaps.find((g) => g.axis === 'x')).toMatchObject({ from: 50, to: 80, at: 25 });
     expect(r.dashes.length).toBe(2);
   });
+  it('dos imágenes que se cruzan: solo el lado en que lo seleccionado queda dentro (como en Figma)', () => {
+    const t = { x0: 20, y0: 0, x1: 120, y1: 40 };
+    const xs = (s: { x0: number; x1: number }) => measureBetween({ ...s, y0: 60, y1: 100 }, t).gaps.filter((g) => g.axis === 'x').map((g) => [g.from, g.to]);
+    expect(xs({ x0: 31, x1: 131 })).toEqual([[20, 31]]); // a la derecha: se mide el borde izquierdo
+    expect(xs({ x0: 14, x1: 114 })).toEqual([[114, 120]]); // al cruzar a la izquierda, salta al derecho
+    expect(xs({ x0: 30, x1: 100 })).toEqual([[20, 30], [100, 120]]); // dentro: los dos lados
+  });
+  it('contra el póster, aunque se salga: los dos lados, sin signo (como el marco en Figma)', () => {
+    const r = measureBetween({ x0: -2, y0: 20, x1: 100, y1: 60 }, { x0: 0, y0: 0, x1: 400, y1: 300 }, true);
+    expect(r.gaps.filter((g) => g.axis === 'x').map((g) => g.to - g.from)).toEqual([2, 300]);
+  });
   it('dentro del póster: distancia a los cuatro bordes', () => {
     const r = measureBetween({ x0: 14, y0: 20, x1: 386, y1: 100 }, { x0: 0, y0: 0, x1: 400, y1: 300 });
     expect(r.gaps.map((g) => g.to - g.from)).toEqual([14, 14, 20, 200]);
@@ -567,5 +595,24 @@ describe('guías sin dudas al mover (como en Figma)', () => {
     const b = moving(0), segs = guideSegments(b, [other], alignedLines(b, [other], 'x'), null);
     expect(segs.map((g) => g.at)).toEqual([20, 80, 140]);
     for (const g of segs) { expect(g.from).toBe(10); expect(g.to).toBe(160); }
+  });
+});
+
+describe('flechas que paran en las líneas (stepToLines)', () => {
+  // póster de 400 × 300 y otra imagen con el borde izquierdo en 150
+  const t = snapTargets(400, 300, [{ x0: 150, y0: 200, x1: 250, y1: 260 }]);
+  it('desde 0,8 mm del borde del póster, un paso de 1 mm se para en 0', () => {
+    expect(stepToLines({ x0: 0.8, y0: 10, x1: 40.8, y1: 50 }, t, 'x', -1)).toBeCloseTo(-0.8, 9);
+  });
+  it('ya en la línea, el siguiente paso sigue entero (sale de ella)', () => {
+    expect(stepToLines({ x0: 0, y0: 10, x1: 40, y1: 50 }, t, 'x', -1)).toBe(-1);
+  });
+  it('con Shift (10 mm) también se para en la primera línea que cruzaría', () => {
+    // el borde derecho (146) cruzaría el izquierdo de la otra imagen (150), a 4 mm
+    expect(stepToLines({ x0: 106, y0: 10, x1: 146, y1: 50 }, t, 'x', 10)).toBeCloseTo(4, 9);
+  });
+  it('sin líneas por el camino, el paso entero', () => {
+    expect(stepToLines({ x0: 20, y0: 10, x1: 60, y1: 50 }, t, 'x', 1)).toBe(1);
+    expect(stepToLines({ x0: 20, y0: 10, x1: 60, y1: 50 }, t, 'y', 0)).toBe(0);
   });
 });

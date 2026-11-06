@@ -1,13 +1,18 @@
 /** Estado compartido del editor. Un único objeto mutable: lo leen el render, la interfaz y la entrada. */
+import { savedMargin } from './prefs';
 import { geo, type Box, type Dash, type Gap, type GuideSeg } from './geometry';
+import type { GroupRef } from './groups';
 import type { Layer, LayoutSettings, Pt, Settings } from './types';
 
 /** Ajustes de un póster nuevo (los que se guardan y se restablecen con "Nuevo póster"). */
 export const DEFAULT_LAYOUT: LayoutSettings = { paper: 'A4', orient: 'portrait', cols: 2, rows: 1, margin: 6, overlap: 10 };
 export const DEFAULT_EXPORT: Pick<Settings, 'dpi' | 'marks' | 'guide'> = { dpi: 150, marks: true, guide: true };
 
+/** Distribución de un póster nuevo: la de siempre, con el margen de la impresora si ya se eligió uno. */
+export const freshLayout = (): LayoutSettings => ({ ...DEFAULT_LAYOUT, margin: savedMargin() ?? DEFAULT_LAYOUT.margin });
+
 export const S: Settings = {
-  ...DEFAULT_LAYOUT, ...DEFAULT_EXPORT,
+  ...freshLayout(), ...DEFAULT_EXPORT,
   mode: 'move', brush: 24, brushMode: 'erase', tol: 40, contig: true, cropRatio: null, cropRatioKey: 'null', lock: true,
 };
 
@@ -36,11 +41,17 @@ export const st = {
   altDown: false,
   /** Táctil: «Medir» activado desde el menú; el siguiente toque elige con qué medir. */
   measureMode: false,
+  /** El ratón está sobre el margen sin imprimir (la franja alrededor del póster): se explica qué es. */
+  hoverBand: false,
+  /** Se está ajustando el margen o el solape: se dibuja el papel entero de cada hoja. */
+  showPaper: false,
   /** Recuadro de selección mientras se arrastra (px de pantalla). */
   marquee: null as { a: Pt; b: Pt } | null,
   nextId: 1,
   /** Imágenes copiadas con Ctrl+C dentro de Pliego, y cuántas veces se pegaron (cada pegado se desplaza un poco más). */
   clip: null as Layer[] | null,
+  /** Grupos en los que estaba lo copiado (sin los copiados enteros): al pegar, se pega dentro si aún existen. */
+  clipScope: [] as GroupRef[],
   clipN: 0,
   /** Posición del puntero (círculo del pincel). */
   hover: null as Pt | null,

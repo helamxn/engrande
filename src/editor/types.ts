@@ -1,4 +1,5 @@
 import type { PDFDocumentProxy } from 'pdfjs-dist';
+import type { GroupRef } from './groups';
 
 export type Paper = 'A4' | 'A3' | 'Carta';
 export type Orient = 'portrait' | 'landscape';
@@ -54,10 +55,8 @@ export interface Layer extends LayerGeom {
   locked: boolean;
   /** Opacidad 0..1 (también en el PDF: se mezcla con el blanco del papel o con lo que haya debajo). */
   opacity: number;
-  /** Grupo al que pertenece (Ctrl+G); null = suelta. Ver groups.ts. */
-  gid: number | null;
-  /** Nombre del grupo (el mismo en todas sus imágenes); vacío = «Grupo». */
-  gname: string;
+  /** Grupos a los que pertenece (Ctrl+G), del más externo al más interno; vacío = suelta. Ver groups.ts. */
+  gpath: GroupRef[];
 }
 
 export interface Settings {
@@ -103,8 +102,7 @@ export interface LayerProps extends Transform {
   locked: boolean;
   opacity: number;
   hidden: boolean;
-  gid: number | null;
-  gname: string;
+  gpath: GroupRef[];
 }
 
 /** Ajustes que definen la geometría del póster (se guardan en el historial). */
@@ -116,6 +114,8 @@ export interface Snapshot {
   group: Layer[];
   props: LayerProps[];
   layout: LayoutSettings;
+  /** Ajustes de descarga (opcional: los pasos de antes no los tenían). */
+  exp?: Pick<Settings, 'dpi' | 'marks' | 'guide'>;
 }
 
 export interface ScaleDrag { t: 'scale'; id: HandleId; L0: Transform; k0: Crop }

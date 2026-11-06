@@ -1,6 +1,7 @@
 /** Panel lateral: pestañas, ajustes de hojas, propiedades de la imagen, lista de imágenes, exportación y lectura. */
+import type { GroupRef } from '../groups';
 import {
-  afterChange, centerSel, fitSel, groupName, hideSelected, lockSelected, markManual, renameGroup, renameLayer,
+  afterChange, centerSel, fitSel, groupMembers, groupName, hideSelected, lockSelected, markManual, renameGroup, renameLayer,
   reorder, select, selectedGroup, selectMany, setOpacity, toggleGroupFlag, toggleHidden, toggleInSelection,
   toggleLocked, unstretchSel,
 } from '../actions';
@@ -14,6 +15,7 @@ import {
 import { snap } from '../history';
 import { ALT, deskMQ, dockMQ, HI_AREA, isTouch } from '../platform';
 import { C, posterGeo, S, st } from '../state';
+import { dirty } from '../render';
 import { fitView } from '../view';
 import { renderPdfPage } from '../io/pdf';
 import { canvasRevision, scheduleSave } from '../io/persist';
@@ -55,7 +57,7 @@ function showTab(t: string) {
 }
 /** Renombrar un grupo: lo selecciona entero y lleva al campo «Nombre del grupo». */
 export function focusGroupName(gid: number) {
-  selectMany(st.layers.filter((l) => l.gid === gid));
+  selectMany(groupMembers(gid));
   if (isPanelOff()) togglePanel(true);
   openSheet('half');
   showTab('image');
@@ -130,6 +132,11 @@ export function syncLayoutUI() {
   for (const b of $$('[data-orient]')) b.setAttribute('aria-pressed', String(b.dataset.orient === S.orient));
   $('#marginOut').textContent = S.margin + ' mm';
   $('#overlapOut').textContent = S.overlap + ' mm';
+  // los deslizadores también (al recuperar el póster, deshacer o empezar uno nuevo); no mientras se arrastran
+  for (const [id, v] of [['#margin', S.margin], ['#overlap', S.overlap]] as const) {
+    const el = $<HTMLInputElement>(id);
+    if (document.activeElement !== el) el.value = String(v);
+  }
   const n = S.cols * S.rows + (S.guide ? 1 : 0);
   $('#exportTiles').textContent = `Descargar PDF por hojas · ${n} ${n === 1 ? 'página' : 'páginas'}`;
 }
@@ -147,7 +154,7 @@ export function syncSel() {
   followSelection(!!sel || st.group.length > 1);
   const gsel = selectedGroup();
   $('#gNameField').hidden = gsel == null;
-  if (gsel != null) setField('#gName', st.layers.find((l) => l.gid === gsel)?.gname ?? '');
+  if (gsel != null) setField('#gName', groupName(gsel));
   if (st.group.length > 1) {
     // opacidad común; si son distintas se muestra «varias» y el deslizador en la mayor
     const ops = st.group.map((l) => Math.round(l.opacity * 100)), same = ops.every((o) => o === ops[0]);
@@ -178,14 +185,19 @@ export function syncSel() {
  */
 function numField(id: string, apply: (l: Layer, v: number) => void, step = 0.1) {
   const el = $<HTMLInputElement>(id);
+  // texto que ya se aplicó: Enter aplica y, al salir del campo, el navegador lanza otro «change» con el mismo
+  // texto, que no debe dejar un segundo paso de deshacer (vacío)
+  let applied: string | null = null;
   const run = () => {
     const sel = st.sel;
-    if (!sel) return;
+    if (!sel || el.value === applied) return;
     const v = parseNum(el.value);
     if (!Number.isFinite(v)) { syncSel(); return; }
     if (sel.locked) { syncSel(); return; }
+    applied = el.value;
     snap(); apply(sel, v); afterChange();
   };
+  el.addEventListener('focus', () => { applied = null; });
   el.addEventListener('change', run);
   el.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); run(); el.select(); return; }
@@ -243,6 +255,14 @@ function thumbFor(l: Layer) {
 
 /** Fila de la lista → su imagen (para arrastrar y para devolver el foco tras reordenar con el teclado). */
 const rowLayer = new WeakMap<Element, Layer>();
+/**
+ * Botón «Más» de la fila de una imagen (o de un grupo, por su número) tras volver a dibujar la lista: seleccionar
+ * reconstruye la lista, y el menú tiene que devolver el foco a este botón nuevo, no al que se quitó.
+ */
+const moreButton = (match: (li: HTMLElement) => boolean) =>
+  [...document.querySelectorAll<HTMLElement>('#layers li')].find(match)?.querySelector<HTMLElement>('[data-ic=more]') ?? null;
+const moreOfLayer = (l: Layer) => moreButton((li) => rowLayer.get(li) === l);
+const moreOfGroup = (gid: number) => moreButton((li) => li.dataset.gid === String(gid));
 function focusRow(l: Layer) {
   for (const li of document.querySelectorAll('#layers li')) if (rowLayer.get(li) === l) li.querySelector<HTMLElement>('.layer-main')?.focus();
 }
@@ -250,12 +270,18 @@ function focusRow(l: Layer) {
 /** Grupos plegados en la lista (solo afecta a la vista; no se guarda). */
 const collapsed = new Set<number>();
 
-/** Fila de un grupo: plegar, seleccionar el grupo entero, verlo u ocultarlo, bloquearlo y su menú. */
-function groupRow(gid: number): HTMLLIElement {
-  const members = st.layers.filter((l) => l.gid === gid);
+/**
+ * Fila de un grupo: plegar, seleccionar el grupo entero, verlo u ocultarlo, bloquearlo y su menú. depth: nivel
+ * (sangría); hidden: está dentro de un grupo plegado.
+ */
+function groupRow(gid: number, depth: number, hidden: boolean): HTMLLIElement {
+  const members = groupMembers(gid);
   const li = document.createElement('li');
+  li.style.setProperty('--depth', String(depth));
+  li.hidden = hidden;
   const allHidden = members.every((l) => l.hidden), allLocked = members.every((l) => l.locked);
   li.className = 'group-row' + (selectedGroup() === gid ? ' on' : '') + (allHidden ? ' off' : '');
+  li.dataset.gid = String(gid);
   const pick = () => selectMany(members);
   const chev = document.createElement('button');
   chev.type = 'button'; chev.className = 'act chev' + (collapsed.has(gid) ? ' closed' : '');
@@ -279,12 +305,12 @@ function groupRow(gid: number): HTMLLIElement {
     [allLocked ? 'lock' : 'lockOpen', allLocked ? 'Desbloquear el grupo' : 'Bloquear el grupo', () => toggleGroupFlag(gid, 'locked')],
     ['more', 'Más opciones del grupo', (e) => {
       const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-      pick(); if (st.group.length > 1) openMenu(r.left, r.bottom + 4, groupMenu());
+      pick(); if (st.group.length > 1) openMenu(r.left, r.bottom + 4, groupMenu(), () => moreOfGroup(gid));
     }],
   ];
   for (const [ic, t, fn] of acts) {
     const a = document.createElement('button');
-    a.type = 'button'; a.className = 'act'; a.title = t; a.setAttribute('aria-label', t);
+    a.type = 'button'; a.className = 'act'; a.title = t; a.setAttribute('aria-label', t); a.dataset.ic = ic;
     a.innerHTML = ICON[ic]; // constante del código
     if (ic === 'lock') a.classList.add('text-accent');
     a.addEventListener('click', fn);
@@ -298,15 +324,19 @@ export function renderList() {
   if (!ol || !C.chk1) return;
   ol.textContent = '';
   const n = st.layers.length;
-  let lastGid: number | null = null;
+  let prev: GroupRef[] = [];
   [...st.layers].reverse().forEach((l) => {
-    // las imágenes de un grupo van seguidas: antes de la primera, la fila del grupo
-    if (l.gid != null && l.gid !== lastGid) ol.appendChild(groupRow(l.gid));
-    lastGid = l.gid;
+    // las imágenes de un grupo van seguidas: donde empieza un grupo (o un subgrupo), antes, su fila
+    const p = l.gpath;
+    let k = 0;
+    while (k < p.length && prev[k]?.id === p[k]!.id) k++;
+    for (let d = k; d < p.length; d++) ol.appendChild(groupRow(p[d]!.id, d, p.slice(0, d).some((g) => collapsed.has(g.id))));
+    prev = p;
     const li = document.createElement('li');
     const on = l === st.sel || st.group.includes(l);
-    li.className = 'layer' + (on ? ' on' : '') + (l.hidden ? ' off' : '') + (l.gid != null ? ' in-group' : '');
-    if (l.gid != null && collapsed.has(l.gid)) li.hidden = true;
+    li.className = 'layer' + (on ? ' on' : '') + (l.hidden ? ' off' : '') + (p.length ? ' in-group' : '');
+    li.style.setProperty('--depth', String(p.length));
+    if (p.some((g) => collapsed.has(g.id))) li.hidden = true;
     rowLayer.set(li, l);
     // asa para arrastrar (en táctil es la única zona que arrastra; con ratón vale toda la fila)
     if (n > 1) {
@@ -345,8 +375,8 @@ export function renderList() {
     // a la vista solo lo que se cambia a menudo (ver y bloquear); orden, duplicar y quitar van en el menú «Más»
     const more = (e: MouseEvent) => {
       const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-      if (st.group.length > 1 && st.group.includes(l)) { openMenu(r.left, r.bottom + 4, groupMenu()); return; }
-      select(l); openMenu(r.left, r.bottom + 4, layerMenu(l));
+      if (st.group.length > 1 && st.group.includes(l)) { openMenu(r.left, r.bottom + 4, groupMenu(), () => moreOfLayer(l)); return; }
+      select(l); openMenu(r.left, r.bottom + 4, layerMenu(l), () => moreOfLayer(l));
     };
     const acts: [keyof typeof ICON, string, (e: MouseEvent) => void, boolean][] = [
       // ojo abierto = visible, como en Figma o Photoshop; al pulsarlo se oculta
@@ -357,7 +387,7 @@ export function renderList() {
     ];
     for (const [ic, t, fn, dis] of acts) {
       const a = document.createElement('button');
-      a.type = 'button'; a.className = 'act'; a.title = t; a.setAttribute('aria-label', t);
+      a.type = 'button'; a.className = 'act'; a.title = t; a.setAttribute('aria-label', t); a.dataset.ic = ic;
       a.innerHTML = ICON[ic]; a.disabled = dis;
       // bloqueada: el candado se resalta para que se distinga del abierto de un vistazo
       if (ic === 'lock') { a.classList.add('text-accent'); a.setAttribute('aria-pressed', 'true'); }
@@ -369,15 +399,19 @@ export function renderList() {
   $('#layerCount').textContent = String(n);
   // pantalla de inicio (un aviso con «Elegir imagen»), solo con el póster vacío
   $('#empty').hidden = n > 0;
-  // sin nada que imprimir no se puede descargar (las ocultas no se imprimen)
-  const printable = st.layers.some((l) => !l.hidden);
+  syncExportButtons();
+  updateHint();
+}
+/** Sin nada que imprimir no se puede descargar (las ocultas no se imprimen). También al terminar una descarga. */
+export function syncExportButtons() {
+  const n = st.layers.length, printable = st.layers.some((l) => !l.hidden);
+  const busy = document.body.classList.contains('exporting');
   for (const id of ['#quickExport', '#exportTiles', '#exportSingle']) {
     const b = $<HTMLButtonElement>(id);
-    b.disabled = !printable;
+    b.disabled = !printable || busy;
     if (!printable) b.title = n ? 'Todas las imágenes están ocultas' : 'Agrega una imagen primero';
     else b.removeAttribute('title');
   }
-  updateHint();
 }
 
 /* ---------- resumen para descargar ---------- */
@@ -496,8 +530,22 @@ export function initPanel() {
     });
   }
   syncRelayoutUI();
-  $<HTMLInputElement>('#margin').addEventListener('input', (e) => editLayout('margin', +(e.target as HTMLInputElement).value, true));
-  $<HTMLInputElement>('#overlap').addEventListener('input', (e) => editLayout('overlap', +(e.target as HTMLInputElement).value, true));
+  // margen y solape: mientras se ajustan, se ve el papel entero de cada hoja (al soltar, un momento más)
+  let paperTimer = 0;
+  const showPaper = (on: boolean) => {
+    clearTimeout(paperTimer);
+    if (on) { st.showPaper = true; dirty(); }
+    else paperTimer = window.setTimeout(() => { st.showPaper = false; dirty(); }, 900);
+  };
+  for (const id of ['margin', 'overlap'] as const) {
+    const el = $<HTMLInputElement>('#' + id);
+    el.addEventListener('input', () => {
+      showPaper(true); editLayout(id, +el.value, true);
+      if (id === 'margin') setPref('margin', el.value); // es de la impresora: vale para los pósters nuevos
+    });
+    el.addEventListener('change', () => showPaper(false));
+    el.addEventListener('blur', () => showPaper(false));
+  }
 
   // propiedades (escribir una medida = colocar a mano)
   // nombre: se aplica al confirmar (Enter o al salir del campo); Esc deshace lo escrito
@@ -516,7 +564,7 @@ export function initPanel() {
   opacity.addEventListener('change', () => renderList());
   // nombre del grupo: se aplica al confirmar (Enter o al salir); Esc deshace lo escrito
   const gName = $<HTMLInputElement>('#gName');
-  const gNow = () => { const g = selectedGroup(); return g == null ? '' : st.layers.find((l) => l.gid === g)?.gname ?? ''; };
+  const gNow = () => { const g = selectedGroup(); return g == null ? '' : groupName(g); };
   gName.addEventListener('change', () => { const g = selectedGroup(); if (g == null || !renameGroup(g, gName.value)) gName.value = gNow(); });
   gName.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); gName.blur(); }

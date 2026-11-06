@@ -3,15 +3,18 @@ import { MAX_SIDE } from './constants';
 import { $, hideToast, toast } from './dom';
 import {
   alignShifts, applyFit, bboxMM, conformCrop, cropCenter, distributeShifts, flipOnScreen, keepCenter, mmToLocal,
-  natRatio, rotateLayer, unstretch, type AlignEdge,
+  natRatio, rotateLayer, unstretch, visH, visW, type AlignEdge,
 } from './geometry';
-import { nextGid, normalizeGroups, regroupCopies } from './groups';
+import {
+  childOf, clonePath, commonPath, findGroup, freshGroups, GROUP_BASE, groupOf, inGroup, membersOf, nextGid,
+  nextGroupName, normalizeGroups, pathExists, scopeOf, splitPaths, unitAt,
+} from './groups';
 import { pushUndo, snap, takeSnap, restoreSnap, undo } from './history';
 import { canvasRevision, markCanvasChanged, scheduleSave } from './io/persist';
 import { runJob } from './pixeljobs';
 import type { PixelJob, PixelResult } from './pixels';
 import { dirty } from './render';
-import { DEFAULT_EXPORT, DEFAULT_LAYOUT, posterGeo, S, st, V } from './state';
+import { DEFAULT_EXPORT, freshLayout, posterGeo, S, st, V } from './state';
 import { s2mm } from './view';
 import { MOD, SHIFT } from './platform';
 import { renderBar } from './ui/contextbar';
@@ -42,7 +45,7 @@ export function newLayer(img: HTMLCanvasElement, name: string, extra: Partial<La
   return {
     id: st.nextId++, name, img, orig: img, cx: g.W / 2, cy: g.H / 2, w: g.W, h: (g.W * img.height) / img.width,
     rot: 0, flipX: false, flipY: false, crop: { x0: 0, y0: 0, x1: 1, y1: 1 },
-    pdf: null, page: 1, pages: 1, src: null as Source | null, fit: null, hidden: false, locked: false, opacity: 1, gid: null, gname: '', ...extra,
+    pdf: null, page: 1, pages: 1, src: null as Source | null, fit: null, hidden: false, locked: false, opacity: 1, gpath: [], ...extra,
   };
 }
 /** Coloca una imagen nueva ajustada al póster. Si va desplazada (varias a la vez), queda como colocada a mano. */
@@ -55,7 +58,7 @@ export function addLayer(l: Layer, { factor = 1, offset = 0 } = {}) {
   select(l);
 }
 export const cloneLayer = (l: Layer, extra: Partial<Layer> = {}): Layer =>
-  ({ ...l, id: st.nextId++, crop: { ...l.crop }, fit: l.fit && { ...l.fit }, ...extra });
+  ({ ...l, id: st.nextId++, crop: { ...l.crop }, fit: l.fit && { ...l.fit }, gpath: clonePath(l.gpath), ...extra });
 /** La imagen se movió o cambió de tamaño a mano: ya no se reajusta al cambiar la hoja. */
 export const markManual = (l: Layer) => { l.fit = null; };
 
@@ -155,83 +158,98 @@ export function selectMany(ls: Layer[]) {
   st.hoverL = null;
   renderList(); syncSel(); renderBar(); dirty();
 }
-/** Shift o Ctrl + clic: añade la imagen a la selección o la quita. */
+/** Shift o Ctrl + clic: añade a la selección o quita el elemento de la imagen en el nivel actual (su grupo o ella). */
 export function toggleInSelection(l: Layer) {
-  // una imagen de un grupo cuenta como el grupo entero (salvo si ya se entró en él: ver selectUnit)
-  const unit = inside(l) ? [l] : unitOf(l), cur = selected();
+  const unit = unitOf(l), cur = selected();
   selectMany(unit.every((x) => cur.includes(x)) ? cur.filter((x) => !unit.includes(x)) : [...cur, ...unit]);
 }
 
-/* ---------- grupos (Ctrl+G) ---------- */
-/** Imágenes del grupo de l (o solo l si está suelta). */
-export const unitOf = (l: Layer): Layer[] => (l.gid == null ? [l] : st.layers.filter((x) => x.gid === l.gid));
-/** Se «entró» en el grupo de l: hay una imagen suya seleccionada sola (con doble clic). */
-const inside = (l: Layer) => l.gid != null && st.sel != null && st.sel.gid === l.gid;
+/* ---------- grupos (Ctrl+G), también unos dentro de otros: ver groups.ts ---------- */
+/** En el lienzo no se seleccionan las ocultas ni las bloqueadas. */
+const pickable = (l: Layer) => !l.hidden && !l.locked;
+/** Nivel en el que se está: el grupo abierto con doble clic (null = el póster). */
+export const currentScope = () => scopeOf(st.layers, selected(), pickable);
+/** Nivel desde el que se ve l: el actual si l está dentro; si no, el póster (como en Figma). */
+const scopeFor = (l: Layer) => { const s = currentScope(); return s != null && inGroup(l, s) ? s : null; };
+/** Elemento de l en el nivel actual: su grupo (o subgrupo) entero, o solo l. */
+export const unitOf = (l: Layer): Layer[] => unitAt(st.layers, l, scopeFor(l));
+/** Imágenes de un grupo (a cualquier profundidad). */
+export const groupMembers = (gid: number) => membersOf(st.layers, gid);
 /** Número de grupo si la selección es exactamente un grupo entero; si no, null. */
-export function selectedGroup(): number | null {
-  const g = st.group, gid = g[0]?.gid;
-  if (g.length < 2 || gid == null || g.some((l) => l.gid !== gid)) return null;
-  return st.layers.filter((l) => l.gid === gid && !l.hidden && !l.locked).length === g.length ? gid : null;
-}
-/**
- * Clic en una imagen: si es de un grupo, se selecciona el grupo entero; si ya se había entrado en ese grupo
- * (una de sus imágenes sola), se selecciona solo la tocada, como en Figma.
- */
+export const selectedGroup = (): number | null => groupOf(st.layers, st.group, pickable);
+/** Clic en una imagen: su elemento en el nivel actual (fuera del grupo abierto, el de más arriba), como en Figma. */
 export function selectUnit(l: Layer) {
-  if (l.gid == null || inside(l)) select(l);
-  else selectMany(unitOf(l));
+  const u = unitOf(l);
+  if (u.length > 1) selectMany(u); else select(l);
 }
-/** Nombre visible de un grupo (el que puso el usuario o «Grupo»). */
-export const groupName = (gid: number) => st.layers.find((l) => l.gid === gid)?.gname || 'Grupo';
-/** Cambia el nombre del grupo (en todas sus imágenes; paso de deshacer). Devuelve false si no hay nada que cambiar. */
+/** Doble clic en el grupo seleccionado: un nivel más adentro, hacia la imagen tocada (su subgrupo o ella sola). */
+export function enterGroup(l: Layer) {
+  const g = selectedGroup();
+  if (g == null || !inGroup(l, g)) { selectUnit(l); return; }
+  const u = unitAt(st.layers, l, g);
+  if (u.length > 1) selectMany(u); else select(l);
+}
+/** Esc: un nivel más afuera (se selecciona el grupo que contiene la selección); en el póster, deselecciona. */
+export function exitGroup() {
+  const s = currentScope();
+  if (s == null) select(null); else selectMany(groupMembers(s));
+}
+/** Nombre visible de un grupo. */
+export const groupName = (gid: number) => findGroup(st.layers, gid)?.name || GROUP_BASE;
+/** Cambia el nombre del grupo (paso de deshacer). Vacío no vale. Devuelve false si no hay nada que cambiar. */
 export function renameGroup(gid: number, name: string) {
-  const ls = st.layers.filter((l) => l.gid === gid), n = name.replace(/\s+/g, ' ').trim().slice(0, 80);
-  if (!ls.length || ls.every((l) => l.gname === n)) return false;
+  const ls = groupMembers(gid), n = name.replace(/\s+/g, ' ').trim().slice(0, 80);
+  if (!ls.length || !n || groupName(gid) === n) return false;
   snap();
-  for (const l of ls) l.gname = n;
+  for (const l of ls) for (const g of l.gpath) if (g.id === gid) g.name = n;
   afterChange(); renderBar();
   return true;
 }
-/** Doble clic dentro de un grupo seleccionado: entra en él y deja solo esa imagen. */
-export const enterGroup = (l: Layer) => select(l);
-/** Ordena las capas para que cada grupo quede junto y quita los grupos de una sola imagen. */
+/** Ordena las capas para que cada grupo quede junto (en cada nivel) y deshace los de un solo elemento. */
 export function tidyGroups() { st.layers = normalizeGroups(st.layers); }
 
-/** Agrupa las seleccionadas (2 o más). Si alguna ya era de otro grupo, pasa al nuevo. */
+/**
+ * Agrupa lo seleccionado (2 o más elementos del nivel actual: imágenes o grupos) en un grupo nuevo, «Grupo N»,
+ * dentro del grupo en el que se está. Cada elemento entra entero (también sus imágenes ocultas o bloqueadas).
+ */
 export function groupSelected() {
-  const ls = selected();
-  if (ls.length < 2) { toast('Selecciona al menos 2 imágenes para agruparlas'); return; }
-  if (selectedGroup() != null) return; // ya es un grupo
+  const ls = selected(), scope = currentScope();
+  const units = new Set(ls.map((l) => childOf(l, scope) ?? l));
+  if (units.size < 2) { if (selectedGroup() == null) toast('Selecciona al menos 2 imágenes para agruparlas'); return; }
+  const members = st.layers.filter((l) => ls.some((x) => unitAt(st.layers, x, scope).includes(l)));
+  const depth = scope == null ? 0 : members[0]!.gpath.findIndex((g) => g.id === scope) + 1;
   snap();
-  const gid = nextGid(st.layers);
-  for (const l of ls) { l.gid = gid; l.gname = ''; }
+  const id = nextGid(st.layers), name = nextGroupName(st.layers);
+  for (const l of members) l.gpath = [...l.gpath.slice(0, depth), { id, name }, ...l.gpath.slice(depth)];
   tidyGroups();
-  selectMany(ls);
+  selectMany(members);
   scheduleSave();
-  toast(`Grupo de ${ls.length} imágenes · ${MOD}${SHIFT}G para desagrupar`, 4000);
+  toast(`${name} · ${MOD}${SHIFT}G para desagrupar`, 4000);
 }
-/** Desagrupa los grupos de las seleccionadas. */
+/** Desagrupa los grupos seleccionados, un solo nivel: lo que tenían dentro (también subgrupos) queda suelto. */
 export function ungroupSelected() {
-  const gids = new Set(selected().map((l) => l.gid).filter((g): g is number => g != null));
+  const scope = currentScope();
+  const gids = new Set(selected().map((l) => childOf(l, scope)).filter((g): g is number => g != null));
   if (!gids.size) return;
   snap();
-  const freed = st.layers.filter((l) => l.gid != null && gids.has(l.gid));
-  for (const l of freed) { l.gid = null; l.gname = ''; }
+  const freed = st.layers.filter((l) => l.gpath.some((g) => gids.has(g.id)));
+  for (const l of freed) l.gpath = l.gpath.filter((g) => !gids.has(g.id));
+  tidyGroups();
   selectMany(freed);
   scheduleSave();
   toast(gids.size > 1 ? `${gids.size} grupos deshechos` : 'Grupo deshecho', 6000, { label: 'Deshacer', fn: undo });
 }
-/** Saca una imagen de su grupo (se queda donde está en el orden de capas). */
+/** Saca una imagen de su grupo: pasa al de fuera (o queda suelta) y se queda donde está en el orden de capas. */
 export function leaveGroup(l: Layer) {
-  if (l.gid == null) return;
+  if (!l.gpath.length) return;
   snap();
-  l.gid = null; l.gname = '';
+  l.gpath = l.gpath.slice(0, -1);
   tidyGroups();
   afterChange();
 }
 /** Ver u ocultar, bloquear o desbloquear todas las imágenes de un grupo (desde la fila del grupo en la lista). */
 export function toggleGroupFlag(gid: number, flag: 'hidden' | 'locked') {
-  const ls = st.layers.filter((l) => l.gid === gid);
+  const ls = groupMembers(gid);
   if (!ls.length) return;
   snap();
   const on = !ls.every((l) => l[flag]);
@@ -260,6 +278,25 @@ export function removeSelected() {
   scheduleSave();
   toast(`${ls.length} imágenes quitadas del póster`, 6000, { label: 'Deshacer', fn: undo });
 }
+/**
+ * Grupos de las copias de ls: los copiados enteros pasan a ser grupos nuevos (con el mismo nombre); las copias se
+ * quedan dentro de los grupos de alrededor, como en Figma (duplicar algo de dentro de un grupo lo deja en él).
+ */
+function copyGroups(ls: Layer[], copies: Layer[]) {
+  // sin las copias: aún llevan los grupos del original y harían creer que ningún grupo se copió entero
+  const others = st.layers.filter((x) => !copies.includes(x));
+  const sp = splitPaths(ls, others), fresh = freshGroups(sp.map((s) => s.whole), st.layers);
+  copies.forEach((c, i) => { c.gpath = [...clonePath(sp[i]!.keep), ...fresh[i]!]; });
+}
+/** Al portapapeles de Pliego: los grupos copiados enteros van con las copias; el de alrededor, aparte (clipScope). */
+function toClip(ls: Layer[]) {
+  const sp = splitPaths(ls, st.layers);
+  st.clip = ls.map((l, i) => { const c = cloneLayer(l); c.gpath = clonePath(sp[i]!.whole); return c; });
+  st.clipScope = clonePath(commonPath(sp.map((s) => ({ gpath: s.keep }))));
+  // Se pisa también el portapapeles del sistema (con los nombres, como texto): si guardaba una imagen copiada antes
+  // en otra app, Ctrl+V la preferiría a lo que se acaba de copiar aquí. Sin permiso, se queda como estaba.
+  void navigator.clipboard?.writeText?.(ls.map((l) => l.name).join('\n')).catch(() => {});
+}
 export function duplicateSelected() {
   const ls = selected();
   if (ls.length < 2) { if (ls[0]) duplicateLayer(ls[0]); return; }
@@ -270,7 +307,7 @@ export function duplicateSelected() {
     st.layers.splice(st.layers.indexOf(l) + 1, 0, d);
     return d;
   });
-  regroupCopies(copies, st.layers.filter((x) => !copies.includes(x)));
+  copyGroups(ls, copies);
   tidyGroups();
   selectMany(copies);
   scheduleSave();
@@ -283,7 +320,7 @@ export function cloneSelectedInPlace(): Layer[] {
     st.layers.splice(st.layers.indexOf(l) + 1, 0, d);
     return d;
   });
-  regroupCopies(copies, st.layers.filter((x) => !copies.includes(x)));
+  copyGroups(ls, copies);
   tidyGroups();
   selectMany(copies);
   return copies;
@@ -291,7 +328,7 @@ export function cloneSelectedInPlace(): Layer[] {
 export function copySelected() {
   const ls = selected();
   if (!ls.length) return;
-  st.clip = ls.map((l) => cloneLayer(l));
+  toClip(ls);
   st.clipN = 0;
   toast(ls.length > 1 ? `${ls.length} imágenes copiadas` : `«${ls[0]!.name}» copiada`);
 }
@@ -304,7 +341,7 @@ export function cutSelected() {
   if (!ls.length) return;
   if (ls.some((l) => l.locked)) { toast(LOCKED_MSG); return; }
   if (S.mode === 'crop') applyCrop();
-  st.clip = ls.map((l) => cloneLayer(l));
+  toClip(ls);
   st.clipN = -1;
   snap();
   st.layers = st.layers.filter((x) => !ls.includes(x));
@@ -346,7 +383,7 @@ export function newPoster() {
   st.sel = null;
   st.group = [];
   st.sheetsOn = false; // vuelve al estado inicial: sin hojas hasta que el usuario haga algo
-  Object.assign(S, DEFAULT_LAYOUT, DEFAULT_EXPORT);
+  Object.assign(S, freshLayout(), DEFAULT_EXPORT); // el margen de la impresora se mantiene
   syncExportUI();
   layoutChanged();
   renderList(); // sin imágenes: aparece la pantalla de inicio
@@ -390,20 +427,27 @@ export function duplicateLayer(l: Layer) {
   st.layers.splice(st.layers.indexOf(l) + 1, 0, d);
   select(d);
 }
-export function copyLayer(l: Layer) { st.clip = [cloneLayer(l)]; st.clipN = 0; toast(`«${l.name}» copiada`); }
-/** Pega lo copiado en Pliego (una o varias imágenes), cada vez un poco más desplazado. */
+export function copyLayer(l: Layer) { toClip([l]); st.clipN = 0; toast(`«${l.name}» copiada`); }
+/**
+ * Pega lo copiado en Pliego (una o varias imágenes), cada vez un poco más desplazado. Si el grupo del que se copió
+ * sigue en el póster, se pega dentro de él, encima de lo que tiene; si no, suelto y al frente.
+ */
 export function pasteLayer() {
   const clip = st.clip;
   if (!clip?.length) return false;
   snap();
   const n = ++st.clipN;
-  const ds = clip.map((c) => {
+  const scope = pathExists(st.layers, st.clipScope) ? st.clipScope : [];
+  const fresh = freshGroups(clip.map((c) => c.gpath), st.layers);
+  const host = scope.length ? membersOf(st.layers, scope.at(-1)!.id) : [];
+  let at = host.length ? st.layers.indexOf(host.at(-1)!) + 1 : st.layers.length;
+  const ds = clip.map((c, i) => {
     const d = cloneLayer(c, { name: c.name, fit: null });
+    d.gpath = [...clonePath(scope), ...fresh[i]!];
     d.cx += 10 * n; d.cy += 10 * n;
-    st.layers.push(d);
+    st.layers.splice(at++, 0, d);
     return d;
   });
-  regroupCopies(ds, st.layers.filter((x) => !ds.includes(x)));
   tidyGroups();
   selectMany(ds);
   scheduleSave();
@@ -442,7 +486,7 @@ export function enterCrop() {
   if (!st.sel || S.mode === 'crop') return;
   if (st.sel.hidden) { toast('La imagen está oculta. Muéstrala para recortarla.'); return; }
   if (st.sel.locked) { toast(LOCKED_MSG); return; }
-  S.cropRatio = null; S.cropRatioKey = 'null';
+  S.cropRatio = null; S.cropRatioKey = 'null'; cropRef = null;
   cropSession = takeSnap();
   S.mode = 'crop';
   $('#cv').style.cursor = 'default';
@@ -464,12 +508,20 @@ export function cancelCrop() {
   cropSession = null; S.mode = 'move';
   renderBar(); afterChange();
 }
+/**
+ * Marco de referencia para las proporciones (mm): el que había al elegir la primera, y size, el que dejó la última.
+ * Mientras el marco siga de ese tamaño (solo se encuadró o amplió la imagen), cada proporción parte de la referencia
+ * y «Libre» la devuelve entera; si se cambió a mano con los bordes, ese pasa a ser la nueva referencia.
+ */
+let cropRef: { ref: { w: number; h: number }; size: { w: number; h: number } } | null = null;
 export function setCropRatio(key: string) {
   const sel = st.sel;
   if (!sel) return;
   S.cropRatioKey = key;
   S.cropRatio = key === 'null' ? null : key === 'orig' ? sel.w / sel.h : +key;
-  conformCrop(sel, S.cropRatio);
+  const cur = { w: visW(sel), h: visH(sel) }, same = (a: typeof cur, b: typeof cur) => Math.abs(a.w - b.w) < 1e-6 && Math.abs(a.h - b.h) < 1e-6;
+  const ref = cropRef && same(cur, cropRef.size) ? cropRef.ref : cur;
+  cropRef = { ref, size: conformCrop(sel, S.cropRatio, ref) };
   renderBar(); afterChange();
 }
 

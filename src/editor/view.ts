@@ -21,9 +21,11 @@ export function fitView() {
   const pad = f.w < 500 ? 18 : framed ? 28 : 40;
   // abajo, además, el hueco de la pista (#hint) para que no tape la etiqueta de tamaño; acoplada no se muestra
   const padB = pad + (dockMQ?.matches ? 0 : 26);
-  V.k = Math.max(0.01, Math.min((f.w - 2 * pad) / g.W, (f.h - pad - padB) / g.H));
-  V.ox = f.x + (f.w - g.W * V.k) / 2;
-  V.oy = f.y + pad + (f.h - pad - padB - g.H * V.k) / 2;
+  // se encaja el papel entero: el póster y su margen sin imprimir alrededor
+  const m = g.m, PW = g.W + 2 * m, PH = g.H + 2 * m;
+  V.k = Math.max(0.01, Math.min((f.w - 2 * pad) / PW, (f.h - pad - padB) / PH));
+  V.ox = f.x + (f.w - PW * V.k) / 2 + m * V.k;
+  V.oy = f.y + pad + (f.h - pad - padB - PH * V.k) / 2 + m * V.k;
   V.fitted = true;
   syncZoomLabel();
   dirty();

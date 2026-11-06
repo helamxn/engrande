@@ -10,7 +10,7 @@ import {
   alignSelected, autoBackground, centerSel, copyLayer, copySelected, cutSelected, distributeSelected, duplicateLayer,
   duplicateSelected, enterCrop, fitSel, flip, groupName, groupSelected, hideSelected, leaveGroup, lockSelected,
   newPoster, pasteLayer, removeLayer, removeSelected, reorder, resetOriginal, rotate90, select, selectAll,
-  selectedGroup, selectMany, setMode, toggleHidden, toggleLocked, ungroupSelected, unitOf, unstretchSel,
+  selectedGroup, selectMany, setMode, toggleHidden, toggleLocked, ungroupSelected, groupMembers, unstretchSel,
 } from '../actions';
 import { focusGroupName, focusName } from './panel';
 import { $, toast } from '../dom';
@@ -86,8 +86,8 @@ export function layerMenu(l: Layer, prev: Layer[] = []): MenuItem[] {
     { label: l.locked ? 'Desbloquear' : 'Bloquear', icon: l.locked ? 'lockOpen' : 'lock', fn: () => toggleLocked(l) },
     { label: 'Renombrar…', icon: 'rename', fn: () => { select(l); focusName(); } },
     { label: 'Medir distancias', icon: 'ruler', kbd: isTouch() ? undefined : ALT, fn: startMeasureMode },
-    ...(l.gid != null ? [
-      { label: 'Seleccionar el grupo', icon: 'group', fn: () => selectMany(unitOf(l)) } satisfies ActionItem,
+    ...(l.gpath.length ? [
+      { label: 'Seleccionar el grupo', icon: 'group', fn: () => selectMany(groupMembers(l.gpath.at(-1)!.id)) } satisfies ActionItem,
       { label: 'Sacar del grupo', icon: 'ungroup', fn: () => leaveGroup(l) } satisfies ActionItem,
     ] : []),
     '-',
@@ -189,12 +189,27 @@ let hoverTimer: ReturnType<typeof setTimeout> | undefined;
 let nextId = 0;
 const subOf = new WeakMap<HTMLButtonElement, SubmenuItem>();
 
+/**
+ * Dónde estaba el foco al abrir el menú, para devolverlo al cerrarlo con el teclado o al elegir una opción. Es una
+ * función porque la opción puede volver a dibujar la lista y cambiar el botón por otro nuevo.
+ */
+type FocusTarget = () => HTMLElement | null;
+let returnTo: FocusTarget | null = null;
+const focusBack = (t: FocusTarget | null) => { const el = t?.(); if (el?.isConnected) el.focus({ preventScroll: true }); };
+
 export const isMenuOpen = () => !!root && !root.hidden;
-export function closeMenu() {
+/**
+ * Cierra el menú. restore: el foco vuelve a donde estaba al abrirlo (Esc, Tab o elegir una opción), como pide el
+ * patrón ARIA de menú; al cerrarlo con un clic fuera, el foco va adonde se hizo clic.
+ */
+export function closeMenu(restore = false) {
   if (!root) return;
   clearTimeout(hoverTimer);
+  const inside = root.contains(document.activeElement) || sub.contains(document.activeElement);
   closeSub();
   root.hidden = true;
+  if (restore && inside) focusBack(returnTo);
+  returnTo = null;
 }
 
 /* ---------- construcción ---------- */
@@ -227,7 +242,13 @@ function build(container: HTMLElement, items: MenuItem[], level: 0 | 1) {
       // en táctil no se muestran atajos de teclado; sí gestos como «Doble toque»
       const showKbd = it.kbd && (!drill || it.kbd.includes(' '));
       if (showKbd) { const k = document.createElement('kbd'); k.textContent = it.kbd!; b.appendChild(k); }
-      b.addEventListener('click', () => { closeMenu(); it.fn(); });
+      b.addEventListener('click', () => {
+        const back = returnTo;
+        closeMenu(true);
+        it.fn();
+        // si la opción no llevó el foco a otro sitio (p. ej. «Renombrar…») y se perdió al redibujar, vuelve
+        if (!document.activeElement || document.activeElement === document.body) focusBack(back);
+      });
     }
     if (level === 0 && !drill) b.addEventListener('mouseenter', () => hoverRootItem(b));
     if (level === 1) b.addEventListener('mouseenter', () => b.focus({ preventScroll: true }));
@@ -242,7 +263,12 @@ function placeRoot(x: number, y: number) {
 }
 const focusFirst = (c: HTMLElement) => c.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus({ preventScroll: true });
 
-export function openMenu(x: number, y: number, items: MenuItem[]) {
+/** from: a quién devolver el foco al cerrar (por defecto, al que lo tenía al abrir). */
+export function openMenu(x: number, y: number, items: MenuItem[], from: FocusTarget | null = null) {
+  if (root.hidden) {
+    const a = document.activeElement, el = a instanceof HTMLElement && a !== document.body ? a : null;
+    returnTo = from ?? (() => el);
+  } else if (from) returnTo = from;
   closeSub();
   drill = isTouch();
   rootItems = items;
@@ -356,7 +382,9 @@ function onKey(e: KeyboardEvent) {
       break;
     }
     case 'ArrowLeft': back(); break;
-    case 'Escape': if (!back()) closeMenu(); break;
+    case 'Escape': if (!back()) closeMenu(true); break;
+    // Tab sale del menú (lo cierra) y sigue desde donde se abrió, como en los menús del sistema
+    case 'Tab': closeMenu(true); handled = false; break;
     default: handled = false;
   }
   if (handled) { e.preventDefault(); e.stopPropagation(); }
@@ -367,6 +395,7 @@ export function initMenu() {
   sub = document.createElement('div');
   sub.className = 'menu';
   sub.setAttribute('role', 'menu');
+  root.setAttribute('aria-label', 'Opciones');
   sub.hidden = true;
   document.body.appendChild(sub);
 
@@ -374,8 +403,8 @@ export function initMenu() {
     const t = e.target as Node;
     if (!root.hidden && !root.contains(t) && !sub.contains(t)) closeMenu();
   }, true);
-  addEventListener('resize', closeMenu);
-  addEventListener('blur', closeMenu);
+  addEventListener('resize', () => closeMenu());
+  addEventListener('blur', () => closeMenu());
   root.addEventListener('mousemove', (e) => { moves.push({ x: e.clientX, y: e.clientY }); if (moves.length > 4) moves.shift(); });
   root.addEventListener('mouseleave', () => { moves = []; });
   sub.addEventListener('mouseenter', () => clearTimeout(hoverTimer));

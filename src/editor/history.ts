@@ -1,6 +1,7 @@
 /** Deshacer / rehacer con instantáneas de las capas y límite de memoria. */
 import { UNDO_MAX } from './constants';
 import { PIX_BUDGET } from './platform';
+import { clonePath } from './groups';
 import { S, st } from './state';
 import type { Snapshot } from './types';
 
@@ -17,7 +18,11 @@ export const markExported = () => { exportedAt = changes; };
 export const hasUnexported = () => changes !== exportedAt && (st.layers.length > 0 || undoStack.length > 0);
 
 /** Lo que tiene que pasar después de deshacer o rehacer; lo registra main.ts para evitar dependencias circulares. */
-const hooks = { afterHistory: () => {}, syncUndo: (_canUndo: boolean, _canRedo: boolean) => {}, cancelCrop: () => {} };
+const hooks = {
+  afterHistory: () => {}, syncUndo: (_canUndo: boolean, _canRedo: boolean) => {}, cancelCrop: () => {},
+  /** Hubo un cambio que se puede deshacer: el póster cambió y hay que guardarlo (ver persist.ts). */
+  changed: () => {},
+};
 export const setHistoryHooks = (h: Partial<typeof hooks>) => Object.assign(hooks, h);
 
 export function takeSnap(): Snapshot {
@@ -28,10 +33,12 @@ export function takeSnap(): Snapshot {
     props: st.layers.map((l) => ({
       l, cx: l.cx, cy: l.cy, w: l.w, h: l.h, rot: l.rot, flipX: l.flipX, flipY: l.flipY,
       crop: { ...l.crop }, img: l.img, orig: l.orig, page: l.page, fit: l.fit && { ...l.fit }, hidden: l.hidden,
-      name: l.name, locked: l.locked, opacity: l.opacity, gid: l.gid, gname: l.gname,
+      name: l.name, locked: l.locked, opacity: l.opacity, gpath: clonePath(l.gpath),
     })),
     // la distribución de hojas también se deshace (cambiarla mueve y reajusta las imágenes)
     layout: { paper: S.paper, orient: S.orient, cols: S.cols, rows: S.rows, margin: S.margin, overlap: S.overlap },
+    // resolución, marcas y guía: «Nuevo póster» los restablece y deshacerlo debe devolverlos
+    exp: { dpi: S.dpi, marks: S.marks, guide: S.guide },
   };
 }
 export function restoreSnap(s: Snapshot) {
@@ -40,10 +47,10 @@ export function restoreSnap(s: Snapshot) {
     Object.assign(p.l, {
       cx: p.cx, cy: p.cy, w: p.w, h: p.h, rot: p.rot, flipX: p.flipX, flipY: p.flipY,
       crop: { ...p.crop }, img: p.img, orig: p.orig, page: p.page, fit: p.fit && { ...p.fit }, hidden: p.hidden,
-      name: p.name, locked: p.locked, opacity: p.opacity, gid: p.gid, gname: p.gname,
+      name: p.name, locked: p.locked, opacity: p.opacity, gpath: clonePath(p.gpath),
     });
   }
-  Object.assign(S, s.layout);
+  Object.assign(S, s.layout, s.exp);
   st.sel = s.sel && st.layers.includes(s.sel) ? s.sel : null;
   const g = (s.group ?? []).filter((l) => st.layers.includes(l));
   st.group = g.length > 1 ? g : [];
@@ -61,6 +68,8 @@ export function pushUndo(s: Snapshot) {
   dropped.push(...trimStack(undoStack, live, PIX_BUDGET));
   releaseUnused(dropped, liveRefs());
   sync();
+  // todo cambio del póster pasa por aquí (snap, commitPending, pixel jobs): así ninguno se queda sin guardar
+  hooks.changed();
 }
 export const snap = () => pushUndo(takeSnap());
 

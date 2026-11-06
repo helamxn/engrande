@@ -243,7 +243,8 @@
       & svg { @apply size-4; }
     }
   }
-  /* fila de un grupo en la lista y sus imágenes, sangradas debajo */
+  /* fila de un grupo en la lista y sus imágenes, sangradas debajo (un escalón por nivel, hasta 4) */
+  .group-row, .layer.in-group { margin-left: calc(min(var(--depth, 0), 4) * 1.25rem); }
   .group-row {
     @apply flex items-center gap-1 rounded-[9px] border border-dashed border-line p-1;
     &.on { @apply border-solid border-accent bg-accent-soft; }
@@ -257,7 +258,6 @@
     & .chev svg { transition: transform .15s; }
     & .chev.closed svg { transform: rotate(-90deg); }
   }
-  .layer.in-group { @apply ml-5; }
 
   .layer-main {
     @apply flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 rounded-md border-0 bg-transparent p-0.5 text-left;

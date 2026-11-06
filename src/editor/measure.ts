@@ -49,7 +49,7 @@ export function measureTo(sel: Layer[], target: Layer | null) {
   if (!sel.length) { stopMeasure(); return; }
   const s = unionBox(sel.map((l) => bboxMM(l))), g = posterGeo();
   const t = target ? bboxMM(target) : posterBox(g);
-  st.measure = { ...measureBetween(s, t), target: t };
+  st.measure = { ...measureBetween(s, t, !target), target: t };
   dirty();
 }
 export function stopMeasure() {

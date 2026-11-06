@@ -6,6 +6,7 @@ import { hasCutMarks, markLen, rowName, srcDims } from '../geometry';
 import { markExported } from '../history';
 import { HI_AREA, SINGLE_AREA } from '../platform';
 import { drawAll } from '../render';
+import { syncExportButtons } from '../ui/panel';
 import { PAPERS } from '../constants';
 import { posterGeo, S, st } from '../state';
 import { loadImg } from './load';
@@ -23,7 +24,10 @@ const setStatus = (t: string) => { $('#status').textContent = t; if (t) toast(t,
 /** Progreso visible aunque la pestaña Descargar esté cerrada. */
 const progress = (t: string) => { $('#status').textContent = t; toast(t, 0); };
 function setBusy(b: boolean) {
+  document.body.classList.toggle('exporting', b); // mientras dura, la lista no vuelve a activar los botones
   for (const s of ['#exportTiles', '#exportSingle', '#quickExport', '#marginTest']) $<HTMLButtonElement>(s).disabled = b;
+  // al terminar, las de descarga del póster solo se activan si hay algo que imprimir (la hoja de prueba, siempre)
+  if (!b) syncExportButtons();
   $('#qeLabel').textContent = b ? 'Generando…' : 'Descargar PDF';
 }
 function canExport() {
@@ -93,6 +97,8 @@ function cutMarks(pdf: JsPDF, g: Geo) {
   }
 }
 
+/** Nombre de una opción del navegador en una sola línea (espacios que no se parten al ajustar el texto). */
+const nb = (t: string) => t.replace(/ /g, '\u00a0');
 function guidePage(pdf: JsPDF, g: Geo) {
   const m = Math.max(12, g.m), aw = g.pw - 2 * m;
   pdf.setFont('helvetica', 'bold'); pdf.setFontSize(18); pdf.setTextColor(20, 30, 40);
@@ -104,18 +110,21 @@ function guidePage(pdf: JsPDF, g: Geo) {
   const dashed = S.marks ? 'sobre la línea discontinua' : `a ${Math.round(g.ov)} mm del borde de la vecina`;
   const steps = g.ov > 0
     ? [
-      '1. Imprime al 100 % (tamaño real) y sin «Ajustar a la página». La regla de abajo debe medir 10 cm.',
+      `1. Imprime en papel ${S.paper}. En Escala deja «Predeterminado» o ${nb('«Ajustar al tamaño del papel»')}, no ${nb('«Ajustar al área de impresión»')}. La regla de abajo debe medir 10 cm.`,
       `2. En cada hoja, recorta el borde izquierdo y el superior ${by}`,
       '    (excepto la columna 1 y la fila A, que se quedan con su margen o lo recortas al final).',
       `3. Pon cada hoja encima de su vecina, con el borde recortado ${dashed}, y pega.`,
       '4. Arma fila por fila: A1, A2, A3... y luego une las filas entre sí.',
     ]
     : [
-      '1. Imprime al 100 % (tamaño real) y sin «Ajustar a la página». La regla de abajo debe medir 10 cm.',
+      `1. Imprime en papel ${S.paper}. En Escala deja «Predeterminado» o ${nb('«Ajustar al tamaño del papel»')}, no ${nb('«Ajustar al área de impresión»')}. La regla de abajo debe medir 10 cm.`,
       `2. Recorta los cuatro bordes de cada hoja ${by}.`,
       '3. Une las hojas borde con borde y pégalas con cinta por detrás, siguiendo las letras y números.',
     ];
-  const stepsH = steps.length * 5 + 6 + RULER_H, top = m + 18, ah = g.ph - top - m - stepsH;
+  // pasos en líneas que caben en el ancho (las que siguen a la primera de un paso, sangradas)
+  pdf.setFont('helvetica', 'normal'); pdf.setFontSize(9.5);
+  const lines = steps.flatMap((t) => (pdf.splitTextToSize(t, aw - 5) as string[]).map((ln, i) => (i ? '    ' + ln : ln)));
+  const stepsH = lines.length * 5 + 6 + RULER_H, top = m + 18, ah = g.ph - top - m - stepsH;
   const s = Math.min(aw / g.W, ah / g.H), w = g.W * s, h = g.H * s, x = (g.pw - w) / 2, y = top;
   pdf.addImage(jpg(renderRegion(0, 0, g.W, g.H, Math.min(150, (1500 * 25.4) / g.W))), 'JPEG', x, y, w, h);
   pdf.setDrawColor(194, 26, 90); pdf.setLineWidth(0.35); pdf.rect(x, y, w, h);
@@ -129,8 +138,8 @@ function guidePage(pdf: JsPDF, g: Geo) {
     pdf.text(rowName(r) + (c + 1), cx, cy, { align: 'center', baseline: 'middle' });
   }
   pdf.setFont('helvetica', 'normal'); pdf.setFontSize(9.5); pdf.setTextColor(40, 50, 60);
-  steps.forEach((t, i) => pdf.text(t, m, y + h + 9 + i * 5));
-  ruler(pdf, m, y + h + 9 + steps.length * 5 + 6, true);
+  lines.forEach((t, i) => pdf.text(t, m, y + h + 9 + i * 5));
+  ruler(pdf, m, y + h + 9 + lines.length * 5 + 6, true);
 }
 
 /* ---------- calibración ---------- */
@@ -149,7 +158,7 @@ function ruler(pdf: JsPDF, x: number, y: number, withText: boolean) {
   pdf.text('cm', x + 103, y + 3.6, { baseline: 'top' });
   if (withText) {
     pdf.setFontSize(7.5);
-    pdf.text('Esta regla debe medir exactamente 10 cm. Si mide menos, la impresora reescaló: imprime al 100 %.', x, y - 2.2);
+    pdf.text('Esta regla debe medir 10 cm. Si mide menos, revisa el papel y la escala.', x, y - 2.2);
   }
 }
 /**
@@ -294,7 +303,7 @@ export async function exportMarginTest() {
     pdf.setTextColor(20, 20, 20); pdf.setFontSize(9.5);
     y += 9;
     for (const t of [
-      '1. Imprime esta hoja al 100 % (tamaño real), sin «Ajustar a la página».',
+      `1. Imprime esta hoja en papel ${S.paper}. En Escala deja «Predeterminado» o ${nb('«Ajustar al tamaño del papel»')}, no ${nb('«Ajustar al área de impresión»')}.`,
       '2. Mide la regla de abajo: debe medir exactamente 10 cm.',
       '3. En cada uno de los cuatro bordes, busca la primera raya que se imprimió completa y anota su número.',
       '4. En Pliego, pon el número más alto de los cuatro como «Margen sin imprimir» (pestaña Hojas).',

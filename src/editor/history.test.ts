@@ -77,21 +77,48 @@ describe('releaseUnused (liberar lienzos y PDF del historial descartado)', () =>
 });
 
 describe('instantáneas (takeSnap / restoreSnap)', () => {
-  it('deshacer recupera nombre, bloqueo, opacidad y la selección de varias', async () => {
+  it('deshacer recupera nombre, bloqueo, opacidad, grupos y la selección de varias', async () => {
     const { takeSnap, restoreSnap } = await import('./history');
     const { st } = await import('./state');
     const mk = (name: string) => ({
       name, cx: 0, cy: 0, w: 10, h: 10, rot: 0, flipX: false, flipY: false, crop: { x0: 0, y0: 0, x1: 1, y1: 1 },
       img: canvas(1, 1), orig: canvas(1, 1), page: 1, fit: null, hidden: false, locked: false, opacity: 1,
+      gpath: [{ id: 1, name: 'Grupo 1' }],
     });
     const a = mk('a'), b = mk('b');
     st.layers = [a, b] as never;
     st.group = [a, b] as never;
     const s = takeSnap();
     a.name = 'otro'; a.locked = true; a.opacity = 0.4;
+    a.gpath[0]!.name = 'Logo'; b.gpath = [];
     st.group = [];
     restoreSnap(s);
     expect([a.name, a.locked, a.opacity]).toEqual(['a', false, 1]);
+    expect([a.gpath, b.gpath]).toEqual([[{ id: 1, name: 'Grupo 1' }], [{ id: 1, name: 'Grupo 1' }]]);
     expect(st.group).toEqual([a, b]);
+  });
+
+  it('deshacer devuelve también la resolución, las marcas y la guía (p. ej. tras «Nuevo póster»)', async () => {
+    const { takeSnap, restoreSnap } = await import('./history');
+    const { S, st } = await import('./state');
+    st.layers = []; st.group = [];
+    Object.assign(S, { dpi: 300, marks: false, guide: false });
+    const s = takeSnap();
+    Object.assign(S, { dpi: 150, marks: true, guide: true });
+    restoreSnap(s);
+    expect([S.dpi, S.marks, S.guide]).toEqual([300, false, false]);
+  });
+});
+
+describe('cada cambio que se puede deshacer avisa para guardar', () => {
+  it('snap llama al gancho changed (si no, el póster no se guardaba al agregar o quitar una imagen)', async () => {
+    const { setHistoryHooks, snap } = await import('./history');
+    const { st } = await import('./state');
+    st.layers = []; st.group = [];
+    const changed = vi.fn();
+    setHistoryHooks({ changed });
+    snap();
+    expect(changed).toHaveBeenCalledTimes(1);
+    setHistoryHooks({ changed: () => {} });
   });
 });

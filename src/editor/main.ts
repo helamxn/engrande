@@ -4,7 +4,7 @@ import { $, toast } from './dom';
 import { hasUnexported, redo, setHistoryHooks, undo } from './history';
 import { exportMarginTest, exportSingle, exportTiles } from './io/export';
 import { handlePaste, initLoad } from './io/load';
-import { flushSave, initPersistence, isWorkSafe, restoreProject } from './io/persist';
+import { flushSave, initPersistence, isWorkSafe, restoreProject, scheduleSave } from './io/persist';
 import { initKeyboard } from './input/keyboard';
 import { initPointer } from './input/pointer';
 import { dockMQ, isMac, MOD } from './platform';
@@ -41,6 +41,7 @@ export function startEditor() {
   setHistoryHooks({
     afterHistory,
     cancelCrop,
+    changed: scheduleSave,
     syncUndo: (u, r) => { $<HTMLButtonElement>('#undo').disabled = !u; $<HTMLButtonElement>('#redo').disabled = !r; },
   });
 
