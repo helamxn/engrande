@@ -52,9 +52,13 @@ export function initKeyboard() {
       if (S.mode === 'crop') cancelCrop(); else if (S.mode !== 'move') setMode('move'); else select(null);
       return;
     }
-    if (mod || e.altKey) return;
+    const arrow = e.key.startsWith('Arrow');
+    // Alt + ← → es «atrás / adelante» en el navegador: sobre el lienzo nunca se sale de la app.
+    // La lista ya usa Alt + ↑ ↓ para el orden (y lo marca como atendido).
+    if (e.altKey && arrow && !mod) { if (e.defaultPrevented) return; e.preventDefault(); }
+    if (mod || (e.altKey && !arrow)) return;
     if ((e.key === 'Delete' || e.key === 'Backspace') && any) { e.preventDefault(); removeSelected(); return; }
-    if (any && !sel?.locked && e.key.startsWith('Arrow') && S.mode === 'move') {
+    if (any && !sel?.locked && arrow && S.mode === 'move') {
       e.preventDefault();
       // la misma selección (una imagen o el grupo) cuenta como una serie
       const key = sel ?? st.group[0], now = performance.now();
@@ -63,8 +67,11 @@ export function initKeyboard() {
       const d = e.shiftKey ? 10 : 1;
       shiftSelected(e.key === 'ArrowLeft' ? -d : e.key === 'ArrowRight' ? d : 0, e.key === 'ArrowUp' ? -d : e.key === 'ArrowDown' ? d : 0);
       afterChange();
+      // con Alt (como en Figma): se mueve midiendo y las distancias siguen a la imagen
+      if (e.altKey || st.altDown) refreshMeasure();
       return;
     }
+    if (arrow && e.altKey) return; // sin nada que mover: Alt + flecha no hace nada más
     if (k === '+' || k === '=') { zoomCenter(1.25); return; }
     if (k === '-') { zoomCenter(1 / 1.25); return; }
     if (e.code === 'Space' && !e.repeat && e.target === document.body) { setSpaceDown(true); e.preventDefault(); return; }

@@ -34,6 +34,7 @@ const GROUPS: Group[] = [
   ]],
   ['Imagen seleccionada', [
     ['Flechas', 'Mover 1 mm (con Shift, 10 mm)'],
+    [`${ALT} + flechas`, 'Mover midiendo las distancias'],
     [`${MOD}C · ${MOD}X · ${MOD}D`, 'Copiar · cortar · duplicar'],
     [`${MOD}] · ${MOD}[`, 'Adelante · atrás (con Shift: al frente / al fondo)'],
     [`${ALT} + ↑ ↓ en la lista`, 'Adelante · atrás (o arrastra la fila)'],
