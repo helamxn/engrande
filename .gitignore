@@ -28,3 +28,7 @@ public/pdfjs/
 
 # vercel
 .vercel/
+
+# resultados de los tests de punta a punta (Playwright)
+test-results/
+playwright-report/

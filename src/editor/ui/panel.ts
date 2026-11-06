@@ -14,7 +14,7 @@ import {
 } from '../geometry';
 import { snap } from '../history';
 import { ALT, deskMQ, dockMQ, HI_AREA, isTouch } from '../platform';
-import { C, posterGeo, S, st } from '../state';
+import { C, isFreshPoster, posterGeo, S, st } from '../state';
 import { dirty } from '../render';
 import { fitView } from '../view';
 import { renderPdfPage } from '../io/pdf';
@@ -101,6 +101,7 @@ export function syncExportUI() {
   $<HTMLInputElement>('#marks').checked = S.marks;
   $<HTMLInputElement>('#guide').checked = S.guide;
   syncLayoutUI();
+  syncNewPoster();
 }
 /** Tras deshacer o rehacer: la distribución ya viene restaurada junto con las imágenes, solo se sincroniza la interfaz. */
 export function layoutRestored() {
@@ -400,7 +401,16 @@ export function renderList() {
   // pantalla de inicio (un aviso con «Elegir imagen»), solo con el póster vacío
   $('#empty').hidden = n > 0;
   syncExportButtons();
+  syncNewPoster();
   updateHint();
+}
+/** «Nuevo póster» se desactiva cuando ya es uno nuevo: no hay nada que reiniciar. */
+let newTitle: string | null = null;
+export function syncNewPoster() {
+  const b = $<HTMLButtonElement>('#newPoster'), fresh = isFreshPoster();
+  newTitle ??= b.title;
+  b.disabled = fresh;
+  b.title = fresh ? 'Ya es un póster nuevo' : newTitle;
 }
 /** Sin nada que imprimir no se puede descargar (las ocultas no se imprimen). También al terminar una descarga. */
 export function syncExportButtons() {
@@ -613,8 +623,8 @@ export function initPanel() {
 
   // exportar
   for (const b of $$('[data-dpi]')) b.addEventListener('click', () => { S.dpi = Number(b.dataset.dpi); syncExportUI(); scheduleSave(); });
-  $<HTMLInputElement>('#marks').addEventListener('change', (e) => { S.marks = (e.target as HTMLInputElement).checked; scheduleSave(); });
-  $<HTMLInputElement>('#guide').addEventListener('change', (e) => { S.guide = (e.target as HTMLInputElement).checked; syncLayoutUI(); scheduleSave(); });
+  $<HTMLInputElement>('#marks').addEventListener('change', (e) => { S.marks = (e.target as HTMLInputElement).checked; syncNewPoster(); scheduleSave(); });
+  $<HTMLInputElement>('#guide').addEventListener('change', (e) => { S.guide = (e.target as HTMLInputElement).checked; syncLayoutUI(); syncNewPoster(); scheduleSave(); });
 
 
   prevG = posterGeo();

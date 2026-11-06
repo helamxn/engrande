@@ -116,6 +116,8 @@ export interface Snapshot {
   layout: LayoutSettings;
   /** Ajustes de descarga (opcional: los pasos de antes no los tenían). */
   exp?: Pick<Settings, 'dpi' | 'marks' | 'guide'>;
+  /** Se veían las hojas (en un póster sin imágenes, solo si se eligió la distribución). */
+  sheetsOn?: boolean;
 }
 
 export interface ScaleDrag { t: 'scale'; id: HandleId; L0: Transform; k0: Crop }

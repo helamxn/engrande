@@ -11,7 +11,7 @@ Todo ocurre en el navegador: no hay servidor, cuentas ni base de datos, y las im
 - **pdf.js 6** para leer PDF y **jsPDF 4** para exportar. Las dos librerías se cargan solo cuando se usan.
 - Fuentes Archivo e IBM Plex Mono servidas desde el propio dominio (Fontsource)
 - Iconos de **Lucide** (`lucide-static`), importados uno a uno en `src/editor/ui/icons.ts`
-- **Vitest** para la lógica pura
+- **Vitest** para la lógica pura y **Playwright** para probar la app entera en el navegador (`e2e/`): guardado, «Nuevo», gestos del lienzo, rejilla, copiar/pegar, recorte y descarga
 
 ## Comandos
 
@@ -21,7 +21,8 @@ Todo ocurre en el navegador: no hay servidor, cuentas ni base de datos, y las im
 | `pnpm dev`     | Servidor de desarrollo en `localhost:4321`                                  |
 | `pnpm build`   | Copia los recursos de pdf.js, comprueba los tipos y genera `dist/`          |
 | `pnpm preview` | Sirve `dist/` para probar el build (con la CSP activa)                      |
-| `pnpm test`    | Tests de geometría e historial                                              |
+| `pnpm test`    | Tests de la lógica pura: geometría, grupos, historial, formato              |
+| `pnpm test:e2e` | Build y tests de punta a punta con Playwright en Edge (`PW_CHANNEL=chrome` para Chrome) |
 | `pnpm check`   | Comprobación de tipos de Astro y TypeScript                                 |
 
 La CSP solo se aplica en el build: pruébala con `pnpm build && pnpm preview`, no con `pnpm dev`.

@@ -14,7 +14,7 @@ import { canvasRevision, markCanvasChanged, scheduleSave } from './io/persist';
 import { runJob } from './pixeljobs';
 import type { PixelJob, PixelResult } from './pixels';
 import { dirty } from './render';
-import { DEFAULT_EXPORT, freshLayout, posterGeo, S, st, V } from './state';
+import { DEFAULT_EXPORT, freshLayout, isFreshPoster, posterGeo, S, st, V } from './state';
 import { s2mm } from './view';
 import { MOD, SHIFT } from './platform';
 import { renderBar } from './ui/contextbar';
@@ -376,6 +376,9 @@ export function distributeSelected(axis: 'x' | 'y') {
  * (útil en un ordenador compartido). Se puede deshacer mientras la pestaña siga abierta.
  */
 export function newPoster() {
+  // ya es un póster nuevo: nada que reiniciar (sin paso de deshacer, que dejaría un «Deshacer» que no hace nada)
+  if (isFreshPoster()) return;
+  const hadImages = st.layers.length > 0;
   if (S.mode === 'crop') cancelCrop();
   if (S.mode !== 'move') setMode('move');
   snap();
@@ -389,7 +392,9 @@ export function newPoster() {
   renderList(); // sin imágenes: aparece la pantalla de inicio
   renderBar(); // sin selección: se oculta la barra de la imagen
   scheduleSave(); // póster vacío: el guardado borra lo almacenado
-  toast('Póster nuevo. Se borró el trabajo guardado en este navegador.', 7000, { label: 'Deshacer', fn: undo });
+  // sin imágenes no había nada guardado (un póster vacío no se guarda): solo se restablecieron hojas y ajustes
+  toast(hadImages ? 'Póster nuevo. Se borró el trabajo guardado en este navegador.' : 'Hojas y ajustes restablecidos.', 7000,
+    { label: 'Deshacer', fn: undo });
 }
 export function afterHistory() {
   if (!st.sel && S.mode !== 'move') setMode('move');

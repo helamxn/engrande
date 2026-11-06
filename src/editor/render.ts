@@ -3,7 +3,7 @@ import { findGroup, groupOf } from './groups';
 import { cm, cmGap, TOUCH_MM } from './format';
 import { isGesturing } from './input/pointer';
 import {
-  gridLevels, HANDLES, bboxMM, cropCenter, cropPtsMM, displaySide, handleLocal, localToMM, pppOf, qualityOf, rad, sheetNo,
+  gridLevels, HANDLES, bboxMM, cropCenter, cropPtsMM, displaySide, handleLocal, localToMM, pppOf, qualityOf, rad,
   unionBox, visH, visW, type Quality,
 } from './geometry';
 import { canvasRevision } from './io/persist';
@@ -337,16 +337,6 @@ export function render() {
         ctx.strokeRect(Math.round(a.x) + 0.5, Math.round(a.y) + 0.5, Math.round(g.pw * V.k), Math.round(g.ph * V.k));
       }
       ctx.setLineDash([]); ctx.globalAlpha = 1;
-    }
-
-    // número de cada hoja (1, 2, 3…, en el orden del PDF)
-    if (g.tw * V.k > 44 && g.th * V.k > 30) {
-      ctx.font = '500 11px "IBM Plex Mono", ui-monospace, monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      for (let r = 0; r < S.rows; r++) for (let c = 0; c < S.cols; c++) {
-        const p = mm2s({ x: c * (g.tw - g.ov) + g.tw / 2, y: r * (g.th - g.ov) }), y = p.y + 16;
-        ctx.fillStyle = 'rgba(255,255,255,.86)'; ctx.beginPath(); ctx.roundRect(p.x - 17, y - 9, 34, 18, 9); ctx.fill();
-        ctx.fillStyle = C.mark!; ctx.fillText(String(sheetNo(r, c, S.cols)), p.x, y + 0.5);
-      }
     }
 
     // tamaño del póster y hojas, encima de su esquina (como el nombre de un marco en Figma); si no cabe, solo el tamaño

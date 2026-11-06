@@ -39,6 +39,7 @@ export function takeSnap(): Snapshot {
     layout: { paper: S.paper, orient: S.orient, cols: S.cols, rows: S.rows, margin: S.margin, overlap: S.overlap },
     // resolución, marcas y guía: «Nuevo póster» los restablece y deshacerlo debe devolverlos
     exp: { dpi: S.dpi, marks: S.marks, guide: S.guide },
+    sheetsOn: st.sheetsOn,
   };
 }
 export function restoreSnap(s: Snapshot) {
@@ -51,6 +52,7 @@ export function restoreSnap(s: Snapshot) {
     });
   }
   Object.assign(S, s.layout, s.exp);
+  if (s.sheetsOn !== undefined) st.sheetsOn = s.sheetsOn;
   st.sel = s.sel && st.layers.includes(s.sel) ? s.sel : null;
   const g = (s.group ?? []).filter((l) => st.layers.includes(l));
   st.group = g.length > 1 ? g : [];

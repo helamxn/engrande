@@ -72,5 +72,14 @@ export const view = { dpr: 1, CW: 0, CH: 0, ins: { t: 0, r: 0, b: 0, l: 0 } };
 export const C: Record<string, string> = {};
 
 export const posterGeo = () => geo(S);
+/**
+ * El póster está como uno nuevo: sin imágenes, sin hojas elegidas y con los ajustes iniciales. Entonces «Nuevo
+ * póster» no tiene nada que hacer (el botón se desactiva).
+ */
+export function isFreshPoster() {
+  if (st.layers.length || st.sheetsOn) return false;
+  const f: Record<string, unknown> = { ...freshLayout(), ...DEFAULT_EXPORT };
+  return Object.keys(f).every((k) => S[k as keyof Settings] === f[k]);
+}
 /** Se dibujan el papel y las hojas: hay imágenes o el usuario ya eligió la distribución. */
 export const sheetsVisible = () => st.layers.length > 0 || st.sheetsOn;

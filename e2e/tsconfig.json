@@ -1,0 +1,6 @@
+{
+  // Los tests de punta a punta corren en Node (Playwright): tipos de Node aquí, no en la app del navegador
+  "extends": "astro/tsconfigs/strict",
+  "compilerOptions": { "types": ["node"], "noEmit": true },
+  "include": ["./**/*.ts", "../playwright.config.ts"]
+}

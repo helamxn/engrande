@@ -108,6 +108,16 @@ describe('instantáneas (takeSnap / restoreSnap)', () => {
     restoreSnap(s);
     expect([S.dpi, S.marks, S.guide]).toEqual([300, false, false]);
   });
+
+  it('deshacer devuelve las hojas a la vista (póster sin imágenes con la distribución elegida)', async () => {
+    const { takeSnap, restoreSnap } = await import('./history');
+    const { st } = await import('./state');
+    st.layers = []; st.group = []; st.sheetsOn = true;
+    const s = takeSnap();
+    st.sheetsOn = false; // «Nuevo póster»
+    restoreSnap(s);
+    expect(st.sheetsOn).toBe(true);
+  });
 });
 
 describe('cada cambio que se puede deshacer avisa para guardar', () => {

@@ -16,7 +16,7 @@ import { focusGroupName, focusName } from './panel';
 import { $, toast } from '../dom';
 import { isStretched } from '../geometry';
 import { ALT, DELK, isTouch, MOD, SHIFT } from '../platform';
-import { st } from '../state';
+import { isFreshPoster, st } from '../state';
 import { fitView, zoomCenter } from '../view';
 import { loadFiles } from '../io/load';
 import { ICON, type IconName } from './icons';
@@ -169,7 +169,7 @@ export function emptyMenu(): MenuItem[] {
     { label: 'Pegar', icon: 'paste', kbd: MOD + 'V', fn: () => void pasteAny(), disabled: !canPaste() },
     { label: 'Seleccionar todas', icon: 'selectBox', kbd: MOD + 'A', fn: selectAll, disabled: visible < 1 },
     { label: 'Agregar imagen…', icon: 'addImage', fn: () => $<HTMLInputElement>('#file').click() },
-    { label: 'Nuevo póster', icon: 'newPoster', fn: newPoster },
+    { label: 'Nuevo póster', icon: 'newPoster', fn: newPoster, disabled: isFreshPoster() },
     '-',
     { label: 'Ver todo el póster', icon: 'fitAll', kbd: MOD + '0', fn: fitView },
     { label: 'Acercar', icon: 'zoomInLens', kbd: '+', fn: () => zoomCenter(1.4) },
