@@ -157,6 +157,27 @@ export function stepToLines(b: Box, t: SnapTargets, axis: 'x' | 'y', d: number):
   }
   return best;
 }
+/* ---------- rejilla de 1 mm ---------- */
+/**
+ * Las posiciones se colocan en milímetros enteros (como la rejilla de píxeles de Figma): al mover, al escalar o
+ * recortar (el borde que se arrastra) y con las flechas. Así las medidas salen redondas y coinciden con lo que dicen
+ * los campos del panel. Alinearse con otra imagen o con el póster tiene prioridad (puede caer en décimas, p. ej. el
+ * centro de un póster Carta), y Ctrl o ⌘ la quitan junto con el imán. «Ajustar» y «Llenar» siguen siendo exactos.
+ */
+export const GRID_MM = 1;
+/** v en la rejilla: el mm entero más cercano. */
+export const onGrid = (v: number) => Math.round(v / GRID_MM) * GRID_MM;
+/** Lo que hay que sumar a v para que quede en la rejilla. */
+export const toGrid = (v: number) => onGrid(v) - v;
+/**
+ * Flechas: el paso d (±1 o ±10 mm) desde v que acaba en la rejilla. Fuera de ella, el primer paso solo llega al mm
+ * entero siguiente en esa dirección (desde 13,8, ↑ lleva a 13, no a 12,8); en ella, avanza d entero.
+ */
+export function gridStep(v: number, d: number): number {
+  if (!d) return 0;
+  const r = onGrid(v), base = Math.abs(v - r) < EPS ? r : v, q = (base + d) / GRID_MM;
+  return (d > 0 ? Math.floor(q + EPS) : Math.ceil(q - EPS)) * GRID_MM - v;
+}
 /** Bordes y centro de moving (en un eje) que coinciden con el borde o el centro de alguna de las cajas. */
 export function alignedLines(moving: Box, boxes: Box[], axis: 'x' | 'y'): number[] {
   const f = (b: Box) => (axis === 'x' ? lines(b.x0, b.x1) : lines(b.y0, b.y1));

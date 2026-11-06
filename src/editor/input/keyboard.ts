@@ -11,7 +11,7 @@ import { togglePanel } from '../ui/layout';
 import { isShortcutsOpen, openShortcuts } from '../ui/shortcuts';
 import { setSpaceDown } from './pointer';
 import { measureCtx, stopMeasure } from '../measure';
-import { bboxMM, stepToLines, unionBox } from '../geometry';
+import { bboxMM, gridStep, stepToLines, unionBox } from '../geometry';
 import { altChangedDuringDrag, refreshMeasure } from './pointer';
 
 /**
@@ -82,11 +82,12 @@ export function initKeyboard() {
       nudge = { l: key, t: now };
       const d = e.shiftKey ? 10 : 1;
       let dx = e.key === 'ArrowLeft' ? -d : e.key === 'ArrowRight' ? d : 0, dy = e.key === 'ArrowUp' ? -d : e.key === 'ArrowDown' ? d : 0;
-      // el paso se para en los bordes y centros (del póster y de las demás) que cruzaría: así se alinea con exactitud
+      // el paso acaba en un mm entero (la esquina de lo seleccionado, en la rejilla de 1 mm) y se para antes en los
+      // bordes y centros (del póster y de las demás) que cruzaría: así se alinea con exactitud
       const mv = selected().filter((l) => !l.locked);
       if (mv.length) {
         const c = measureCtx(mv), b = unionBox(mv.map((l) => bboxMM(l)));
-        dx = stepToLines(b, c.targets, 'x', dx); dy = stepToLines(b, c.targets, 'y', dy);
+        dx = stepToLines(b, c.targets, 'x', gridStep(b.x0, dx)); dy = stepToLines(b, c.targets, 'y', gridStep(b.y0, dy));
       }
       shiftSelected(dx, dy);
       afterChange();

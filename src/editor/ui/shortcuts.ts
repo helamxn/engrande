@@ -33,7 +33,7 @@ const GROUPS: Group[] = [
     ['Mantener pulsada otra', 'Táctil: «Agregar a la selección»'],
   ]],
   ['Imagen seleccionada', [
-    ['Flechas', 'Mover 1 mm (con Shift, 10 mm); se para en bordes y centros'],
+    ['Flechas', 'Mover 1 mm (con Shift, 10 mm) hasta mm enteros; se para en bordes y centros'],
     [`${ALT} + flechas`, 'Mover midiendo las distancias'],
     [`${MOD}C · ${MOD}X · ${MOD}D`, 'Copiar · cortar · duplicar'],
     [`${MOD}] · ${MOD}[`, 'Adelante · atrás (con Shift: al frente / al fondo)'],
@@ -49,7 +49,7 @@ const GROUPS: Group[] = [
     [`${ALT} + tirador`, 'Escalar o recortar desde el centro'],
     ['Shift + girar', 'Girar de 15° en 15°'],
     ['Shift + arrastrar', 'Mover solo en horizontal o vertical'],
-    [`${isMac ? '⌘' : 'Ctrl'} + arrastrar`, 'Sin imán: no se pega a bordes, centros ni separaciones iguales'],
+    [`${isMac ? '⌘' : 'Ctrl'} + arrastrar`, 'Sin imán: no se pega a bordes, centros, separaciones iguales ni a mm enteros'],
     [`${ALT} + pasar el ratón`, 'Medir: distancias de lo seleccionado a otra imagen o al póster'],
     [`${ALT} al mover o escalar`, 'Medir en vivo (al duplicar, contra la original; al escalar, desde el centro)'],
     [`${ALT} + arrastrar`, 'Arrastrar una copia'],

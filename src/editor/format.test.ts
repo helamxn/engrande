@@ -15,17 +15,20 @@ describe('formato de números (coma decimal)', () => {
 });
 
 describe('distancias medidas', () => {
+  it('en mm enteros, un decimal como el resto de la app', () => {
+    expect(cmGap(20)).toBe('2,0');
+    expect(cmGap(13)).toBe('1,3');
+    expect(cmGap(386)).toBe('38,6');
+    expect(cmGap(9.98)).toBe('1,0'); // a menos de 0,05 mm: es el mismo mm
+  });
+  it('fuera de un mm entero, dos decimales: avisa de que no es redonda', () => {
+    expect(cmGap(10.8)).toBe('1,08');
+    expect(cmGap(13.9)).toBe('1,39');
+    expect(cmGap(20.5)).toBe('2,05'); // no «2,1»: medio mm se ve
+    expect(cmGap(386.4)).toBe('38,64');
+  });
   it('un hueco pequeño nunca dice 0,0', () => {
     expect(cmGap(0.3)).toBe('0,03');
     expect(cmGap(3.5)).toBe('0,35');
-  });
-  it('la misma precisión a cualquier tamaño: cada mm se ve (1,08 → 0,98)', () => {
-    expect(cmGap(10.8)).toBe('1,08');
-    expect(cmGap(9.8)).toBe('0,98');
-    expect(cmGap(386.4)).toBe('38,64');
-  });
-  it('sin ceros de más, pero con al menos un decimal', () => {
-    expect(cmGap(20)).toBe('2,0');
-    expect(cmGap(386)).toBe('38,6');
   });
 });

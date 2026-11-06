@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   alignShifts, alignedLines, applyCropDrag, equalSpacing, guideSegments, measureBetween, nearestBox, gridLevels, snapBox, snapEdges, snapSize, snapTargets, applyFit, boxInside, distributeShifts, unionBox, applyScale, bboxMM, conformCrop, cropCenter, cropPtsMM, fitLayer, geo, hasCutMarks, inside,
   displaySide, flipOnScreen, isStretched, localToMM, markLen, mmToLocal, newLayoutMemory, normDeg, panInFrame, pppOf, relayout,
-  rotateLayer, solvePointer, srcDims, startScale, stepToLines, type RelayoutMode,
+  rotateLayer, solvePointer, srcDims, startScale, stepToLines, gridStep, onGrid, toGrid, type RelayoutMode,
   unstretch, visH, visW, zoomInFrame,
 } from './geometry';
 import type { Fit, LayerGeom, Settings, Source } from './types';
@@ -614,5 +614,28 @@ describe('flechas que paran en las líneas (stepToLines)', () => {
   it('sin líneas por el camino, el paso entero', () => {
     expect(stepToLines({ x0: 20, y0: 10, x1: 60, y1: 50 }, t, 'x', 1)).toBe(1);
     expect(stepToLines({ x0: 20, y0: 10, x1: 60, y1: 50 }, t, 'y', 0)).toBe(0);
+  });
+});
+
+describe('rejilla de 1 mm', () => {
+  it('lleva al mm entero más cercano', () => {
+    expect(onGrid(13.833)).toBe(14);
+    expect(toGrid(13.3)).toBeCloseTo(-0.3, 9);
+  });
+  it('fuera de la rejilla, la flecha llega primero al mm entero siguiente (el hueco 1,38 pasa a 1,3, no a 1,28)', () => {
+    expect(gridStep(13.833, -1)).toBeCloseTo(-0.833, 9);
+    expect(gridStep(13.833, 1)).toBeCloseTo(0.167, 9);
+  });
+  it('en la rejilla, avanza el paso entero', () => {
+    expect(gridStep(13, -1)).toBe(-1);
+    expect(gridStep(13, 10)).toBe(10);
+  });
+  it('con Shift (10 mm) también acaba en un mm entero', () => {
+    expect(13.833 + gridStep(13.833, 10)).toBeCloseTo(23, 9);
+    expect(13.833 + gridStep(13.833, -10)).toBeCloseTo(4, 9);
+  });
+  it('un error de coma flotante no cuenta como estar fuera de la rejilla', () => {
+    expect(13.0000000001 + gridStep(13.0000000001, 1)).toBeCloseTo(14, 9);
+    expect(12.9999999999 + gridStep(12.9999999999, 1)).toBeCloseTo(14, 9);
   });
 });

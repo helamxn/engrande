@@ -5,7 +5,7 @@ import {
 } from '../actions';
 import {
   applyCropDrag, applyScale, bboxMM, boxInside, cropCenter, equalSpacing, inside, insideImage, measureBetween,
-  mmToLocal, nearestBox, normDeg, panInFrame, rotateLayer, scaleLayer, snapBox, snapEdges, snapSize, solvePointer,
+  mmToLocal, nearestBox, normDeg, onGrid, panInFrame, toGrid, rotateLayer, scaleLayer, snapBox, snapEdges, snapSize, solvePointer,
   startScale, unionBox, zoomInFrame, type Box, type Gap, type SnapTargets,
 } from '../geometry';
 import { unitAt } from '../groups';
@@ -195,6 +195,15 @@ function edgeHelpers(e: PointerEvent, l: Layer, m: Pt, apply: (m: Pt) => void, s
     return { axis, d: e.d, first: e.d, q: (c) => c[k], goal: e.g, g: e.g, box: null };
   };
   const snaps = [pick('x'), pick('y')].filter((x): x is Snap => !!x).sort((p, q) => Math.abs(p.d) - Math.abs(q.d));
+  // rejilla de 1 mm: en el eje que no se pegó a nada, el borde que se arrastra cae en un mm entero (primero el ancho;
+  // desde una esquina sin deformar el alto sigue la proporción y puede quedar en décimas)
+  for (const axis of ['x', 'y'] as const) {
+    if (snaps.some((x) => x.axis === axis)) continue;
+    const lo = axis === 'x' ? 'x0' : 'y0', hi = axis === 'x' ? 'x1' : 'y1', k = mv[hi] ? hi : mv[lo] ? lo : null;
+    if (!k || Math.abs(toGrid(b[k])) < 1e-9) continue;
+    const goal = onGrid(b[k]);
+    snaps.push({ axis, d: goal - b[k], first: goal - b[k], q: (c) => c[k], goal, g: null, box: null });
+  }
   if (!snaps.length) return;
   // se fija primero el ajuste más corto; el otro solo si no lo deshace (desde una esquina sin deformar, ancho y alto
   // van juntos y solo se puede cumplir uno, como en Figma)
@@ -462,6 +471,9 @@ export function initPointer(cv: HTMLCanvasElement) {
           const useEy = !!ey && (s.gy === null || Math.abs(ey.d) < Math.abs(s.dy));
           if (!lockX) dx += useEx ? ex!.d : s.dx;
           if (!lockY) dy += useEy ? ey!.d : s.dy;
+          // rejilla de 1 mm en el eje que no se pegó a nada: la esquina de lo que se mueve, en mm enteros
+          if (!lockX && !useEx && s.gx === null) dx += toGrid(b0.x0 + dx);
+          if (!lockY && !useEy && s.gy === null) dy += toGrid(b0.y0 + dy);
           setGuides(at(dx, dy), c, lockX || useEx ? null : s.gx, lockY || useEy ? null : s.gy);
           const eq = [...(useEx ? ex!.gaps : []), ...(useEy ? ey!.gaps : [])];
           if (eq.length) st.gaps = eq;
@@ -494,6 +506,11 @@ export function initPointer(cv: HTMLCanvasElement) {
           tryAxis(drag.corner.y, P.y, edgeCtx.ctx.targets.y, 'y');
           const b = best as { f: number; gx: number | null; gy: number | null } | null;
           if (b) { f = b.f; gsnap = { gx: b.gx, gy: b.gy }; }
+          else {
+            // rejilla de 1 mm: la esquina que se arrastra cae en un mm entero (en x; el alto sigue la proporción)
+            const c0 = drag.corner.x;
+            if (Math.abs(c0 - P.x) > 1e-9) { const ft = (onGrid(P.x + (c0 - P.x) * f) - P.x) / (c0 - P.x); if (ft > 0.05) f = ft; }
+          }
         }
         for (const it of drag.items) { restoreGeom(it.l, it.g); scaleLayer(it.l, f, P); markManual(it.l); }
         if (edgeCtx && gsnap) setGuides(unionBox(drag.items.map((it) => bboxMM(it.l))), edgeCtx.ctx, gsnap.gx, gsnap.gy);
