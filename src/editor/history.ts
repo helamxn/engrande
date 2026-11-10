@@ -74,6 +74,16 @@ export function pushUndo(s: Snapshot) {
   hooks.changed();
 }
 export const snap = () => pushUndo(takeSnap());
+/**
+ * Vacía el historial. Al terminar de recuperar el póster guardado: un paso tomado mientras se recuperaba no conoce
+ * las imágenes que llegaron después, y deshacerlo las quitaría todas.
+ */
+export function clearHistory() {
+  const dropped = [...undoStack.splice(0), ...redoStack.splice(0)];
+  pending = null;
+  releaseUnused(dropped, liveRefs());
+  sync();
+}
 
 export const setPending = (s: Snapshot | null) => { pending = s; };
 export function commitPending() { if (pending) { pushUndo(pending); pending = null; } }

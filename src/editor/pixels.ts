@@ -78,6 +78,21 @@ export function autoBackgroundParams(d: Uint8ClampedArray, w: number, h: number,
   return { ref, seeds };
 }
 
+/**
+ * Máscara de lo retocado a mano (borrador, varita, quitar fondo): en cada píxel, alfa del lienzo editado ÷ alfa del
+ * original (0..255, en el canal alfa; el color no cuenta). Al exportar se multiplica por la imagen en alta
+ * resolución, que ya trae su propia transparencia: si se usara el alfa del lienzo editado tal cual, una sombra al
+ * 50 % quedaría al 25 % (su transparencia, aplicada dos veces). Donde el original es transparente no hay nada que quitar.
+ */
+export function editMaskData(img: Uint8ClampedArray, orig: Uint8ClampedArray) {
+  const m = new Uint8ClampedArray(img.length);
+  for (let o = 3; o < img.length; o += 4) {
+    const a = orig[o]!;
+    m[o] = a ? Math.min(255, Math.round((img[o]! * 255) / a)) : 255;
+  }
+  return m;
+}
+
 /** Ejecuta una tarea sobre los datos (en el worker o, de respaldo, en la página). Modifica d. */
 export function runPixelJob(d: Uint8ClampedArray, w: number, h: number, job: PixelJob): PixelResult {
   if (job.kind === 'wand') return { removed: removeColorData(d, w, h, job.seeds, job.ref, job.tol, job.contig) };

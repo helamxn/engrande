@@ -1,10 +1,10 @@
 /** Arranque del editor: conecta módulos y eventos, y restaura el póster guardado (si no hay, pantalla de inicio). */
 import { afterHistory, cancelCrop, newPoster, pasteLayer, select } from './actions';
 import { $, toast } from './dom';
-import { hasUnexported, redo, setHistoryHooks, undo } from './history';
+import { clearHistory, hasUnexported, redo, setHistoryHooks, undo } from './history';
 import { exportMarginTest, exportSingle, exportTiles } from './io/export';
 import { handlePaste, initLoad } from './io/load';
-import { flushSave, initPersistence, isWorkSafe, restoreProject, scheduleSave } from './io/persist';
+import { flushSave, initPersistence, isOtherTabOpen, isWorkSafe, restoreProject, scheduleSave } from './io/persist';
 import { initKeyboard } from './input/keyboard';
 import { initPointer } from './input/pointer';
 import { dockMQ, isMac, MOD } from './platform';
@@ -86,11 +86,14 @@ export function startEditor() {
     // se restaura sin preguntar: solo hay una versión del trabajo, no hay nada que elegir
     const restored = await restoreProject().catch((err) => { console.error(err); return null; });
     if (restored && st.layers.length) {
+      // si se tocó algo mientras se recuperaba, esos pasos de deshacer son de antes de que llegaran las imágenes
+      clearHistory();
       syncExportUI();
       layoutRestored();
       select(null);
       renderList();
       if (restored.failed.length) toast(`No se pudo recuperar: ${restored.failed.join(', ')}.`, 8000);
+      else if (await isOtherTabOpen()) toast('Pliego está abierto en otra pestaña. Se guarda lo último que cambies en cualquiera de las dos.', 9000);
       else toast('Se recuperó tu póster.', 6000, { label: 'Empezar de nuevo', fn: newPoster });
     }
     resize(stage, cv);

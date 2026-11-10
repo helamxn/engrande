@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { autoBackgroundParams, removeColorData, runPixelJob } from './pixels';
+import { autoBackgroundParams, editMaskData, removeColorData, runPixelJob } from './pixels';
 
 /** Imagen w×h de un color, con un cuadrado de otro color en (x0..x1, y0..y1). */
 function img(w: number, h: number, bg: [number, number, number], fg?: { c: [number, number, number]; x0: number; y0: number; x1: number; y1: number }) {
@@ -60,5 +60,21 @@ describe('autoBackgroundParams y runPixelJob', () => {
     expect(r.removed).toBe(100);
     expect(alpha(d, w, 5, 5)).toBe(0);
     expect(alpha(d, w, 15, 5)).toBe(255);
+  });
+});
+
+describe('editMaskData: lo retocado a mano, sin la transparencia que la imagen ya tenía', () => {
+  /** Un píxel por valor de alfa (el color no cuenta). */
+  const alphas = (...a: number[]) => { const d = new Uint8ClampedArray(a.length * 4); a.forEach((v, i) => { d[i * 4 + 3] = v; }); return d; };
+  const mask = (img: number[], orig: number[]) => [...editMaskData(alphas(...img), alphas(...orig))].filter((_, i) => i % 4 === 3);
+
+  it('sin retocar, la máscara es opaca: una sombra al 50 % sigue al 50 % (no al 25 %)', () => {
+    expect(mask([128, 255, 10], [128, 255, 10])).toEqual([255, 255, 255]);
+  });
+  it('lo borrado del todo queda en 0 y lo borrado a medias, en su proporción', () => {
+    expect(mask([0, 64, 128], [128, 128, 255])).toEqual([0, 128, 128]);
+  });
+  it('donde el original es transparente no hay nada que quitar, y nunca pasa de opaco', () => {
+    expect(mask([0, 200], [0, 100])).toEqual([255, 255]);
   });
 });

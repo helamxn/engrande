@@ -79,6 +79,11 @@ const toPng = (c: HTMLCanvasElement) =>
 let available = typeof indexedDB !== 'undefined';
 let timer: ReturnType<typeof setTimeout> | undefined;
 let pending = false, saving = false, again = false, failed = false, warned = false, persistAsked = false;
+/**
+ * Se está recuperando el póster guardado. Mientras dura no se guarda: st.layers aún está a medias (o vacío) y un
+ * guardado borraría de la base de datos los archivos que todavía no se han leído. Lo pendiente se guarda al terminar.
+ */
+let restoring = false;
 
 /** El trabajo está a salvo en el navegador (no hace falta avisar al cerrar). */
 export const isWorkSafe = () => available && !pending && !saving && !failed;
@@ -93,7 +98,7 @@ export function scheduleSave() {
 /** Guarda ya (al ocultar la pestaña o antes de cerrarla). */
 export async function flushSave() {
   clearTimeout(timer);
-  if (!available || !pending) return;
+  if (!available || !pending || restoring) return;
   if (saving) { again = true; return; }
   saving = true; pending = false;
   try {
@@ -120,9 +125,15 @@ async function save() {
   // póster vacío: no se guarda nada y al volver aparece la pantalla de inicio
   if (!st.layers.length) { await clearSaved(); return; }
 
+  // 0. lo que hay de verdad en la base de datos: otra pestaña con Pliego abierta pudo borrar archivos que esta daba
+  //    por guardados (cada una borra lo que su póster no usa), y entonces hay que volver a escribirlos
+  stored = new Set((await req(d.transaction('blobs', 'readonly').objectStore('blobs').getAllKeys())).map(String));
+
   // 1. preparar lo que hay que escribir (fuera de la transacción: codificar PNG es asíncrono)
   const writes = new Map<string, Blob>();
   const used = new Set<string>();
+  /** Archivos originales en memoria, por clave: si alguno desaparece entre el paso 0 y la escritura, se repone. */
+  const sources = new Map<string, Blob>();
   const layers: SavedLayer[] = [];
   for (const l of st.layers) {
     let src: SavedSource | null = null;
@@ -130,6 +141,7 @@ async function save() {
       let key = blobKeys.get(l.src.blob);
       if (!key) { key = 'src-' + uid(); blobKeys.set(l.src.blob, key); }
       if (!stored.has(key)) writes.set(key, l.src.blob);
+      sources.set(key, l.src.blob);
       used.add(key);
       src = { kind: l.src.kind, key };
     } else continue; // sin archivo de origen no se puede reconstruir
@@ -162,9 +174,20 @@ async function save() {
   t.objectStore('project').put(project, 'current');
   for (const [k, b] of writes) blobs.put(b, k);
   const keys = blobs.getAllKeys();
-  keys.onsuccess = () => { for (const k of keys.result) if (!used.has(String(k))) blobs.delete(k); };
+  /** Falta un lienzo editado que se daba por guardado: no se puede codificar dentro de la transacción. */
+  let lost = false;
+  keys.onsuccess = () => {
+    const have = new Set(keys.result.map(String));
+    for (const k of have) if (!used.has(k)) blobs.delete(k);
+    for (const k of used) {
+      if (have.has(k)) continue;
+      const b = sources.get(k);
+      if (b) blobs.put(b, k); else lost = true;
+    }
+  };
   await done(t);
   stored = used;
+  if (lost) scheduleSave(); // el siguiente guardado ve que falta (paso 0) y lo vuelve a codificar
 
   showInfo();
   askPersistence();
@@ -197,6 +220,13 @@ function askPersistence() {
  * o null si no había nada guardado.
  */
 export async function restoreProject(): Promise<{ failed: string[] } | null> {
+  restoring = true;
+  try { return await readProject(); } finally {
+    restoring = false;
+    if (pending) scheduleSave(); // lo que se cambió mientras tanto se guarda ahora, con el póster ya completo
+  }
+}
+async function readProject(): Promise<{ failed: string[] } | null> {
   let d: IDBDatabase;
   try { d = await db(); } catch (err) { console.warn('Guardado no disponible', err); available = false; showInfo(); return null; }
   const t = d.transaction(['project', 'blobs'], 'readonly');
@@ -305,6 +335,7 @@ function showInfo() {
     el.textContent = 'Tu póster no se está guardando en este navegador. Descarga el PDF para no perderlo.';
     return;
   }
+  if (otherTab) { el.textContent = 'Pliego está abierto en otra pestaña. Solo se guarda un póster: el de la última pestaña en la que cambies algo.'; return; }
   if (!stored.size) { el.textContent = 'Tu póster se guarda automáticamente en este navegador.'; return; }
   el.textContent = 'Guardado en este navegador.';
   void navigator.storage?.estimate?.().then(({ usage }) => {
@@ -312,7 +343,39 @@ function showInfo() {
   }).catch(() => {});
 }
 
+/* ---------- otra pestaña ---------- */
+/**
+ * Solo hay un póster guardado por navegador. Con Pliego abierto en dos pestañas, cada una guarda el suyo encima del
+ * de la otra: no se pierde nada a medias (ver el paso 0 de save), pero queda el de la última que cambió algo, y hay
+ * que avisarlo. Las pestañas se saludan por un BroadcastChannel: la que llega dice «hola», las que están contestan
+ * «aquí» y la que se va dice «adiós». Una pestaña cerrada o recargada no contesta, así que nunca cuenta de más.
+ */
+let otherTab = false;
+let tabsKnown: Promise<void> = Promise.resolve();
+function watchTabs() {
+  if (typeof BroadcastChannel === 'undefined') return;
+  const id = uid(), others = new Set<string>(), ch = new BroadcastChannel('pliego');
+  const sync = () => { const on = others.size > 0; if (on !== otherTab) { otherTab = on; showInfo(); } };
+  ch.onmessage = (e) => {
+    const m = e.data as { t?: unknown; id?: unknown } | null;
+    if (!m || typeof m.id !== 'string' || m.id === id) return;
+    if (m.t === 'adios') others.delete(m.id);
+    else { others.add(m.id); if (m.t === 'hola') ch.postMessage({ t: 'aqui', id }); }
+    sync();
+  };
+  const hello = () => ch.postMessage({ t: 'hola', id });
+  hello();
+  addEventListener('pagehide', () => ch.postMessage({ t: 'adios', id }));
+  // al volver con el botón «atrás» (la página se conservó): se vuelve a preguntar quién hay
+  addEventListener('pageshow', (e) => { if (e.persisted) { others.clear(); sync(); hello(); } });
+  // las respuestas llegan enseguida; pasado este plazo se da por sabido (si alguna llega después, también cuenta)
+  tabsKnown = new Promise((known) => setTimeout(known, 300));
+}
+/** Hay otra pestaña con Pliego abierta (se sabe 0,3 s después de arrancar). */
+export const isOtherTabOpen = async () => { await tabsKnown; return otherTab; };
+
 export function initPersistence() {
+  watchTabs();
   // al ocultar la pestaña (cambiar de app en el móvil, cerrar) se guarda sin esperar
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') void flushSave(); });
   addEventListener('pagehide', () => void flushSave());

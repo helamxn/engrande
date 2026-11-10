@@ -4,6 +4,7 @@ import { $, freeCanvas, tick, toast } from '../dom';
 import { cm } from '../format';
 import { hasCutMarks, markLen, sheetNo, srcDims } from '../geometry';
 import { markExported } from '../history';
+import { editMaskData } from '../pixels';
 import { HI_AREA, SINGLE_AREA } from '../platform';
 import { drawAll } from '../render';
 import { syncExportButtons } from '../ui/panel';
@@ -52,9 +53,23 @@ function renderRegion(x0: number, y0: number, wmm: number, hmm: number, dpi: num
 const jpg = (c: HTMLCanvasElement) => { const d = c.toDataURL('image/jpeg', 0.92); freeCanvas(c); return d; };
 
 /**
+ * Lo que se retocó a mano en el lienzo de trabajo, como máscara (ver editMaskData): solo lo borrado, sin la
+ * transparencia que la imagen ya tenía. Si los lienzos no coinciden (no debería pasar), se usa el editado tal cual.
+ */
+function editMask(img: HTMLCanvasElement, orig: HTMLCanvasElement): HTMLCanvasElement {
+  const w = img.width, h = img.height;
+  if (orig.width !== w || orig.height !== h) return img;
+  const data = (c: HTMLCanvasElement) => c.getContext('2d', { willReadFrequently: true })!.getImageData(0, 0, w, h).data;
+  const m = document.createElement('canvas');
+  m.width = w; m.height = h;
+  m.getContext('2d')!.putImageData(new ImageData(editMaskData(data(img), data(orig)), w, h), 0, 0);
+  return m;
+}
+
+/**
  * Prepara, solo para exportar, una versión de cada imagen a la resolución que pide el PDF (sin pasar del
  * original ni de HI_AREA). Las ediciones de píxeles solo cambian la transparencia, así que se reaplican
- * escalando el canal alfa del lienzo de trabajo sobre la imagen grande.
+ * escalando sobre la imagen grande la máscara de lo que se borró.
  */
 async function hiSources(dpi: number): Promise<HiMap> {
   const need = new Map<HTMLCanvasElement, { l: (typeof st.layers)[number]; w: number }>();
@@ -79,7 +94,11 @@ async function hiSources(dpi: number): Promise<HiMap> {
       x.drawImage(base, 0, 0, tw, th);
       if (base instanceof HTMLCanvasElement) freeCanvas(base); // la página del PDF a alta resolución ya no hace falta
       if (url) URL.revokeObjectURL(url);
-      if (img !== l.orig) { x.globalCompositeOperation = 'destination-in'; x.drawImage(img, 0, 0, tw, th); }
+      if (img !== l.orig) {
+        const mask = editMask(img, l.orig);
+        x.globalCompositeOperation = 'destination-in'; x.drawImage(mask, 0, 0, tw, th);
+        if (mask !== img) freeCanvas(mask);
+      }
       out.set(img, c);
     } catch (err) { console.warn('Sin alta resolución para', l.name, err); }
   }
