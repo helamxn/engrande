@@ -1,4 +1,4 @@
-# Pliego
+# engrande
 
 Convierte una imagen o un PDF en un póster grande impreso en varias hojas (A4, A3 o Carta), con marcas de corte, franjas de solape para pegar y una página de guía de armado.
 
@@ -31,7 +31,7 @@ Todo ocurre en el navegador: no hay servidor, cuentas ni base de datos, y las im
 | `pnpm test`     | Tests unitarios                                                 |
 | `pnpm test:e2e` | Build y tests de punta a punta                                  |
 | `pnpm check`    | Comprobación de tipos                                           |
-| `pnpm og`       | Regenera la imagen para compartir y el icono de iOS (`public/`) |
+| `pnpm og`       | Regenera la imagen para compartir y los iconos de marca (`public/`) |
 
 La CSP solo se aplica en el build: pruébala con `pnpm build && pnpm preview`, no con `pnpm dev`.
 

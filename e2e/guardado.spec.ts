@@ -78,7 +78,7 @@ test('con dos pestañas se avisa y ninguna deja el guardado a medias', async ({ 
   await expectSavedNames(page, ['a']);
   const b = await context.newPage();
   await b.goto('/');
-  await expect(b.locator('#toast')).toContainText('abierto en otra pestaña');
+  await expect(b.locator('#toast')).toContainText('engrande está abierto en otra pestaña');
   await expect(b.locator('#saveInfo')).toContainText('otra pestaña');
   await addImage(b, { name: 'b', color: '#cc3333' });
   await expectSavedNames(b, ['a', 'b']);

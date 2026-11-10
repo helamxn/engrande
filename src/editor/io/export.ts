@@ -1,4 +1,5 @@
 /** Exportación a PDF: por hojas (con guía de armado, marcas y solapes) o en una sola hoja grande. */
+import { BRAND } from '../../brand';
 import type { jsPDF as JsPDF } from 'jspdf';
 import { $, freeCanvas, tick, toast } from '../dom';
 import { cm } from '../format';
@@ -258,7 +259,7 @@ export async function exportTiles() {
       if (r === 0 && c === 0) sheetRuler(pdf, g);
     }
     progress('Generando archivo…'); await tick();
-    saveFile(pdf.output('blob'), `pliego-${S.cols}x${S.rows}-${S.paper}.pdf`);
+    saveFile(pdf.output('blob'), `${BRAND.name}-${S.cols}x${S.rows}-${S.paper}.pdf`);
   } catch (err) {
     console.error(err);
     setStatus('Algo falló al crear el PDF. Prueba con menos calidad.');
@@ -280,7 +281,7 @@ export async function exportSingle() {
     progress('Generando archivo…'); await tick();
     // si el tamaño del póster obligó a bajar la calidad, se avisa en vez de hacerlo en silencio
     const note = dpi < S.dpi - 0.5 ? ` · calidad limitada a ${Math.floor(dpi)} ppp por el tamaño del póster (la imprenta puede preferir el PDF por hojas)` : '';
-    saveFile(pdf.output('blob'), `pliego-${Math.round(g.W / 10)}x${Math.round(g.H / 10)}cm.pdf`, note);
+    saveFile(pdf.output('blob'), `${BRAND.name}-${Math.round(g.W / 10)}x${Math.round(g.H / 10)}cm.pdf`, note);
   } catch (err) {
     console.error(err);
     setStatus('Algo falló al crear el PDF.');
@@ -325,7 +326,7 @@ export async function exportMarginTest() {
       `1. Imprime esta hoja en papel ${S.paper}. En Escala deja «Predeterminado» o ${nb('«Ajustar al tamaño del papel»')}, no ${nb('«Ajustar al área de impresión»')}.`,
       '2. Mide la regla de abajo: debe medir exactamente 10 cm.',
       '3. En cada uno de los cuatro bordes, busca la primera raya que se imprimió completa y anota su número.',
-      '4. En Pliego, pon el número más alto de los cuatro como «Margen sin imprimir» (pestaña Hojas).',
+      `4. En ${BRAND.name}, pon el número más alto de los cuatro como «Margen sin imprimir» (pestaña Hojas).`,
     ]) {
       const lines = pdf.splitTextToSize(t, w) as string[];
       pdf.text(lines, cx, y);
@@ -333,7 +334,7 @@ export async function exportMarginTest() {
     }
     ruler(pdf, pw / 2 - 50, y + 8, true);
     progress('Generando archivo…'); await tick();
-    saveFile(pdf.output('blob'), `pliego-prueba-margenes-${S.paper}-${S.orient === 'portrait' ? 'vertical' : 'horizontal'}.pdf`, '', false);
+    saveFile(pdf.output('blob'), `${BRAND.name}-prueba-margenes-${S.paper}-${S.orient === 'portrait' ? 'vertical' : 'horizontal'}.pdf`, '', false);
   } catch (err) {
     console.error(err);
     setStatus('No se pudo crear la hoja de prueba.');

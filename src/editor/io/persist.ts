@@ -6,6 +6,7 @@
  * Al abrir la app se restaura sin preguntar, como Excalidraw o tldraw.
  */
 import type { PDFDocumentProxy } from 'pdfjs-dist';
+import { BRAND } from '../../brand';
 import { makeCanvas, newLayer } from '../actions';
 import { toast } from '../dom';
 import { S, st } from '../state';
@@ -14,6 +15,7 @@ import { loadImg } from './load';
 import { openPdf, renderPdfPage } from './pdf';
 import type { Crop, Fit, Layer, LayoutSettings } from '../types';
 
+// Identificador histórico: cambiarlo dejaría de recuperar los pósters de versiones anteriores.
 const DB_NAME = 'pliego';
 const SCHEMA = 1;
 const SAVE_DELAY = 1200;
@@ -335,7 +337,7 @@ function showInfo() {
     el.textContent = 'Tu póster no se está guardando en este navegador. Descarga el PDF para no perderlo.';
     return;
   }
-  if (otherTab) { el.textContent = 'Pliego está abierto en otra pestaña. Solo se guarda un póster: el de la última pestaña en la que cambies algo.'; return; }
+  if (otherTab) { el.textContent = `${BRAND.name} está abierto en otra pestaña. Solo se guarda un póster: el de la última pestaña en la que cambies algo.`; return; }
   if (!stored.size) { el.textContent = 'Tu póster se guarda automáticamente en este navegador.'; return; }
   el.textContent = 'Guardado en este navegador.';
   void navigator.storage?.estimate?.().then(({ usage }) => {
@@ -354,6 +356,7 @@ let otherTab = false;
 let tabsKnown: Promise<void> = Promise.resolve();
 function watchTabs() {
   if (typeof BroadcastChannel === 'undefined') return;
+  // Mismo canal que las pestañas abiertas antes del cambio de marca.
   const id = uid(), others = new Set<string>(), ch = new BroadcastChannel('pliego');
   const sync = () => { const on = others.size > 0; if (on !== otherTab) { otherTab = on; showInfo(); } };
   ch.onmessage = (e) => {

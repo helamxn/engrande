@@ -1,26 +1,27 @@
 ---
 import '../styles/global.css';
+import { BRAND } from '../brand';
 
 interface Props {
   title?: string;
   description?: string;
 }
 const {
-  title = 'Pliego · Pósters grandes impresos por hojas',
-  description = 'Convierte cualquier imagen o PDF en un póster grande impreso en varias hojas A4, A3 o Carta, con marcas de corte y solape para pegar.',
+  title = BRAND.title,
+  description = BRAND.description,
 } = Astro.props;
 
 // URLs absolutas (las piden las redes al compartir): `site` en astro.config.mjs
 const url = new URL(Astro.url.pathname, Astro.site).href;
 // ?v=: las redes guardan la imagen días; al regenerarla con `pnpm og`, se sube el número para que tomen la nueva
-const image = new URL('/og.png?v=2', Astro.site).href;
-const imageAlt = 'Lienzo de Pliego: un póster de 3 × 2 hojas A4 con el logo seleccionado y las franjas de solape';
+const image = new URL(BRAND.image, Astro.site).href;
+const imageAlt = BRAND.imageAlt;
 
 // datos estructurados para buscadores: una app web gratuita (es un bloque de datos: la CSP no lo ejecuta)
 const app = {
   '@context': 'https://schema.org',
   '@type': 'WebApplication',
-  name: 'Pliego',
+  name: BRAND.name,
   url,
   description,
   image,
@@ -34,23 +35,24 @@ const app = {
 ---
 
 <!doctype html>
-<html lang="es">
+<html lang="es" data-theme="dark">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="description" content={description} />
-    <meta name="color-scheme" content="light dark" />
-    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#eceff3" />
-    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0f1418" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content={BRAND.themeColor} />
     <link rel="canonical" href={url} />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/x-icon" href="/favicon.ico" sizes="16x16 32x32 48x48" />
+    <link rel="icon" type="image/png" href="/favicon-96.png" sizes="96x96" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" sizes="any" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta name="generator" content={Astro.generator} />
     <title>{title}</title>
 
     <!-- vista previa al compartir (WhatsApp, Facebook, LinkedIn, Slack…) e imagen generada con `pnpm og` -->
     <meta property="og:type" content="website" />
-    <meta property="og:site_name" content="Pliego" />
+    <meta property="og:site_name" content={BRAND.name} />
     <meta property="og:locale" content="es_LA" />
     <meta property="og:url" content={url} />
     <meta property="og:title" content={title} />
