@@ -1,4 +1,5 @@
 /** Arranque del editor: conecta módulos y eventos, y restaura el póster guardado (si no hay, pantalla de inicio). */
+import { BRAND } from '../brand';
 import { afterHistory, cancelCrop, newPoster, pasteLayer, select } from './actions';
 import { $, toast } from './dom';
 import { clearHistory, hasUnexported, redo, setHistoryHooks, undo } from './history';
@@ -13,7 +14,7 @@ import { initRender, readColors } from './render';
 import { st, V } from './state';
 import { initContextBar } from './ui/contextbar';
 import { initLayout } from './ui/layout';
-import { initMenu } from './ui/menu';
+import { initMenu, pasteAny } from './ui/menu';
 import { initShortcuts } from './ui/shortcuts';
 import { initPanel, layoutRestored, renderList, syncExportUI, syncSel, updateHint } from './ui/panel';
 import { fitView, resize, zoomCenter } from './view';
@@ -57,6 +58,8 @@ export function startEditor() {
   $('#quickExport').addEventListener('click', () => void exportTiles());
   $('#marginTest').addEventListener('click', () => void exportMarginTest());
   $('#newPoster').addEventListener('click', newPoster);
+  // bienvenida: «Pegar una imagen» hace lo mismo que Pegar del menú (portapapeles del sistema o la copia interna)
+  $('#welcomePaste').addEventListener('click', () => void pasteAny());
   document.addEventListener('paste', (e) => handlePaste(e, pasteLayer));
 
   // tema: el canvas necesita releer los colores al cambiar entre claro y oscuro
@@ -93,7 +96,7 @@ export function startEditor() {
       select(null);
       renderList();
       if (restored.failed.length) toast(`No se pudo recuperar: ${restored.failed.join(', ')}.`, 8000);
-      else if (await isOtherTabOpen()) toast('Pliego está abierto en otra pestaña. Se guarda lo último que cambies en cualquiera de las dos.', 9000);
+      else if (await isOtherTabOpen()) toast(`${BRAND.name} está abierto en otra pestaña. Se guarda lo último que cambies en cualquiera de las dos.`, 9000);
       else toast('Se recuperó tu póster.', 6000, { label: 'Empezar de nuevo', fn: newPoster });
     }
     resize(stage, cv);

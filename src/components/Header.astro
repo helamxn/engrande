@@ -1,33 +1,28 @@
 ---
 import Icon from './Icon.astro';
+import { BRAND } from '../brand';
 /**
- * Cabecera: marca, agregar imagen y descarga rápida del PDF por hojas. Flota sobre el lienzo: en móvil ocupa el
- * ancho de arriba (solo iconos en pantallas estrechas); en escritorio, arriba a la izquierda.
+ * Cabecera: póster nuevo, agregar imagen y descarga rápida del PDF por hojas. Flota sobre el lienzo, arriba a la
+ * izquierda (en pantallas estrechas, solo iconos). La marca no se queda aquí ocupando sitio: se presenta en la
+ * bienvenida, con el póster vacío (Workspace.astro); el título queda para lectores de pantalla.
  */
 ---
 
 <header
-  class="island fixed top-2 right-2 left-2 z-20 flex items-center gap-2 py-1.5 pr-1.5 pl-3 desk:top-3 desk:right-auto desk:left-3 desk:max-w-[calc(100vw-var(--pr)-24px)]"
+  class="island fixed top-2 left-2 z-20 flex max-w-[calc(100vw-16px)] items-center gap-2 p-1.5 desk:top-3 desk:left-3 desk:max-w-[calc(100vw-var(--pr)-24px)]"
 >
-  <div class="mr-auto flex min-w-0 items-center gap-2.5 desk:mr-2">
-    <svg class="flex-none text-mark" width="30" height="30" viewBox="0 0 30 30" aria-hidden="true">
-      <circle cx="15" cy="15" r="8.5" fill="none" stroke="currentColor" stroke-width="1.6"></circle>
-      <circle cx="15" cy="15" r="3.2" fill="currentColor"></circle>
-      <path d="M15 1v28M1 15h28" stroke="currentColor" stroke-width="1.6"></path>
-    </svg>
-    <h1 class="m-0 text-[1.3rem] leading-none font-extrabold tracking-[-.01em] [font-stretch:118%] desk:text-[1.45rem]">Pliego</h1>
-  </div>
+  <h1 class="sr-only">{BRAND.name}</h1>
   <button class="btn" type="button" id="newPoster" title="Empezar un póster nuevo y borrar el trabajo guardado en este navegador" aria-label="Nuevo póster">
     <Icon name="newPoster" />
-    <span class="hidden desk:inline">Nuevo</span>
+    <span class="hidden min-[1100px]:inline">Nuevo</span>
   </button>
   <button class="btn" type="button" data-addfile>
     <Icon name="addImage" />
-    <span class="max-xs:sr-only">Agregar imagen</span>
+    <span class="max-sm:sr-only">Agregar imagen</span>
   </button>
   <input id="file" class="sr-only" type="file" accept="image/*,application/pdf" multiple tabindex="-1" aria-hidden="true" />
   <button class="btn btn-primary" type="button" id="quickExport">
     <Icon name="download" />
-    <span id="qeLabel" class="max-xs:sr-only">Descargar PDF</span>
+    <span id="qeLabel" class="max-sm:sr-only">Descargar PDF</span>
   </button>
 </header>

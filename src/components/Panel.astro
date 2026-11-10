@@ -68,7 +68,7 @@ const tabs = [
       <div class="grid grid-cols-2 gap-2.5">
         <div class="flex min-w-0 flex-col gap-1">
           <span class="text-[.78rem] text-muted" id="lblCols">Columnas</span>
-          <div class="tgroup self-start" role="group" aria-labelledby="lblCols">
+          <div class="tgroup full" role="group" aria-labelledby="lblCols">
             <button type="button" data-step="cols" data-d="-1" aria-label="Menos columnas" title="Menos columnas"><Icon name="minus" class="size-4" /></button>
             <output id="colsOut" class="tval">2</output>
             <button type="button" data-step="cols" data-d="1" aria-label="Más columnas" title="Más columnas"><Icon name="plus" class="size-4" /></button>
@@ -76,7 +76,7 @@ const tabs = [
         </div>
         <div class="flex min-w-0 flex-col gap-1">
           <span class="text-[.78rem] text-muted" id="lblRows">Filas</span>
-          <div class="tgroup self-start" role="group" aria-labelledby="lblRows">
+          <div class="tgroup full" role="group" aria-labelledby="lblRows">
             <button type="button" data-step="rows" data-d="-1" aria-label="Menos filas" title="Menos filas"><Icon name="minus" class="size-4" /></button>
             <output id="rowsOut" class="tval">1</output>
             <button type="button" data-step="rows" data-d="1" aria-label="Más filas" title="Más filas"><Icon name="plus" class="size-4" /></button>
@@ -86,7 +86,7 @@ const tabs = [
     </div>
     <div class={field}>
       <div class="lbl" id="lblPaper">Papel</div>
-      <div class="seg self-start" role="group" aria-labelledby="lblPaper">
+      <div class="seg full" role="group" aria-labelledby="lblPaper">
         <button type="button" data-paper="A4" aria-pressed="true">A4</button>
         <button type="button" data-paper="A3" aria-pressed="false">A3</button>
         <button type="button" data-paper="Carta" aria-pressed="false">Carta</button>
@@ -94,7 +94,7 @@ const tabs = [
     </div>
     <div class={field}>
       <div class="lbl" id="lblOrient">Orientación de cada hoja</div>
-      <div class="seg self-start" role="group" aria-labelledby="lblOrient">
+      <div class="seg full" role="group" aria-labelledby="lblOrient">
         <button type="button" data-orient="portrait" aria-pressed="true">Vertical</button>
         <button type="button" data-orient="landscape" aria-pressed="false">Horizontal</button>
       </div>
@@ -102,7 +102,7 @@ const tabs = [
     <!-- qué pasa con las imágenes colocadas a mano al cambiar hojas, papel, orientación, margen o solape -->
     <div class={field}>
       <div class="lbl" id="lblRelayout">Al cambiar las hojas</div>
-      <div class="seg self-start" role="group" aria-labelledby="lblRelayout">
+      <div class="seg full" role="group" aria-labelledby="lblRelayout">
         <button type="button" data-relayout="scale" aria-pressed="true">Escalar el diseño</button>
         <button type="button" data-relayout="keep" aria-pressed="false">Mantener tamaño</button>
       </div>
@@ -119,7 +119,7 @@ const tabs = [
     </div>
     <div class={field}>
       <label class="lbl" for="overlap">Solape para pegar <output id="overlapOut">10 mm</output></label>
-      <input type="range" id="overlap" min="0" max="30" step="1" value="10" />
+      <input type="range" id="overlap" class="range-mark" min="0" max="30" step="1" value="10" />
       <p class="note">La franja rosada se imprime en las dos hojas vecinas. Al pegar una encima de otra, no se pierde nada de la imagen.</p>
     </div>
   </div>
@@ -199,7 +199,7 @@ const tabs = [
     <div id="exportSummary" class="flex flex-col gap-2.5" aria-live="polite"></div>
     <div class={field}>
       <div class="lbl" id="lblDpi">Resolución del PDF</div>
-      <div class="seg self-start" role="group" aria-labelledby="lblDpi">
+      <div class="seg full" role="group" aria-labelledby="lblDpi">
         <button type="button" data-dpi="150" aria-pressed="true">150 ppp</button>
         <button type="button" data-dpi="200" aria-pressed="false">200 ppp</button>
         <button type="button" data-dpi="300" aria-pressed="false">300 ppp</button>

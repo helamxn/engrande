@@ -50,6 +50,8 @@ export function initKeyboard() {
     if (mod && k === 'y' && !typing) { e.preventDefault(); redo(); return; }
     if (typing) return;
     if (e.key === '?') { e.preventDefault(); openShortcuts(); return; }
+    // Ctrl+O: elegir imágenes o PDF (en vez de abrir un archivo en el navegador), como en Excalidraw
+    if (mod && k === 'o') { e.preventDefault(); document.querySelector<HTMLInputElement>('#file')?.click(); return; }
     if (mod && k === '0') { e.preventDefault(); fitView(); return; }
     // Ctrl+\ como en Figma (en teclado español, la tecla ç ocupa esa posición)
     if (mod && (e.code === 'Backslash' || e.key === '\\')) { e.preventDefault(); togglePanel(); return; }

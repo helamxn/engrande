@@ -9,13 +9,13 @@ import { MAX_COLS_ROWS, PRESETS } from '../constants';
 import { $, $$, toast } from '../dom';
 import { cm, fmt1, parseNum } from '../format';
 import {
-  applyFit, bboxMM, cropCenter, isStretched, keepCenter, natRatio, newLayoutMemory, normDeg, pppOf, qualityOf, relayout,
+  applyFit, bboxMM, cropCenter, geo, isStretched, keepCenter, natRatio, newLayoutMemory, normDeg, pppOf, qualityOf, relayout,
   rotateLayer, scaleLayer, visH, visW,
 } from '../geometry';
 import { snap } from '../history';
 import { deskMQ, dockMQ, HI_AREA, isTouch } from '../platform';
 import { rich } from './keys';
-import { C, isFreshPoster, posterGeo, S, st } from '../state';
+import { C, isFreshPoster, posterGeo, S, sheetsVisible, st } from '../state';
 import { dirty } from '../render';
 import { fitView } from '../view';
 import { renderPdfPage } from '../io/pdf';
@@ -130,7 +130,7 @@ export function syncLayoutUI() {
   $('#colsOut').textContent = String(S.cols);
   $('#rowsOut').textContent = String(S.rows);
   for (const b of $$('#presets [data-c]')) b.setAttribute('aria-pressed', String(+b.dataset.c! === S.cols && +b.dataset.r! === S.rows));
-  for (const b of $$('[data-paper]')) b.setAttribute('aria-pressed', String(b.dataset.paper === S.paper));
+  syncPresetIcons();  for (const b of $$('[data-paper]')) b.setAttribute('aria-pressed', String(b.dataset.paper === S.paper));
   for (const b of $$('[data-orient]')) b.setAttribute('aria-pressed', String(b.dataset.orient === S.orient));
   $('#marginOut').textContent = S.margin + ' mm';
   $('#overlapOut').textContent = S.overlap + ' mm';
@@ -141,6 +141,29 @@ export function syncLayoutUI() {
   }
   const n = S.cols * S.rows + (S.guide ? 1 : 0);
   $('#exportTiles').textContent = `Descargar PDF por hojas · ${n} ${n === 1 ? 'página' : 'páginas'}`;
+  syncWelcome();
+}
+/** Lado (px) del recuadro en el que cabe el icono de cada distribución (mismo valor que .sheet-box en global.css). */
+const PRESET_BOX = 26;
+/**
+ * Icono de cada distribución: una miniatura del póster con la proporción que tendría con el papel, la orientación,
+ * el margen y el solape actuales (1×3 en A4 vertical sale alto y estrecho), escalada para caber en el recuadro.
+ */
+function syncPresetIcons() {
+  for (const b of $$('#presets [data-c]')) {
+    const g = geo({ ...S, cols: +b.dataset.c!, rows: +b.dataset.r! }), k = PRESET_BOX / Math.max(g.W, g.H);
+    const grid = b.querySelector<HTMLElement>('.sheet-grid')!;
+    grid.style.width = `${Math.max(4, Math.round(g.W * k))}px`;
+    grid.style.height = `${Math.max(4, Math.round(g.H * k))}px`;
+  }
+}
+/**
+ * Bienvenida: solo con el lienzo sin tocar. En cuanto el usuario hace algo que muestra el papel (una imagen, o
+ * elegir hojas, papel, orientación, margen o solape) se quita: encima del papel blanco se vería mal. Vuelve con
+ * «Nuevo» y al deshacer hasta el principio.
+ */
+function syncWelcome() {
+  $('#empty').hidden = sheetsVisible();
 }
 
 /* ---------- propiedades de la imagen seleccionada ---------- */
@@ -399,8 +422,7 @@ export function renderList() {
     ol.appendChild(li);
   });
   $('#layerCount').textContent = String(n);
-  // pantalla de inicio (un aviso con «Elegir imagen»), solo con el póster vacío
-  $('#empty').hidden = n > 0;
+  syncWelcome();
   syncExportButtons();
   syncNewPoster();
   updateHint();
@@ -519,8 +541,18 @@ export function initPanel() {
   const presets = $('#presets');
   for (const [c, r] of PRESETS) {
     const b = document.createElement('button');
-    b.type = 'button'; b.className = 'chip'; b.textContent = `${c}×${r}`;
+    b.type = 'button'; b.className = 'chip chip-layout';
     b.dataset.c = String(c); b.dataset.r = String(r);
+    // icono: miniatura del póster partida en columnas × filas; su forma la pone syncPresetIcons
+    const box = document.createElement('span'), grid = document.createElement('span');
+    box.className = 'sheet-box'; box.setAttribute('aria-hidden', 'true');
+    grid.className = 'sheet-grid';
+    grid.style.gridTemplate = `repeat(${r}, 1fr) / repeat(${c}, 1fr)`;
+    for (let i = 0; i < c * r; i++) grid.appendChild(document.createElement('i'));
+    box.appendChild(grid);
+    const label = document.createElement('span');
+    label.textContent = `${c}×${r}`;
+    b.append(box, label);
     b.addEventListener('click', () => {
       if (S.cols === c && S.rows === r) return;
       snap(); S.cols = c; S.rows = r; st.sheetsOn = true; layoutChanged();

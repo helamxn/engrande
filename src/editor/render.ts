@@ -329,9 +329,12 @@ export function render() {
     }
     ctx.stroke(); ctx.setLineDash([]);
 
-    // al ajustar el margen o el solape: el papel entero de cada hoja, para ver cómo encajan y cuánto se pierde
-    if (st.showPaper) {
-      ctx.strokeStyle = C.mark!; ctx.lineWidth = 1; ctx.globalAlpha = 0.75; ctx.setLineDash([3, 3]);
+    // al ajustar el margen o el solape: el papel entero de cada hoja, para ver cómo encajan y cuánto se pierde.
+    // En gris, no en rosa: el rosa es la franja de solape (lo que se imprime dos veces); esto es el borde del papel.
+    // Si a este zoom queda a menos de 3 px de lo impreso (margen pequeño o vista alejada), no se dibuja: solo
+    // haría un rayado de líneas pegadas a los bordes de la franja
+    if (st.showPaper && g.m * V.k >= 3) {
+      ctx.strokeStyle = C.muted!; ctx.lineWidth = 1; ctx.globalAlpha = 0.55; ctx.setLineDash([2, 3]);
       for (let r = 0; r < S.rows; r++) for (let c = 0; c < S.cols; c++) {
         const a = mm2s({ x: c * (g.tw - g.ov) - g.m, y: r * (g.th - g.ov) - g.m });
         ctx.strokeRect(Math.round(a.x) + 0.5, Math.round(a.y) + 0.5, Math.round(g.pw * V.k), Math.round(g.ph * V.k));

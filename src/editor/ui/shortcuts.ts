@@ -1,9 +1,10 @@
 /**
  * Ventana de atajos de teclado y gestos (tecla «?» o botón del panel).
- * Cada fila es una acción y sus teclas (dibujadas con keys.ts, como en el resto de la app). Un buscador
- * filtra por las dos cosas, sin tildes ni mayúsculas. En pantallas táctiles, los gestos táctiles van primero.
+ * Cada fila es una acción y sus teclas (dibujadas con keys.ts, como en el resto de la app). En pantallas táctiles,
+ * los gestos táctiles van primero.
  */
 import { $, $$ } from '../dom';
+import { BRAND } from '../../brand';
 import { isTouch } from '../platform';
 import { gesture as t, key, keysEl, type Part } from './keys';
 
@@ -17,9 +18,10 @@ const ARROWS = '← ↑ → ↓';
 const GROUPS: Group[] = [
   { title: 'General', rows: [
     ['Ver esta ayuda', ['?']],
+    ['Agregar imágenes o PDF', [C, 'O']],
     ['Deshacer', [C, 'Z']],
     ['Rehacer', [C, 'Y'], [C, S, 'Z']],
-    ['Pegar una imagen o lo copiado en Pliego', [C, 'V']],
+    [`Pegar una imagen o lo copiado en ${BRAND.name}`, [C, 'V']],
     ['Menú de opciones', [t('Clic derecho')]],
     ['Salir de la herramienta o del grupo, o deseleccionar', ['Esc']],
   ] },
@@ -90,11 +92,7 @@ const GROUPS: Group[] = [
   ] },
 ];
 
-/** Sin tildes ni mayúsculas, para buscar «rejilla» o «REJILLA» y encontrar «Rejilla». */
-const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
-const partText = (p: Part) => (typeof p === 'string' ? p : p.t);
-
-let dialog: HTMLDialogElement, body: HTMLElement, search: HTMLInputElement, empty: HTMLElement;
+let dialog: HTMLDialogElement, body: HTMLElement;
 
 /** Dibuja las secciones (en táctil, los gestos táctiles primero). */
 function render() {
@@ -110,8 +108,6 @@ function render() {
     for (const [what, ...combos] of g.rows) {
       const row = document.createElement('div');
       row.className = 'sk-row';
-      row.dataset.q = norm([g.title, what, ...combos.flat().map(partText)].join(' '));
-      row.dataset.k = ` ${norm(combos.flat().filter((p) => typeof p === 'string').join(' '))} `;
       const dt = document.createElement('dt'); dt.textContent = what;
       const dd = document.createElement('dd'); dd.appendChild(keysEl(combos));
       row.append(dt, dd);
@@ -122,54 +118,17 @@ function render() {
   }
 }
 
-/**
- * Muestra solo las filas que contienen todas las palabras buscadas. Una sola letra o símbolo se busca como tecla
- * («ctrl g» encuentra Agrupar, no todo lo que lleva una g).
- */
-const matches = (row: HTMLElement, w: string) => (w.length === 1 ? row.dataset.k!.includes(` ${w} `) : row.dataset.q!.includes(w));
-function filter() {
-  const words = norm(search.value).split(/\s+/).filter(Boolean);
-  let shown = 0;
-  for (const sec of $$<HTMLElement>('.sk-sec', body)) {
-    let n = 0;
-    for (const row of $$<HTMLElement>('.sk-row', sec)) {
-      const ok = words.every((w) => matches(row, w));
-      row.hidden = !ok;
-      if (ok) n++;
-    }
-    sec.hidden = !n;
-    shown += n;
-  }
-  empty.hidden = !!shown;
-  empty.textContent = shown ? '' : `Nada coincide con «${search.value.trim()}».`;
-}
-
 export const isShortcutsOpen = () => !!dialog?.open;
 export function openShortcuts() {
   if (dialog.open) return;
-  search.value = '';
   render();
-  filter();
   body.scrollTop = 0;
   dialog.showModal();
-  // con teclado se puede escribir enseguida; en táctil no se abre el teclado de la pantalla sin pedirlo
-  if (!isTouch()) search.focus();
 }
 
 export function initShortcuts() {
   dialog = $<HTMLDialogElement>('#shortcuts');
   body = $('#shortcutsBody');
-  search = $<HTMLInputElement>('#shortcutsSearch');
-  empty = $('#shortcutsEmpty');
-  search.placeholder = `Buscar: girar, recortar, ${C}…`;
-  search.addEventListener('input', filter);
-  // Esc con algo escrito borra la búsqueda; con el buscador vacío, cierra la ventana
-  search.addEventListener('keydown', (e) => {
-    if (e.key !== 'Escape' || !search.value) return;
-    e.preventDefault();
-    search.value = '';
-    filter();
-  });
   for (const b of $$('[data-shortcuts]')) b.addEventListener('click', openShortcuts);
   $('#shortcutsClose').addEventListener('click', () => dialog.close());
   // clic fuera de la ventana (en el fondo oscuro) la cierra; Esc la cierra de forma nativa

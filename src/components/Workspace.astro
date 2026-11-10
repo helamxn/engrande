@@ -1,5 +1,6 @@
 ---
 import Icon from './Icon.astro';
+import { BRAND } from '../brand';
 /**
  * Mesa de trabajo: historial, zoom y lienzo con las hojas.
  * El lienzo ocupa toda la ventana (es el fondo de la app) y lo demás flota encima como «islas»: las herramientas
@@ -49,16 +50,25 @@ const icon = 'size-[17px]';
     <!-- zona libre: la parte del lienzo que no tapan las islas (sus márgenes los pone el editor) -->
     <div id="free" class="pointer-events-none absolute inset-0">
       <!--
-        pantalla de inicio, solo con el póster vacío: un aviso con el botón para elegir la imagen.
-        El contenedor no captura el puntero: se puede seguir usando el lienzo (zoom, menú) alrededor del aviso.
+        bienvenida, solo con el lienzo sin tocar (al entrar por primera vez o tras «Nuevo»): la marca, qué hace la app
+        y cómo empezar, como la de Excalidraw. Desaparece en cuanto el usuario hace algo que muestra el papel (una
+        imagen, o elegir hojas, papel, margen…; ver panel.ts). El contenedor no captura el puntero (se puede soltar
+        una imagen o usar el lienzo alrededor); solo los botones.
       -->
-      <div id="empty" class="absolute inset-0 grid place-items-center overflow-y-auto p-4">
-        <div
-          class="pointer-events-auto flex max-w-full flex-wrap items-center justify-center gap-x-3 gap-y-2 rounded-xl border border-line bg-panel/95 py-2 pr-2 pl-4 text-[.88rem] text-muted shadow-pop"
-        >
-          <Icon name="addImage" class="size-5 flex-none text-accent" />
-          <span>Suelta aquí una imagen o un PDF, o pégalo</span>
-          <button type="button" class="btn btn-primary !min-h-9" data-addfile>Elegir imagen</button>
+      <div id="empty" class="welcome absolute inset-0 grid place-items-center overflow-y-auto p-4">
+        <div class="welcome-main">
+          <div class="welcome-logo" aria-hidden="true">
+            <img src="/brand-symbol.svg" width="56" height="56" alt="" />
+            <span>{BRAND.name}</span>
+          </div>
+          <p class="welcome-tag">{BRAND.tagline}</p>
+          <p class="welcome-note">Reparte tu imagen en hojas A4, A3 o Carta y descarga el PDF para imprimirlo en casa. Todo se queda en este navegador.</p>
+          <ul class="welcome-actions" aria-label="Para empezar">
+            <li><button type="button" data-addfile><Icon name="addImage" /><span>Elegir imagen o PDF</span><span data-keys="mod+o"></span></button></li>
+            <li><button type="button" id="welcomePaste"><Icon name="paste" /><span>Pegar una imagen</span><span data-keys="mod+v"></span></button></li>
+            <li><button type="button" data-shortcuts><Icon name="keyboard" /><span>Atajos y ayuda</span><span data-keys="?"></span></button></li>
+          </ul>
+          <p class="welcome-drop">También puedes soltarla aquí.</p>
         </div>
       </div>
       <div

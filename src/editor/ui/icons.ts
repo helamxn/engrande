@@ -39,7 +39,6 @@ import chevronDown from 'lucide-static/icons/chevron-down.svg?raw';
 import history from 'lucide-static/icons/history.svg?raw';
 import imagePlus from 'lucide-static/icons/image-plus.svg?raw';
 import keyboard from 'lucide-static/icons/keyboard.svg?raw';
-import search from 'lucide-static/icons/search.svg?raw';
 import layers from 'lucide-static/icons/layers.svg?raw';
 import link from 'lucide-static/icons/link-2.svg?raw';
 import linkOff from 'lucide-static/icons/link-2-off.svg?raw';
@@ -80,7 +79,7 @@ const RAW = {
   up: arrowUp, down: arrowDown, dup: copyPlus, eye, eyeOff,
   // cabecera y herramientas
   newPoster: filePlus, addImage: imagePlus, download, undo, redo, zoomIn: plus, zoomOut: minus, lock, lockOpen, printer,
-  plus, minus, keyboard, search, panelClose: panelRightClose, panelOpen: panelRightOpen,
+  plus, minus, keyboard, panelClose: panelRightClose, panelOpen: panelRightOpen,
   // menú contextual (flechas de submenú e iconos de las opciones principales)
   chevronRight, chevronLeft, copy, cut: scissors, paste: clipboardPaste, layers, scaling, history, fitAll: maximize,
   zoomInLens, zoomOutLens,

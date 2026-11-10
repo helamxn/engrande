@@ -11,24 +11,24 @@
 :root {
   --bg: #eceff3; --panel: #ffffff; --fg: #16202a; --muted: #5a6977; --line: #d3dae2;
   --accent: #0b6a94; --accent-ink: #ffffff; --accent-soft: #e1eff6;
-  --mark: #c21a5a; --desk: #dce2e9; --grid: #b9c3ce; --chk1: #f4f6f8; --chk2: #e3e8ee;
+  --mark: #c21a5a; --mark-ink: #ffffff; --desk: #dce2e9; --grid: #b9c3ce; --chk1: #f4f6f8; --chk2: #e3e8ee;
   --good: #2e7d4f; --warn: #b26a00; --bad: #c0392b;
   --shadow: rgba(10, 20, 30, .18);
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #0f1418; --panel: #161d23; --fg: #e4ebf1; --muted: #8d9fae; --line: #29343e;
-    --accent: #4db3df; --accent-ink: #04202d; --accent-soft: #133040;
-    --mark: #f0679a; --desk: #0a0e11; --grid: #26313a; --chk1: #2a3138; --chk2: #20262c;
+    --bg: #141416; --panel: #1b1b1e; --fg: #f2f0ee; --muted: #a3a2ab; --line: #333337;
+    --accent: #6acde1; --accent-ink: #071c21; --accent-soft: #183037;
+    --mark: #fa6599; --mark-ink: #211018; --desk: #111113; --grid: #252528; --chk1: #2c2c30; --chk2: #232326;
     --good: #5cc489; --warn: #e3a33d; --bad: #ef6b5b; --shadow: rgba(0, 0, 0, .5);
     color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
-  --bg: #0f1418; --panel: #161d23; --fg: #e4ebf1; --muted: #8d9fae; --line: #29343e;
-  --accent: #4db3df; --accent-ink: #04202d; --accent-soft: #133040;
-  --mark: #f0679a; --desk: #0a0e11; --grid: #26313a; --chk1: #2a3138; --chk2: #20262c;
+  --bg: #141416; --panel: #1b1b1e; --fg: #f2f0ee; --muted: #a3a2ab; --line: #333337;
+  --accent: #6acde1; --accent-ink: #071c21; --accent-soft: #183037;
+  --mark: #fa6599; --mark-ink: #211018; --desk: #111113; --grid: #252528; --chk1: #2c2c30; --chk2: #232326;
   --good: #5cc489; --warn: #e3a33d; --bad: #ef6b5b; --shadow: rgba(0, 0, 0, .5);
   color-scheme: dark;
 }
@@ -43,6 +43,7 @@
   --color-accent-ink: var(--accent-ink);
   --color-accent-soft: var(--accent-soft);
   --color-mark: var(--mark);
+  --color-mark-ink: var(--mark-ink);
   --color-desk: var(--desk);
   --color-good: var(--good);
   --color-warn: var(--warn);
@@ -108,9 +109,10 @@
     &:disabled { @apply cursor-not-allowed opacity-50; }
     & svg { @apply size-4; }
   }
+  /* acción principal: el rosa de la marca (el cian queda para selección, medidas y opciones activas) */
   .btn-primary {
-    @apply border-accent bg-accent text-accent-ink;
-    &:hover { filter: brightness(1.08); }
+    @apply border-mark bg-mark text-mark-ink;
+    &:hover { @apply border-mark; filter: brightness(1.08); }
   }
 
   /*
@@ -143,6 +145,23 @@
     & .tval { @apply min-w-8 text-center text-[.95rem] font-semibold text-fg tabular-nums; }
   }
 
+  /* a todo el ancho (panel): las opciones se reparten el espacio por igual; en − valor +, el valor queda en medio */
+  .seg.full { @apply flex w-full; & button { @apply flex-1 justify-center; } }
+  .tgroup.full { @apply flex w-full; & .tval { @apply flex-1; } }
+
+  /*
+   * distribuciones: arriba una miniatura del póster con su proporción real (la calcula panel.ts) dentro de un
+   * recuadro fijo, para que todos los textos queden a la misma altura; debajo, columnas×filas.
+   * (.chip.chip-layout: gana a la altura fija de .chip, que va después)
+   */
+  .chip.chip-layout { @apply flex h-auto flex-col items-center justify-center gap-1.5 py-2; }
+  .sheet-box { @apply grid size-[26px] place-items-center; }
+  .sheet-grid {
+    @apply grid gap-[1.5px];
+    & i { @apply block rounded-[1px] bg-current opacity-55; }
+  }
+  .chip-layout[aria-pressed="true"] .sheet-grid i { @apply opacity-100; }
+
   .chip {
     @apply h-9 w-full cursor-pointer rounded-lg border border-line bg-transparent px-2 font-mono text-[.85rem];
     &:hover:not([aria-pressed="true"]) { @apply border-muted; }
@@ -157,6 +176,8 @@
   .note { @apply m-0 max-w-[62ch] text-[.84rem] text-muted; & strong { @apply text-fg; } }
 
   input[type="range"] { @apply h-7 w-full; accent-color: var(--accent); }
+  /* el solape, en el rosa de su franja (el mismo del lienzo y de las marcas del PDF) */
+  input[type="range"].range-mark { accent-color: var(--mark); }
 
   /* campos con unidad (cm, °) */
   .unit {
@@ -208,6 +229,33 @@
   .q-good { @apply text-good; }
   .q-warn { @apply text-warn; }
   .q-bad { @apply text-bad; }
+
+  /* bienvenida (póster vacío): la marca, qué hace la app y cómo empezar; solo los botones capturan el puntero */
+  .welcome { @apply pointer-events-none; }
+  .welcome-main { @apply flex max-w-[440px] flex-col items-center gap-2.5 text-center; }
+  .welcome-logo {
+    @apply mb-1 flex items-center gap-3;
+    & img { @apply size-11 desk:size-14; }
+    & span { @apply text-[2.4rem] leading-none font-extrabold tracking-[-.03em] text-mark desk:text-[3rem]; font-stretch: 118%; }
+  }
+  .welcome-tag { @apply m-0 text-[1.05rem] font-semibold text-fg; }
+  /* líneas equilibradas: sin una palabra sola al final */
+  .welcome-note { @apply m-0 max-w-[52ch] text-[.84rem] text-balance text-muted; }
+  .welcome-actions {
+    @apply m-0 mt-3 flex w-full max-w-[330px] list-none flex-col gap-0.5 p-0;
+    /* en táctil, sin teclas a la derecha: la lista mide lo que su acción más larga y se centra (los iconos siguen en columna) */
+    @media (pointer: coarse) { @apply w-max max-w-full; }
+    & button {
+      @apply pointer-events-auto flex w-full cursor-pointer items-center gap-3 rounded-lg border-0 bg-transparent px-3 py-2.5 text-left text-[.95rem] text-muted;
+      &:hover, &:focus-visible { @apply bg-accent-soft text-fg; }
+      & > svg { @apply size-[18px] flex-none; }
+      & > span:first-of-type { @apply flex-1; }
+      & .keys { @apply text-[.78rem]; }
+      /* en pantallas táctiles no hay teclado: las teclas sobran */
+      @media (pointer: coarse) { & .keys { @apply hidden; } }
+    }
+  }
+  .welcome-drop { @apply m-0 text-[.8rem] text-muted; @media (pointer: coarse) { @apply hidden; } }
 
   /* aviso dentro del panel cuando no hay selección */
   .sel-note { @apply m-0 hidden rounded-lg border border-dashed border-line px-3 py-2.5 text-[.84rem] text-muted; }
@@ -324,14 +372,6 @@
   }
 
   /* ventana de atajos: acción a la izquierda, teclas a la derecha; dos columnas sin huecos desde sm */
-  .sk-search {
-    @apply flex items-center gap-2 rounded-lg border border-line px-3;
-    &:focus-within { @apply border-accent; }
-    & input {
-      @apply w-full min-w-0 border-0 bg-transparent py-2 text-[.9rem] text-fg outline-none;
-      &::placeholder { @apply text-muted; }
-    }
-  }
   .sk-body { @apply gap-8 sm:columns-2; }
   .sk-sec {
     @apply mb-5 break-inside-avoid;

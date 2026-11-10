@@ -41,7 +41,7 @@ function startMeasureMode() {
 }
 /** "Pegar" primero intenta una imagen del portapapeles del sistema (como Ctrl+V); si no hay, la copiada en Pliego. */
 const canPaste = () => !!st.clip?.length || !!navigator.clipboard?.read;
-async function pasteAny() {
+export async function pasteAny() {
   try {
     if (navigator.clipboard?.read) {
       const files: File[] = [];

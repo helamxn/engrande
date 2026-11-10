@@ -26,21 +26,14 @@ import Layout from '../layouts/Layout.astro';
     class="m-auto w-[min(760px,calc(100vw-24px))] overflow-hidden rounded-2xl border border-line bg-panel p-0 text-fg shadow-menu backdrop:bg-black/50"
   >
     <div class="flex h-[min(720px,calc(100dvh-24px))] flex-col">
-      <div class="flex flex-col gap-3 border-b border-line px-5 pt-3 pb-4">
-        <div class="flex items-center justify-between gap-3">
-          <h2 id="shortcutsTitle" class="m-0 text-base font-bold">Atajos de teclado y gestos</h2>
-          <button type="button" id="shortcutsClose" class="btn !min-h-9 !px-2" aria-label="Cerrar" title="Cerrar (Esc)">
-            <Icon name="x" />
-          </button>
-        </div>
-        <label class="sk-search">
-          <Icon name="search" class="size-4 flex-none text-muted" />
-          <input type="search" id="shortcutsSearch" aria-label="Buscar atajos" autocomplete="off" spellcheck="false" />
-        </label>
+      <div class="flex items-center justify-between gap-3 border-b border-line px-5 py-3">
+        <h2 id="shortcutsTitle" class="m-0 text-base font-bold">Atajos de teclado y gestos</h2>
+        <button type="button" id="shortcutsClose" class="btn !min-h-9 !px-2" aria-label="Cerrar" title="Cerrar (Esc)">
+          <Icon name="x" />
+        </button>
       </div>
       <div class="min-h-0 flex-1 overflow-y-auto px-5 pt-4 pb-1">
         <div id="shortcutsBody" class="sk-body"></div>
-        <p id="shortcutsEmpty" class="note py-6 text-center !max-w-none" role="status" hidden></p>
       </div>
     </div>
   </dialog>
