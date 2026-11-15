@@ -2,7 +2,7 @@
 import Icon from './Icon.astro';
 import { BRAND } from '../brand';
 /**
- * Cabecera: póster nuevo, agregar imagen y descarga rápida del PDF por hojas. Flota sobre el lienzo, arriba a la
+ * Cabecera: póster nuevo y descarga rápida del PDF por hojas (agregar imagen o texto está en la barra fija). Arriba a la
  * izquierda (en pantallas estrechas, solo iconos). La marca no se queda aquí ocupando sitio: se presenta en la
  * bienvenida, con el póster vacío (Workspace.astro); el título queda para lectores de pantalla.
  */
@@ -15,10 +15,6 @@ import { BRAND } from '../brand';
   <button class="btn" type="button" id="newPoster" title="Empezar un póster nuevo y borrar el trabajo guardado en este navegador" aria-label="Nuevo póster">
     <Icon name="newPoster" />
     <span class="hidden min-[1100px]:inline">Nuevo</span>
-  </button>
-  <button class="btn" type="button" data-addfile>
-    <Icon name="addImage" />
-    <span class="max-sm:sr-only">Agregar imagen</span>
   </button>
   <input id="file" class="sr-only" type="file" accept="image/*,application/pdf" multiple tabindex="-1" aria-hidden="true" />
   <button class="btn btn-primary" type="button" id="quickExport">

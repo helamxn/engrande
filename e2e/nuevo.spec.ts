@@ -1,6 +1,6 @@
 /** «Nuevo póster»: solo actúa si hay algo que reiniciar, avisa de lo que hizo y un «Deshacer» lo recupera todo. */
 import { expect, test } from '@playwright/test';
-import { addImage, expectSavedNames, listNames, openApp } from './helpers';
+import { addImage, expectSavedNames, listNames, openApp, openTab } from './helpers';
 
 test.beforeEach(async ({ page }) => { await openApp(page); });
 
@@ -36,7 +36,7 @@ test('con imágenes, avisa del borrado; una segunda pulsación no hace nada y un
 
 test('deshacer «Nuevo» devuelve la resolución, las marcas y la guía', async ({ page }) => {
   await addImage(page);
-  await page.locator('#tab-export').click();
+  await openTab(page, 'export');
   await page.locator('[data-dpi="300"]').click();
   await page.locator('#marks').uncheck();
   await page.locator('#newPoster').click();

@@ -10,7 +10,7 @@ const sheetHeight = (page: Page) => page.locator('#panel').evaluate((p) => Math.
 
 test('no hay scroll horizontal y los botones de la cabecera tienen nombre aunque solo se vea el icono', async ({ page }) => {
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  for (const name of ['Nuevo póster', 'Agregar imagen', 'Descargar PDF']) {
+  for (const name of ['Nuevo póster', 'Descargar PDF']) {
     await expect(page.locator('header').getByRole('button', { name })).toBeVisible();
   }
 });

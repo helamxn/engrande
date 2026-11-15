@@ -65,6 +65,10 @@ import wand from 'lucide-static/icons/wand-sparkles.svg?raw';
 import x from 'lucide-static/icons/x.svg?raw';
 import zoomInLens from 'lucide-static/icons/zoom-in.svg?raw';
 import zoomOutLens from 'lucide-static/icons/zoom-out.svg?raw';
+import typeIcon from 'lucide-static/icons/type.svg?raw';
+import textStart from 'lucide-static/icons/text-align-start.svg?raw';
+import textCenter from 'lucide-static/icons/text-align-center.svg?raw';
+import textEnd from 'lucide-static/icons/text-align-end.svg?raw';
 
 /** Quita el comentario de licencia y marca el icono como decorativo (el texto accesible va en el botón). */
 const clean = (svg: string) =>
@@ -88,6 +92,8 @@ const RAW = {
   ruler, ratioOn: link, ratioOff: linkOff, grip, group: groupIcon, ungroup: ungroupIcon, chevronDown, warning: triangleAlert,
   fitContain: shrink, fitCover: expand, center: focus, rename: pencilLine,
   alignLeft, alignHCenter, alignRight, alignTop, alignVCenter, alignBottom, distributeH, distributeV, selectBox,
+  // texto
+  text: typeIcon, textLeft: textStart, textCenter, textRight: textEnd,
 } as const;
 
 export type IconName = keyof typeof RAW;

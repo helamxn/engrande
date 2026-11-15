@@ -1,5 +1,6 @@
 /** Acciones del editor: selección, capas, modos de herramienta, recorte y edición de píxeles. */
 import { MAX_SIDE } from './constants';
+import { discardTextDraft } from './text/editor';
 import { $, hideToast, toast } from './dom';
 import {
   alignShifts, applyFit, bboxMM, conformCrop, cropCenter, distributeShifts, flipOnScreen, keepCenter, mmToLocal,
@@ -78,6 +79,9 @@ export function toggleHidden(l: Layer) {
 }
 
 const LOCKED_MSG = 'La imagen está bloqueada. Desbloquéala con el candado de la lista.';
+/** Los textos no se recortan ni se borran por ahora (ver text/text.ts). */
+const isTextLayer = (l: Layer | null | undefined) => l?.src?.kind === 'text';
+const TEXT_NO_PIXELS = 'Por ahora el texto no se puede recortar ni borrar. Puedes moverlo, girarlo y cambiar su tamaño.';
 
 /** Bloquea o desbloquea: bloqueada se ve y se imprime, pero en el lienzo no se puede tocar. */
 export function toggleLocked(l: Layer) {
@@ -379,6 +383,7 @@ export function distributeSelected(axis: 'x' | 'y') {
  * (útil en un ordenador compartido). Se puede deshacer mientras la pestaña siga abierta.
  */
 export function newPoster() {
+  discardTextDraft();
   // ya es un póster nuevo: nada que reiniciar (sin paso de deshacer, que dejaría un «Deshacer» que no hace nada)
   if (isFreshPoster()) return;
   const hadImages = st.layers.length > 0;
@@ -485,6 +490,7 @@ export function setMode(m: Mode) {
   if (m !== 'move' && !st.sel) { toast('Primero selecciona una imagen'); return; }
   if (m !== 'move' && st.sel?.hidden) { toast('La imagen está oculta. Muéstrala para editarla.'); return; }
   if (m !== 'move' && st.sel?.locked) { toast(LOCKED_MSG); return; }
+  if (m !== 'move' && isTextLayer(st.sel)) { toast(TEXT_NO_PIXELS); return; }
   S.mode = m;
   $('#cv').style.cursor = cursorFor(m);
   st.hoverL = null;
@@ -494,6 +500,7 @@ export function enterCrop() {
   if (!st.sel || S.mode === 'crop') return;
   if (st.sel.hidden) { toast('La imagen está oculta. Muéstrala para recortarla.'); return; }
   if (st.sel.locked) { toast(LOCKED_MSG); return; }
+  if (isTextLayer(st.sel)) { toast(TEXT_NO_PIXELS); return; }
   S.cropRatio = null; S.cropRatioKey = 'null'; cropRef = null;
   cropSession = takeSnap();
   S.mode = 'crop';
@@ -665,6 +672,7 @@ export async function wandAt(p: Pt) {
 export async function autoBackground() {
   const l = st.sel;
   if (!l) return;
+  if (isTextLayer(l)) { toast(TEXT_NO_PIXELS); return; }
   const r = await applyPixelJob(l, { kind: 'auto', tol: S.tol }, 'Quitando el fondo…');
   if (!r) return;
   if (r.error === 'transparent') toast('Los bordes ya están transparentes');
@@ -673,6 +681,7 @@ export async function autoBackground() {
 }
 export function resetOriginal(l: Layer) {
   if (l.locked) { toast(LOCKED_MSG); return; }
+  if (isTextLayer(l)) return;
   beginPixelEdit(l);
   const c = l.img.getContext('2d')!;
   c.clearRect(0, 0, l.img.width, l.img.height); c.drawImage(l.orig, 0, 0);

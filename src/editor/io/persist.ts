@@ -13,14 +13,19 @@ import { S, st } from '../state';
 import { clonePath, nextGroupName, normalizeGroups, type GroupRef, type Groupable } from '../groups';
 import { loadImg } from './load';
 import { openPdf, renderPdfPage } from './pdf';
-import type { Crop, Fit, Layer, LayoutSettings } from '../types';
+import type { Crop, Fit, Layer, LayoutSettings, TextSpec, TextDraft } from '../types';
+import { readSpec, readDraft } from '../text/spec';
+import { textCanvas } from '../text/raster';
 
 // Identificador histórico: cambiarlo dejaría de recuperar los pósters de versiones anteriores.
 const DB_NAME = 'pliego';
 const SCHEMA = 1;
 const SAVE_DELAY = 1200;
 
-interface SavedSource { kind: 'img' | 'svg' | 'pdf'; key: string }
+interface SavedFile { kind: 'img' | 'svg' | 'pdf'; key: string }
+/** Un texto se guarda con sus contornos (la fuente no: ver text/fonts.ts). */
+interface SavedText { kind: 'text'; spec: TextSpec }
+type SavedSource = SavedFile | SavedText;
 interface SavedLayer {
   name: string; cx: number; cy: number; w: number; h: number; rot: number; flipX: boolean; flipY: boolean;
   crop: Crop; page: number; pages: number; fit: Fit;
@@ -40,6 +45,7 @@ interface SavedLayer {
   edit: string | null;
 }
 interface SavedProject {
+  draft?: TextDraft | null;
   schema: number; savedAt: number;
   layout: LayoutSettings; dpi: number; marks: boolean; guide: boolean;
   layers: SavedLayer[];
@@ -90,11 +96,11 @@ let restoring = false;
 /** El trabajo está a salvo en el navegador (no hace falta avisar al cerrar). */
 export const isWorkSafe = () => available && !pending && !saving && !failed;
 
-export function scheduleSave() {
+export function scheduleSave(delay = SAVE_DELAY) {
   if (!available) return;
   pending = true;
   clearTimeout(timer);
-  timer = setTimeout(() => void flushSave(), SAVE_DELAY);
+  timer = setTimeout(() => void flushSave(), delay);
 }
 
 /** Guarda ya (al ocultar la pestaña o antes de cerrarla). */
@@ -125,7 +131,7 @@ export async function flushSave() {
 async function save() {
   const d = await db();
   // póster vacío: no se guarda nada y al volver aparece la pantalla de inicio
-  if (!st.layers.length) { await clearSaved(); return; }
+  if (!st.layers.length && !st.textDraft?.text) { await clearSaved(); return; }
 
   // 0. lo que hay de verdad en la base de datos: otra pestaña con Pliego abierta pudo borrar archivos que esta daba
   //    por guardados (cada una borra lo que su póster no usa), y entonces hay que volver a escribirlos
@@ -139,7 +145,8 @@ async function save() {
   const layers: SavedLayer[] = [];
   for (const l of st.layers) {
     let src: SavedSource | null = null;
-    if (l.src) {
+    if (l.src?.kind === 'text') src = { kind: 'text', spec: l.src.spec };
+    else if (l.src) {
       let key = blobKeys.get(l.src.blob);
       if (!key) { key = 'src-' + uid(); blobKeys.set(l.src.blob, key); }
       if (!stored.has(key)) writes.set(key, l.src.blob);
@@ -165,6 +172,7 @@ async function save() {
     });
   }
   const project: SavedProject = {
+    draft: st.textDraft,
     schema: SCHEMA, savedAt: Date.now(),
     layout: { paper: S.paper, orient: S.orient, cols: S.cols, rows: S.rows, margin: S.margin, overlap: S.overlap },
     dpi: S.dpi, marks: S.marks, guide: S.guide, layers,
@@ -251,11 +259,18 @@ async function readProject(): Promise<{ failed: string[] } | null> {
   const used = new Set<string>();
   const failedNames: string[] = [];
 
-  for (const r of project.layers) {
+  const draft = readDraft(project.draft);
+  let draftLayer: Layer | null = null;
+  for (const [index, r] of project.layers.entries()) {
     try {
       let orig: HTMLCanvasElement, extra: Partial<Layer> = {};
       if (!r.src) continue; // imagen de ejemplo de versiones anteriores
-      if (r.src.kind === 'pdf') {
+      if (r.src.kind === 'text') {
+        const spec = readSpec(r.src.spec);
+        if (!spec) throw new Error('Texto no válido');
+        orig = textCanvas(spec);
+        extra = { src: { kind: 'text', spec } };
+      } else if (r.src.kind === 'pdf') {
         let p = pdfs.get(r.src.key);
         if (!p) { const blob = await getBlob(r.src.key); p = { doc: await openPdf(await blob.arrayBuffer()), blob }; pdfs.set(r.src.key, p); }
         orig = await renderPdfPage(p.doc, r.page);
@@ -273,7 +288,7 @@ async function readProject(): Promise<{ failed: string[] } | null> {
         blobKeys.set(b.blob, r.src.key);
         extra = { src: r.src.kind === 'svg' ? { kind: 'svg', blob: b.blob } : { kind: 'img', blob: b.blob, w: b.w, h: b.h } };
       }
-      if (r.src) used.add(r.src.key);
+      if (r.src.kind !== 'text') used.add(r.src.key);
 
       let img = orig;
       if (r.edit) {
@@ -295,6 +310,7 @@ async function readProject(): Promise<{ failed: string[] } | null> {
         locked: !!r.locked, opacity: typeof r.opacity === 'number' ? Math.min(1, Math.max(0, r.opacity)) : 1,
         gpath: readPath(r),
       }));
+      if (draft?.target === index) draftLayer = st.layers.at(-1)!;
     } catch (err) {
       console.warn('No se pudo recuperar', r.name, err);
       failedNames.push(r.name);
@@ -303,6 +319,8 @@ async function readProject(): Promise<{ failed: string[] } | null> {
   // grupos en regla (p. ej. si alguna imagen no se pudo recuperar) y con nombre los de antes
   st.layers = normalizeGroups(st.layers);
   nameUnnamedGroups(st.layers);
+  // Una capa irrecuperable no debe hacer que el borrador se aplique a otra capa.
+  if (!st.textDraft && draft) st.textDraft = { ...draft, target: draftLayer ? st.layers.indexOf(draftLayer) : null };
   Object.assign(S, project.layout, { dpi: project.dpi, marks: project.marks, guide: project.guide });
   stored = used;
   // si algo falló, el próximo guardado limpia lo que ya no se usa

@@ -35,7 +35,67 @@ export type Fit = { mode: FitMode; scale: number } | null;
 export type Source =
   | { kind: 'img'; blob: Blob; w: number; h: number }
   | { kind: 'svg'; blob: Blob }
-  | { kind: 'pdf'; blob: Blob };
+  | { kind: 'pdf'; blob: Blob }
+  | { kind: 'text'; spec: TextSpec };
+/** Origen que es un archivo (todos menos el texto, que se guarda como contornos). */
+export type FileSource = Exclude<Source, { kind: 'text' }>;
+
+export type TextAlign = 'left' | 'center' | 'right';
+/**
+ * Texto convertido en contornos (en unidades de la fuente, y hacia abajo). El origen (0, 0) es la línea base de la
+ * primera línea, en el punto de alineación: el borde izquierdo, el centro o el borde derecho de las líneas.
+ */
+export interface TextShape {
+  /** Contorno de cada letra, en datos de trazado SVG (los espacios no tienen). */
+  glyphs: { ch: string; d: string }[];
+  /** Caja de la tinta: lo que se ve (la de la capa con «Ajustar la caja a las letras»). */
+  box: { x0: number; y0: number; x1: number; y1: number };
+  /** Caja de los renglones: la de la capa normalmente (ver frameOf en shape.ts). Falta en los primeros textos guardados. */
+  lineBox?: { x0: number; y0: number; x1: number; y1: number };
+  /** Altura de las mayúsculas: «Alto de mayúsculas» en el panel. */
+  cap: number;
+  /** Ascendente y descendente de la fuente (para colocar el cuadro de escritura). */
+  asc: number; desc: number;
+  upm: number;
+}
+/**
+ * Texto: las palabras y su estilo, y sus contornos ya calculados. Así no hace falta la fuente para dibujarlo,
+ * imprimirlo ni guardarlo: solo para cambiar las palabras, el espaciado o el interlineado. La fuente no se guarda.
+ * Se trata como inmutable: cada cambio crea uno nuevo (el historial guarda el anterior).
+ */
+export interface TextSpec {
+  text: string;
+  /** Identificador de la fuente (ver fonts.ts) y su nombre, para pedirla si no está cargada. */
+  font: string; fontName: string;
+  align: TextAlign;
+  /** Interlineado, en veces el tamaño de la fuente. */
+  line: number;
+  /** Espaciado entre letras, en milésimas del tamaño de la fuente. */
+  track: number;
+  color: string;
+  /** Ajustar la caja a las letras (sin el aire de los renglones): para centrar o alinear con precisión. */
+  fit: boolean;
+  /**
+   * Ancho fijo en unidades de la fuente: las líneas se parten entre palabras para no pasarse. null = automático (cada
+   * línea mide lo que ocupa). Opcional para leer los textos guardados antes.
+   */
+  width?: number | null;
+  shape: TextShape;
+}
+
+/** Borrador independiente de los contornos: también recupera palabras si falta la fuente del usuario. */
+export interface TextDraft {
+  target: number | null;
+  text: string;
+  font: string;
+  fontName: string;
+  style: Pick<TextSpec, 'align' | 'line' | 'track' | 'color' | 'fit'>;
+  origin: Pt;
+  cap: number;
+  rot: number;
+  flipX: boolean;
+  flipY: boolean;
+}
 
 export interface Layer extends LayerGeom {
   id: number;
@@ -103,6 +163,8 @@ export interface LayerProps extends Transform {
   opacity: number;
   hidden: boolean;
   gpath: GroupRef[];
+  /** Cambia solo en los textos (al editarlos); en las imágenes es siempre el mismo. */
+  src: Source | null;
 }
 
 /** Ajustes que definen la geometría del póster (se guardan en el historial). */

@@ -39,6 +39,12 @@ const GROUPS: Group[] = [
     ['Borrador', ['E']],
     ['Varita', ['W']],
   ] },
+  { title: 'Texto', rows: [
+    ['Agregar un texto', ['T']],
+    ['Editar el texto seleccionado', ['Enter'], [t('Doble clic')]],
+    ['Nueva línea', ['Enter']],
+    ['Terminar de escribir', ['Esc'], [C, 'Enter']],
+  ] },
   { title: 'Imagen seleccionada', rows: [
     ['Mover 1 mm', [ARROWS]],
     ['Mover 10 mm', [S, ARROWS]],

@@ -13,6 +13,7 @@ import { PAPERS } from '../constants';
 import { posterGeo, S, st } from '../state';
 import { loadImg } from './load';
 import { renderPdfPage } from './pdf';
+import { textCanvas } from '../text/raster';
 import type { Geo } from '../types';
 
 type HiMap = Map<HTMLCanvasElement, HTMLCanvasElement>;
@@ -86,8 +87,10 @@ async function hiSources(dpi: number): Promise<HiMap> {
       if (tw <= img.width * 1.05) continue; // el lienzo de trabajo ya basta
       const th = Math.round((tw * img.height) / img.width);
       let base: CanvasImageSource, url: string | null = null;
-      if (l.src!.kind === 'pdf') base = await renderPdfPage(l.pdf!, l.page, Math.max(tw, th), Infinity);
-      else { url = URL.createObjectURL(l.src!.blob); base = await loadImg(url); }
+      const src = l.src!;
+      if (src.kind === 'text') base = textCanvas(src.spec, tw, th); // contornos: nítidos a cualquier tamaño
+      else if (src.kind === 'pdf') base = await renderPdfPage(l.pdf!, l.page, Math.max(tw, th), Infinity);
+      else { url = URL.createObjectURL(src.blob); base = await loadImg(url); }
       const c = document.createElement('canvas');
       c.width = tw; c.height = th;
       const x = c.getContext('2d')!;

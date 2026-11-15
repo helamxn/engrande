@@ -2,7 +2,7 @@
 import { savedMargin } from './prefs';
 import { geo, type Box, type Dash, type Gap, type GuideSeg } from './geometry';
 import type { GroupRef } from './groups';
-import type { Layer, LayoutSettings, Pt, Settings } from './types';
+import type { Layer, LayoutSettings, Pt, Settings, TextDraft } from './types';
 
 /** Ajustes de un póster nuevo (los que se guardan y se restablecen con "Nuevo póster"). */
 export const DEFAULT_LAYOUT: LayoutSettings = { paper: 'A4', orient: 'portrait', cols: 2, rows: 1, margin: 6, overlap: 10 };
@@ -57,6 +57,13 @@ export const st = {
   hover: null as Pt | null,
   /** Imagen bajo el ratón (se resalta). */
   hoverL: null as Layer | null,
+  /** Texto que se está escribiendo (ver text/editor.ts): no se dibuja; en su lugar está el cuadro de escritura. */
+  editingText: null as Layer | null,
+  /** «Agregar texto»: se espera el clic (o el recuadro) que dice dónde va el texto. Ver text/editor.ts. */
+  placingText: false,
+  textDraft: null as TextDraft | null,
+  /** Vista previa de color a resolución de pantalla; no modifica los lienzos del historial. */
+  textColorPreview: null as { layer: Layer; canvas: HTMLCanvasElement } | null,
 };
 
 /** Vista: escala (px por mm) y desplazamiento del lienzo. */

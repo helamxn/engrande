@@ -10,6 +10,8 @@ import { canvasRevision } from './io/persist';
 import { C, posterGeo, S, sheetsVisible, st, V, view } from './state';
 import { mm2s } from './view';
 import { positionBar } from './ui/contextbar';
+import { positionTextEditor } from './text/editor';
+import { isText } from './text/text';
 import { renderList } from './ui/panel';
 import { HI_AREA, isTouch } from './platform';
 import type { HandleId, Layer, Pt } from './types';
@@ -103,7 +105,7 @@ export function drawLayer(c: CanvasRenderingContext2D, l: Layer, clipIt = true, 
 }
 /** pick: qué versión de cada imagen se dibuja (copia reducida en pantalla, alta resolución al exportar). */
 export const drawAll = (c: CanvasRenderingContext2D, pick: (l: Layer) => CanvasImageSource = (l) => l.img) =>
-  st.layers.forEach((l) => { if (!l.hidden) drawLayer(c, l, true, pick(l)); });
+  st.layers.forEach((l) => { if (!l.hidden && l !== st.editingText) drawLayer(c, l, true, pick(l)); });
 
 /* ---------- copias reducidas para la pantalla ---------- */
 /**
@@ -116,6 +118,7 @@ export const drawAll = (c: CanvasRenderingContext2D, pick: (l: Layer) => CanvasI
 interface DisplayCopy { c: HTMLCanvasElement; rev: number; side: number }
 const copies = new WeakMap<HTMLCanvasElement, DisplayCopy>(); // por lienzo: los duplicados la comparten
 export function displaySource(l: Layer): CanvasImageSource {
+  if (st.textColorPreview?.layer === l) return st.textColorPreview.canvas;
   const img = l.img, long = Math.max(img.width, img.height);
   // con el borrador la imagen cambia en cada movimiento: se dibuja directamente para no rehacer la copia cada vez
   if (S.mode === 'erase' && l === st.sel) return img;
@@ -137,12 +140,15 @@ export function displaySource(l: Layer): CanvasImageSource {
 }
 
 /* ---------- tiradores ---------- */
+const mid = (a: Pt, b: Pt): Pt => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
 export interface Handle extends Pt { id: HandleId | 'rot'; base?: Pt }
 export const cropPts = (l: Layer) => cropPtsMM(l).map(mm2s);
 export function boxHandles(l: Layer, withRot: boolean): Handle[] {
-  const hs: Handle[] = HANDLES.map((id) => ({ id, ...mm2s(localToMM(l, ...handleLocal(l, id))) }));
+  // un texto no se estira: las esquinas escalan sin deformar y los lados cambian su ancho (las líneas se parten)
+  const ids = l.src?.kind === 'text' ? HANDLES.filter((id) => id !== 'n' && id !== 's') : HANDLES;
+  const hs: Handle[] = ids.map((id) => ({ id, ...mm2s(localToMM(l, ...handleLocal(l, id))) }));
   if (withRot) {
-    const tm = hs[1]!, c = mm2s(cropCenter(l));
+    const tm = l.src?.kind === 'text' ? mid(hs[0]!, hs[1]!) : hs[1]!, c = mm2s(cropCenter(l));
     const dx = tm.x - c.x, dy = tm.y - c.y, d = Math.hypot(dx, dy) || 1;
     hs.push({ id: 'rot', x: tm.x + (dx / d) * 28, y: tm.y + (dy / d) * 28, base: tm });
   }
@@ -308,7 +314,7 @@ export function render() {
     ctx.save(); ctx.beginPath(); ctx.rect(0, 0, g.W, g.H); ctx.clip();
     if (!editing) { ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, g.W, g.H); }
     for (const l of st.layers) {
-      if (l.hidden) continue;
+      if (l.hidden || l === st.editingText) continue;
       const src = displaySource(l);
       if (cropping && l === sel) { ctx.globalAlpha = 0.35; drawLayer(ctx, l, false, src); ctx.globalAlpha = 1; }
       drawLayer(ctx, l, true, src);
@@ -377,10 +383,12 @@ export function render() {
         const hs = boxHandles(sel, true), rot = hs.pop()!;
         ctx.beginPath(); ctx.moveTo(rot.base!.x, rot.base!.y); ctx.lineTo(rot.x, rot.y); ctx.stroke();
         const small = visW(sel) * V.k < 60 || visH(sel) * V.k < 60;
-        hs.forEach((h) => { if (!(small && h.id.length === 1)) handleDot(h, 9); });
+        // en uno pequeño no caben los de los lados, salvo en un texto: son los de su ancho
+        hs.forEach((h) => { if (!(small && h.id.length === 1) || isText(sel)) handleDot(h, 9); });
         ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(rot.x, rot.y, 6, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
       }
-      sizeLabel(sel, dims(sel), pppAt(sel));
+      // un texto son contornos: se imprime nítido a cualquier tamaño, no tiene calidad que avisar
+      sizeLabel(sel, dims(sel), sel.src?.kind === 'text' ? undefined : pppAt(sel));
     } else if (st.group.length > 1) {
       // varias: el contorno de cada una, el marco común y sus tiradores (esquinas para escalar, círculo para girar)
       ctx.strokeStyle = C.accent!; ctx.lineWidth = 1.5;
@@ -428,4 +436,5 @@ export function render() {
     ctx.lineWidth = 1; ctx.strokeStyle = '#fff'; ctx.beginPath(); ctx.arc(h.x, h.y, S.brush, 0, Math.PI * 2); ctx.stroke();
   }
   positionBar();
+  positionTextEditor();
 }

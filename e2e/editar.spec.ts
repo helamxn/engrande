@@ -1,7 +1,7 @@
 /** Copiar y pegar, recorte con proporciones y descarga del PDF. */
 import { expect, test } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
-import { addImage, listNames, openApp, savedBox, screenMap, selectRow } from './helpers';
+import { addImage, listNames, openApp, savedBox, screenMap, selectRow, openTab } from './helpers';
 
 test.beforeEach(async ({ page }) => { await openApp(page); });
 
@@ -40,7 +40,7 @@ test('ir y venir entre proporciones de recorte no encoge el marco; «Libre» lo 
 
 test('«Descargar PDF por hojas» genera una página de guía y una por hoja, del tamaño del papel', async ({ page }) => {
   await addImage(page);
-  await page.locator('#tab-export').click();
+  await openTab(page, 'export');
   const [download] = await Promise.all([page.waitForEvent('download'), page.locator('#exportTiles').click()]);
   expect(download.suggestedFilename()).toBe('engrande-2x1-A4.pdf');
   const pdf = (await readFile((await download.path())!)).toString('latin1');
@@ -76,7 +76,7 @@ test('retocar una imagen con transparencia parcial no la aclara en el PDF de alt
   await selectRow(page);
   const b = await savedBox(page), m = await screenMap(page, b), corner = m.toScreen(b.x0, b.y0);
   const exported = async (n: number) => {
-    await page.locator('#tab-export').click();
+    await openTab(page, 'export');
     await page.locator('[data-dpi="300"]').click();
     await page.locator('#exportSingle').click();
     await expect.poll(() => page.evaluate(() => (window as unknown as { __px: number[] }).__px.length), { timeout: 40_000 }).toBe(n);
@@ -85,7 +85,7 @@ test('retocar una imagen con transparencia parcial no la aclara en el PDF de alt
   const before = await exported(1);
   expect(before).toBeGreaterThan(120); expect(before).toBeLessThan(135); // negro al 50 % sobre papel blanco
   // se borra un punto en una esquina, lejos del centro
-  await page.locator('#tab-image').click();
+  await openTab(page, 'image');
   await selectRow(page);
   await page.keyboard.press('e');
   await page.mouse.click(corner.x + 12, corner.y + 12);

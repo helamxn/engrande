@@ -267,6 +267,41 @@
   .has-group .needs-group { display: flex; }
   /* imagen bloqueada: se ve su nombre, pero no las medidas que no se pueden cambiar */
   .sel-locked .edit-sel { display: none !important; }
+  /* la sección «Texto», solo con un texto seleccionado */
+  body:not(.sel-text) .needs-text { display: none !important; }
+  /* tarjeta de la selección: ocupa el panel en lugar de las pestañas (ver selectioncard.ts) */
+  .selection-panel { @apply flex min-h-0 flex-1 flex-col; &[hidden] { display: none; } }
+  .selection-head { @apply flex h-[45px] flex-none items-center gap-2 border-b border-line pr-1.5 pl-4; }
+  .selection-body { @apply flex min-h-0 flex-1 flex-col gap-4 overflow-x-hidden overflow-y-auto overscroll-contain p-4; }
+  .inspecting #sheetTabs, .inspecting [role="tabpanel"] { display: none !important; }
+  .selection-close { @apply grid size-8 flex-none cursor-pointer place-items-center rounded-md border-0 bg-transparent text-muted hover:bg-accent-soft hover:text-fg; & svg { @apply size-4; } }
+  .selection-geometry > summary { @apply cursor-pointer text-[.8rem] font-semibold text-muted; }
+  .text-color-field {
+    @apply items-center gap-2 pl-2;
+    & #tColor { @apply size-7 w-7 flex-none cursor-pointer appearance-none rounded-md border border-line p-0; }
+    & #tColor::-webkit-color-swatch-wrapper { padding: 0; }
+    & #tColor::-webkit-color-swatch { border: 0; border-radius: 5px; }
+    & #tColor::-moz-color-swatch { border: 0; border-radius: 5px; }
+    & #tColorHex { @apply min-w-0 flex-1 text-left; }
+    & button { @apply mr-1 grid size-8 flex-none cursor-pointer place-items-center rounded-md border-0 bg-transparent text-muted; }
+    & button:hover { @apply bg-accent-soft text-fg; }
+    & button svg { @apply size-4; }
+  }
+
+  /* campos del texto: la lista de fuentes y el color */
+  .tsel { @apply w-full min-w-0 cursor-pointer border-0 bg-transparent p-2 text-[.9rem] text-fg outline-none; & option { @apply bg-panel text-fg; } }
+  /*
+   * cuadro para escribir un texto sobre el lienzo (text/editor.ts): sin fondo ni borde, con la letra del texto; el
+   * editor le pone la fuente, el tamaño, el color, la posición y el giro
+   */
+  .text-editor {
+    @apply absolute z-[2] m-0 resize-none overflow-hidden border-0 bg-transparent whitespace-pre;
+    box-sizing: content-box;
+    outline: 1.5px dashed var(--accent);
+    outline-offset: 0; /* el borde coincide con la caja del texto seleccionado */
+    caret-color: var(--accent);
+    font-kerning: normal;
+  }
 
   /* lista de imágenes */
   .layer {

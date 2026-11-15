@@ -8,6 +8,8 @@ Todo ocurre en el navegador: no hay servidor, cuentas ni base de datos, y las im
 
 - Póster de varias hojas A4, A3 o Carta, con margen de impresora y solape ajustables.
 - Varias imágenes o páginas de PDF que se colocan, recortan, agrupan y retocan (quitar el fondo, borrador, varita).
+- Textos para títulos en grande o moldes: se escriben sobre el lienzo, con 20 familias y 55 variantes de Google Fonts, o una fuente del equipo del usuario, que no se guarda. Incluye búsqueda, vista previa y selección de estilo.
+- Tamaño de letra en puntos, altura de referencia en cm, color hexadecimal editable y botón para restablecerlo.
 - Ayudas de precisión: imán, rejilla de 1 mm y medidas.
 - Descarga en PDF por hojas, con marcas de corte y guía de armado, o en una sola hoja grande para imprenta.
 - Funciona con ratón, teclado, pantalla táctil y móvil. La tecla `?` muestra todos los atajos y gestos.
@@ -16,7 +18,7 @@ Todo ocurre en el navegador: no hay servidor, cuentas ni base de datos, y las im
 
 - **Astro 7** (sitio estático) + **TypeScript** estricto
 - **Tailwind CSS 4**, con los tokens del tema en `src/styles/global.css`
-- **pdf.js** para leer PDF y **jsPDF** para exportar, cargados solo cuando se usan
+- **pdf.js** para leer PDF, **jsPDF** para exportar y **opentype.js** para convertir el texto en contornos, cargados solo cuando se usan
 - Fuentes de Fontsource e iconos de Lucide, servidos desde el propio dominio
 - **Vitest** para la lógica pura y **Playwright** para probar la app entera en el navegador
 
@@ -52,6 +54,7 @@ src/
     geometry.ts                   geometría pura del póster y las imágenes
     input/                        ratón, táctil y teclado
     io/                           carga de archivos, PDF, guardado y exportación
+    text/                         textos: fuentes, contornos, escritura sobre el lienzo y su panel
     ui/                           barra contextual, menú y panel
     workers/                      procesamiento de píxeles fuera del hilo principal
 e2e/                              tests de punta a punta
@@ -61,9 +64,13 @@ vercel.json                       cabeceras de seguridad y caché
 
 ## Cómo funciona
 
-- **Guardado:** el póster se guarda solo en IndexedDB, con los archivos originales. El historial de deshacer no se guarda.
+- **Guardado:** el póster se guarda solo en IndexedDB, con los archivos originales. Mientras escribes también se guarda un borrador de las palabras, incluso antes de crear la primera capa. Al volver se reabre la edición; confirmarla es un único paso de deshacer. El historial de deshacer no se guarda.
 - **Calidad:** las imágenes grandes se editan en una copia más ligera. Al descargar se vuelve al archivo original.
 - **Precisión:** las posiciones caen en mm enteros. El imán a otras imágenes y al póster tiene prioridad sobre la rejilla, y Ctrl/⌘ desactiva los dos.
+- **Texto:** se convierte en contornos con la fuente. El póster guarda esos contornos y no la fuente, así que se puede imprimir sin ella; para cambiar las palabras de un texto con una fuente propia hay que volver a cargarla. La entrada admite 10.000 caracteres; se siguen recuperando los textos más largos de versiones anteriores.
+- **Tipografías:** el catálogo inicial de Google Fonts está en `src/editor/text/catalog.ts`, con archivos WOFF de Fontsource servidos desde el mismo dominio. Cada variante se descarga al elegirla, sin llamadas del navegador a Google. Sus licencias están en `public/fonts/licenses/`. Añadir otro proveedor no requiere cambiar el formato de los textos guardados.
+- **Medidas del texto:** el tamaño en puntos mide el cuerpo tipográfico (1 pt = 25,4/72 mm). La altura de una H es una referencia aproximada de impresión; el marco puede incluir el espacio del renglón. Cambiar de familia conserva los puntos.
+- **Color del texto:** acepta códigos hexadecimales de tres o seis dígitos, con o sin `#`. Al arrastrar el selector se reutiliza una vista previa a resolución de pantalla; al confirmar se regenera el texto y se guarda un solo paso de deshacer. El color predeterminado es `#111111`.
 - **Hojas:** se numeran 1, 2, 3… en el mismo orden que las páginas del PDF.
 - **Color:** todo se trabaja en sRGB. Los PDF en CMYK se convierten con perfil, y el PDF descargado va en RGB sin perfil ICC.
 

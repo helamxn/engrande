@@ -622,7 +622,7 @@ export function zoomInFrame(l: LayerGeom, f: number, P: Pt) {
 export function srcDims(l: LayerGeom & { src: Source | null }, hiArea: number) {
   const s = l.src, iw = l.img.width, ih = l.img.height;
   let w = iw, h = ih;
-  if (s?.kind === 'svg' || s?.kind === 'pdf') { const a = iw / ih; w = Math.sqrt(hiArea * a); h = w / a; }
+  if (s?.kind === 'svg' || s?.kind === 'pdf' || s?.kind === 'text') { const a = iw / ih; w = Math.sqrt(hiArea * a); h = w / a; }
   else if (s?.kind === 'img' && s.w && s.h) { const f = Math.min(1, Math.sqrt(hiArea / (s.w * s.h))); w = s.w * f; h = s.h * f; }
   return { w: Math.max(w, iw), h: Math.max(h, ih) };
 }

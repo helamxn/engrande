@@ -13,7 +13,7 @@ import {
   rotateLayer, scaleLayer, visH, visW,
 } from '../geometry';
 import { snap } from '../history';
-import { deskMQ, dockMQ, HI_AREA, isTouch } from '../platform';
+import { HI_AREA, isTouch } from '../platform';
 import { rich } from './keys';
 import { C, isFreshPoster, posterGeo, S, sheetsVisible, st } from '../state';
 import { dirty } from '../render';
@@ -21,12 +21,15 @@ import { fitView } from '../view';
 import { renderPdfPage } from '../io/pdf';
 import { canvasRevision, scheduleSave } from '../io/persist';
 import { ICON } from './icons';
-import { isPanelOff, isSheetOpen, openSheet, togglePanel } from './layout';
+import { isPanelOff, openSheet, togglePanel } from './layout';
 import { initListDrag } from './listdrag';
 import { groupMenu, layerMenu, openMenu } from './menu';
 import type { Quality, RelayoutMode } from '../geometry';
 import { getPref, setPref } from '../prefs';
 import type { Geo, Layer, LayoutSettings, Orient, Paper } from '../types';
+import { syncTextPanel } from '../text/textpanel';
+import { initSelectionCard, syncSelectionCard } from './selectioncard';
+import { renderBar } from './contextbar';
 
 /* ---------- pestañas (patrón ARIA tabs) ---------- */
 /**
@@ -35,20 +38,8 @@ import type { Geo, Layer, LayoutSettings, Orient, Paper } from '../types';
  * - al soltar la selección vuelve a Hojas, pero solo si el cambio anterior fue automático;
  * - lo que eliges a mano se respeta; en móvil solo cambia si el panel inferior está abierto (nunca lo abre).
  */
-let autoTab = false, hadSel = false;
-const activeTab = () => $$<HTMLButtonElement>('[role=tab]').find((b) => b.getAttribute('aria-selected') === 'true')?.dataset.tab;
-function followSelection(has: boolean) {
-  // punto en «Imágenes» si hay selección y se está en otra pestaña
-  $('#tab-image').classList.toggle('dot', has && activeTab() !== 'image');
-  if (has === hadSel) return;
-  hadSel = has;
-  if (!deskMQ?.matches && !isSheetOpen()) return;
-  if (has && activeTab() === 'sheets') { showTab('image'); autoTab = true; }
-  else if (!has && autoTab && activeTab() === 'image') { showTab('sheets'); autoTab = false; }
-  $('#tab-image').classList.toggle('dot', has && activeTab() !== 'image');
-}
 
-function showTab(t: string) {
+export function showTab(t: string) {
   for (const b of $$<HTMLButtonElement>('[role=tab]')) {
     const on = b.dataset.tab === t;
     b.setAttribute('aria-selected', String(on));
@@ -71,6 +62,7 @@ export function focusName() {
   if (isPanelOff()) togglePanel(true);
   openSheet('half');
   showTab('image');
+  $<HTMLDetailsElement>('#selectionGeometry').open = true;
   const el = $<HTMLInputElement>('#pName');
   el.focus(); el.select();
 }
@@ -163,7 +155,9 @@ function syncPresetIcons() {
  * «Nuevo» y al deshacer hasta el principio.
  */
 function syncWelcome() {
+  const was = $('#empty').hidden;
   $('#empty').hidden = sheetsVisible();
+  if (was !== $('#empty').hidden) renderBar(); // la barra fija aparece cuando se va la bienvenida
 }
 
 /* ---------- propiedades de la imagen seleccionada ---------- */
@@ -176,7 +170,6 @@ export function syncSel() {
   document.body.classList.toggle('no-sel', !sel);
   document.body.classList.toggle('sel-locked', !!sel?.locked);
   document.body.classList.toggle('has-group', st.group.length > 1);
-  followSelection(!!sel || st.group.length > 1);
   const gsel = selectedGroup();
   $('#gNameField').hidden = gsel == null;
   if (gsel != null) setField('#gName', groupName(gsel));
@@ -187,10 +180,6 @@ export function syncSel() {
     $('#gOpacityOut').textContent = same ? `${ops[0]} %` : 'varias';
   }
   $('#lockNote').hidden = !sel?.locked;
-  const n = st.group.length;
-  $('#selNote').textContent = n > 1
-    ? `${n} imágenes seleccionadas. Muévelas, escálalas o gíralas juntas en el lienzo; para alinearlas o repartirlas usa la barra ${dockMQ?.matches ? 'de abajo' : 'sobre el lienzo'}.`
-    : 'Selecciona una imagen en el lienzo o en la lista para ver y cambiar su tamaño, posición y opacidad.';
   if (sel) {
     setField('#pName', sel.name);
     const op = Math.round(sel.opacity * 100);
@@ -202,6 +191,8 @@ export function syncSel() {
     $('#pdfField').hidden = !(sel.pdf && sel.pages > 1);
     if (sel.pdf) { $<HTMLInputElement>('#pdfPage').max = String(sel.pages); setField('#pdfPage', sel.page); $('#pdfPages').textContent = 'de ' + sel.pages; }
   }
+  syncTextPanel();
+  syncSelectionCard();
   updateStats(); updateHint();
 }
 /**
@@ -502,11 +493,13 @@ export function updateHint() {
   if (!hint) return;
   const t = isTouch(), sel = st.sel;
   const H: Record<string, string> = {
-    move: !st.layers.length ? 'Agrega una imagen para empezar'
+    move: st.placingText ? (t ? 'Toca donde quieras el texto' : 'Haz clic donde quieras el texto, o arrastra para darle un ancho · {esc} para cancelar')
+      : !st.layers.length ? 'Agrega una imagen para empezar'
       : st.group.length > 1 ? (t
         ? `${st.group.length} seleccionadas · arrastra para moverlas · pellizca para escalar y girar · toca fuera para deseleccionar`
         : `${st.group.length} seleccionadas · arrastra para moverlas · esquinas: escalar · círculo: girar · {esc}: deseleccionar`)
       : sel?.hidden ? 'Imagen oculta: no se imprime · muéstrala con el ojo de la lista'
+      : sel?.src?.kind === 'text' ? (t ? 'Doble toque para escribir · arrastra para mover · pellizca para escalar y girar' : 'Doble clic o Enter: escribir · esquinas: escalar · lados: ancho · círculo: girar · clic fuera para deseleccionar')
       : sel ? (t ? 'Arrastra para mover · pellizca sobre la imagen para escalar y girar · toca fuera para deseleccionar' : 'Esquinas: escalar · lados: estirar · círculo: girar · clic fuera para deseleccionar')
         : (t ? 'Toca una imagen para seleccionarla · mantén pulsado para más opciones' : 'Clic en una imagen para seleccionarla · arrastra en el fondo para elegir varias · clic derecho: más opciones'),
     crop: t
@@ -517,15 +510,16 @@ export function updateHint() {
   };
   hint.replaceChildren(rich(H[S.mode] ?? ''));
   // con el póster vacío la pista sobra: la pantalla de inicio ya explica qué hacer
-  hint.classList.toggle('invisible', !st.layers.length);
+  hint.classList.toggle('invisible', !st.layers.length && !st.placingText);
 }
 
 
 export function initPanel() {
+  initSelectionCard();
   // pestañas
   // elegida a mano: se respeta (deja de ser un cambio automático)
   for (const b of $$<HTMLButtonElement>('[role=tab]')) {
-    b.addEventListener('click', () => { autoTab = false; showTab(b.dataset.tab!); $('#tab-image').classList.toggle('dot', hadSel && b.dataset.tab !== 'image'); });
+    b.addEventListener('click', () => showTab(b.dataset.tab!));
   }
   $('[role=tablist]').addEventListener('keydown', (e) => {
     const tabs = $$<HTMLButtonElement>('[role=tab]'), i = tabs.indexOf(document.activeElement as HTMLButtonElement);
@@ -534,7 +528,7 @@ export function initPanel() {
       : e.key === 'Home' ? 0 : e.key === 'End' ? tabs.length - 1 : -1;
     if (j < 0) return;
     e.preventDefault(); e.stopPropagation();
-    tabs[j]!.focus(); autoTab = false; showTab(tabs[j]!.dataset.tab!);
+    tabs[j]!.focus(); showTab(tabs[j]!.dataset.tab!);
   });
 
   // hojas
@@ -623,8 +617,8 @@ export function initPanel() {
   initListDrag($('#layers'), (li) => rowLayer.get(li));
   $('#gHide').addEventListener('click', hideSelected);
   $('#gLock').addEventListener('click', lockSelected);
-  numField('#pW', (l, v) => { const f = Math.max(3, v * 10) / visW(l); if (S.lock) scaleLayer(l, f, cropCenter(l)); else keepCenter(l, (x) => { x.w *= f; }); markManual(l); });
-  numField('#pH', (l, v) => { const f = Math.max(3, v * 10) / visH(l); if (S.lock) scaleLayer(l, f, cropCenter(l)); else keepCenter(l, (x) => { x.h *= f; }); markManual(l); });
+  numField('#pW', (l, v) => { const f = Math.max(3, v * 10) / visW(l); if (S.lock || l.src?.kind === 'text') scaleLayer(l, f, cropCenter(l)); else keepCenter(l, (x) => { x.w *= f; }); markManual(l); });
+  numField('#pH', (l, v) => { const f = Math.max(3, v * 10) / visH(l); if (S.lock || l.src?.kind === 'text') scaleLayer(l, f, cropCenter(l)); else keepCenter(l, (x) => { x.h *= f; }); markManual(l); });
   numField('#pX', (l, v) => { l.cx += v * 10 - bboxMM(l).x0; markManual(l); });
   numField('#pY', (l, v) => { l.cy += v * 10 - bboxMM(l).y0; markManual(l); });
   numField('#pR', (l, v) => { rotateLayer(l, normDeg(v) - l.rot, cropCenter(l)); markManual(l); }, 1);

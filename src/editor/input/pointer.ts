@@ -18,6 +18,8 @@ import { panBy, s2mm, zoomAt } from '../view';
 import { clearHelpers, measureCtx, measureTo, setGuides, snapPx, stopMeasure, type MeasureCtx } from '../measure';
 import { closeMenu, emptyMenu, groupMenu, layerMenu, openMenu } from '../ui/menu';
 import { renderList, syncSel } from '../ui/panel';
+import { addText, cancelTextPlacement, editText } from '../text/editor';
+import { dragWidth, fontFor, isText, setWidthMode, type TextLayer } from '../text/text';
 import type { CropDrag, HandleId, Layer, LayerGeom, Pt, ScaleDrag } from '../types';
 
 type Drag =
@@ -25,6 +27,8 @@ type Drag =
   | { t: 'pan'; last: Pt }
   /** Mover la imagen o todas las seleccionadas: posición inicial de cada una. */
   | MoveDrag
+  /** «Agregar texto»: dónde va. Un clic (sin mover) lo pone en a; un recuadro le da también un ancho fijo. */
+  | { t: 'textbox'; a: Pt; moved: boolean; edit: TextLayer | null }
   /** Recuadro de selección (ratón o lápiz sobre el fondo). add: con Shift/Ctrl se suma a lo que ya había. */
   | { t: 'marquee'; a: Pt; add: boolean; base: Layer[]; moved: boolean }
   /** Escalar el grupo desde una esquina: corner (la que se arrastra), opp (la opuesta) y center, en mm. */
@@ -273,6 +277,13 @@ export function initPointer(cv: HTMLCanvasElement) {
     if (e.pointerType === 'mouse') st.hover = p;
     const R = e.pointerType === 'mouse' ? 11 : 22;
     clearLP();
+    // colocando un texto: sobre un texto que ya existe, se edita ese; si no, aquí empieza el nuevo
+    if (st.placingText && ptrs.size === 1) {
+      // (se abre al soltar: al pulsar, el navegador aún movería el foco y cerraría el cuadro recién abierto)
+      const t = hitLayer(p, false);
+      drag = { t: 'textbox', a: p, moved: false, edit: isText(t) ? t : null };
+      return;
+    }
     if (ptrs.size === 2) {
       // pellizco: transforma la imagen solo si el centro del gesto cae sobre ella; si no, hace zoom de la vista.
       // Al recortar, pellizcar sobre la imagen la amplía o reduce dentro del marco.
@@ -305,7 +316,7 @@ export function initPointer(cv: HTMLCanvasElement) {
         if (drag?.t === 'paint') undo();
         drag = null; setPending(null);
         const h = hitLayer(p);
-        const items = h ? menuFor(h) : (select(null), emptyMenu());
+        const items = h ? menuFor(h) : (select(null), emptyMenu(s2mm(p)));
         const r = cv.getBoundingClientRect();
         openMenu(r.left + p.x, r.top + p.y, items);
         dirty();
@@ -337,6 +348,8 @@ export function initPointer(cv: HTMLCanvasElement) {
           setPending(takeSnap());
           const cc = cropCenter(sel);
           drag = h.id === 'rot' ? { t: 'rot', cc, a0: Math.atan2(m.y - cc.y, m.x - cc.x), r0: sel.rot } : startScale(sel, h.id);
+          // el ancho de un texto se calcula con su fuente: que esté lista (o que avise si falta) antes de arrastrar
+          if (isText(sel) && (h.id === 'e' || h.id === 'w')) void fontFor(sel, 'cambiar el ancho');
           edgeCtx = drag.t === 'scale' ? { box0: bboxMM(sel), ctx: measureCtx([sel]) } : null;
           return;
         }
@@ -390,6 +403,7 @@ export function initPointer(cv: HTMLCanvasElement) {
       // solo pasar el ratón por encima: cursores y resaltado
       const prevHoverL = st.hoverL;
       if (e.pointerType === 'mouse') {
+        if (st.placingText) { st.hoverL = null; setCursor('text'); if (prevHoverL) dirty(); return; }
         if (S.mode === 'move') {
           const gh = st.group.length > 1 ? nearest(groupHandles(), p, 11) : null;
           if (gh) { st.hoverL = null; setCursor(groupCursor(gh.id)); if (st.hoverL !== prevHoverL) dirty(); return; }
@@ -445,6 +459,14 @@ export function initPointer(cv: HTMLCanvasElement) {
     if (!drag) return;
     const m = s2mm(p);
     switch (drag.t) {
+      case 'textbox': {
+        // el recuadro se ve mientras se arrastra (el mismo dibujo que el de selección)
+        if (drag.edit) break;
+        if (!drag.moved && Math.hypot(p.x - drag.a.x, p.y - drag.a.y) < 6) break;
+        drag.moved = true;
+        st.marquee = { a: drag.a, b: p };
+        dirty(); break;
+      }
       case 'pan': panBy(p.x - drag.last.x, p.y - drag.last.y); drag.last = p; break;
       case 'move': {
         let d = drag;
@@ -548,8 +570,11 @@ export function initPointer(cv: HTMLCanvasElement) {
         if (!sel) break;
         commitPending(); markManual(sel);
         const d = drag;
-        applyScale(sel, d, m, e.shiftKey, e.altKey);
-        edgeHelpers(e, sel, m, (mm) => applyScale(sel, d, mm, e.shiftKey, e.altKey), { id: d.id, alt: e.altKey });
+        // un lado de un texto cambia su ancho (las líneas se parten), no lo estira
+        if (isText(sel) && (d.id === 'e' || d.id === 'w')) { dragWidth(sel, d.L0, d.id, m); lastDragPt = p; syncSel(); break; }
+        const free = e.shiftKey && !isText(sel); // un texto siempre escala sin deformar
+        applyScale(sel, d, m, free, e.altKey);
+        edgeHelpers(e, sel, m, (mm) => applyScale(sel, d, mm, free, e.altKey), { id: d.id, alt: e.altKey });
         lastDragPt = p;
         if (e.altKey || st.altDown) measureDuring(d, p); else st.measure = null;
         syncSel(); break;
@@ -589,6 +614,16 @@ export function initPointer(cv: HTMLCanvasElement) {
     if (!ptrs.has(e.pointerId)) return;
     const p = pos(e), sel = st.sel;
     if (drag?.t === 'marquee') { st.marquee = null; if (drag.moved) cv.style.cursor = 'default'; }
+    if (drag?.t === 'textbox') {
+      st.marquee = null;
+      if (e.type === 'pointerup') {
+        const a = s2mm(drag.a), b = s2mm(p), t = drag.edit;
+        if (t) { cancelTextPlacement(); select(t); editText(t); }
+        // recuadro: su esquina de arriba a la izquierda y su ancho; clic: el punto, con ancho automático
+        else if (drag.moved && Math.abs(b.x - a.x) > 2) addText({ x: Math.min(a.x, b.x), y: Math.min(a.y, b.y) }, Math.abs(b.x - a.x));
+        else addText(a);
+      }
+    }
     // Shift o Ctrl + clic (sin arrastrar) sobre una que ya estaba seleccionada: sale de la selección
     const toggleOnUp = drag?.t === 'move' && drag.toggle && e.type === 'pointerup' ? drag.toggle.l : null;
     if (drag?.t === 'tap' && !drag.moved && e.type === 'pointerup') {
@@ -636,11 +671,18 @@ export function initPointer(cv: HTMLCanvasElement) {
   }, { passive: false });
 
   cv.addEventListener('dblclick', (e) => {
+    // doble clic en un lado de un texto: vuelve al ancho automático (cada línea ocupa todo lo que mide)
+    const ts = st.sel;
+    if (isText(ts) && S.mode === 'move') {
+      const sh = nearest(boxHandles(ts, false), pos(e), 11);
+      if (sh && (sh.id === 'e' || sh.id === 'w')) { void setWidthMode(ts, false); return; }
+    }
     const h = hitLayer(pos(e));
     if (!h) return;
     if (S.mode === 'crop') { applyCrop(); return; }
     // doble clic sobre un grupo seleccionado: un nivel más adentro (su subgrupo o la imagen); sobre una sola, recorta
     if (st.group.includes(h) && selectedGroup() != null) { enterGroup(h); return; }
+    if (isText(h)) { editText(h); return; }
     select(h); enterCrop();
   });
   cv.addEventListener('contextmenu', (e) => {
@@ -649,6 +691,6 @@ export function initPointer(cv: HTMLCanvasElement) {
     const h = hitLayer(pos(e));
     if (S.mode === 'crop') applyCrop();
     if (h) openMenu(e.clientX, e.clientY, menuFor(h));
-    else { if (selected().length) select(null); openMenu(e.clientX, e.clientY, emptyMenu()); }
+    else { if (selected().length) select(null); openMenu(e.clientX, e.clientY, emptyMenu(s2mm(pos(e)))); }
   });
 }

@@ -20,6 +20,8 @@ import { isFreshPoster, st } from '../state';
 import { fitView, zoomCenter } from '../view';
 import { loadFiles } from '../io/load';
 import { ICON, type IconName } from './icons';
+import { addText, editText } from '../text/editor';
+import { isText } from '../text/text';
 import { gesture, k, keysEl, rich, type Part } from './keys';
 import type { Layer, Pt } from '../types';
 
@@ -65,19 +67,24 @@ export function layerMenu(l: Layer, prev: Layer[] = []): MenuItem[] {
   const locked = l.hidden || l.locked; // oculta o bloqueada: no se puede editar hasta mostrarla o desbloquearla
   // en táctil no hay Shift ni Ctrl: mantener pulsada otra imagen ofrece sumarla a lo que estaba seleccionado
   const addTo = prev.filter((x) => !x.hidden && x !== l);
+  const text = isText(l);
   return [
     ...(addTo.length && !l.hidden ? [
       { label: `Agregar a la selección (${addTo.length + 1})`, icon: 'selectBox', fn: () => selectMany([...addTo, l]) } satisfies ActionItem,
       '-' as const,
     ] : []),
-    { label: 'Recortar', icon: 'crop', kbd: [gesture(isTouch() ? 'Doble toque' : 'Doble clic')], fn: () => { select(l); enterCrop(); }, disabled: locked },
-    { label: 'Quitar fondo', icon: 'bg', fn: () => { select(l); autoBackground(); }, disabled: locked },
-    {
-      label: 'Borrar zonas', icon: 'erase', disabled: locked, submenu: [
-        { label: 'Borrador', kbd: k('e'), fn: () => { select(l); setMode('erase'); } },
-        { label: 'Varita', kbd: k('w'), fn: () => { select(l); setMode('wand'); } },
-      ],
-    },
+    ...(text ? [
+      { label: 'Editar texto', icon: 'text', kbd: [gesture(isTouch() ? 'Doble toque' : 'Doble clic')], fn: () => editText(l), disabled: locked } satisfies ActionItem,
+    ] : [
+      { label: 'Recortar', icon: 'crop', kbd: [gesture(isTouch() ? 'Doble toque' : 'Doble clic')], fn: () => { select(l); enterCrop(); }, disabled: locked } satisfies ActionItem,
+      { label: 'Quitar fondo', icon: 'bg', fn: () => { select(l); autoBackground(); }, disabled: locked } satisfies ActionItem,
+      {
+        label: 'Borrar zonas', icon: 'erase', disabled: locked, submenu: [
+          { label: 'Borrador', kbd: k('e'), fn: () => { select(l); setMode('erase'); } },
+          { label: 'Varita', kbd: k('w'), fn: () => { select(l); setMode('wand'); } },
+        ],
+      } satisfies SubmenuItem,
+    ]),
     '-',
     { label: 'Copiar', icon: 'copy', kbd: k('mod+c'), fn: () => copyLayer(l) },
     { label: 'Cortar', icon: 'cut', kbd: k('mod+x'), fn: () => { select(l); cutSelected(); }, disabled: l.locked },
@@ -117,12 +124,12 @@ export function layerMenu(l: Layer, prev: Layer[] = []): MenuItem[] {
       ],
     },
     '-',
-    { label: 'Volver a la imagen original', icon: 'history', fn: () => resetOriginal(l), disabled: locked },
+    ...(text ? [] : [{ label: 'Volver a la imagen original', icon: 'history', fn: () => resetOriginal(l), disabled: locked } satisfies ActionItem]),
     { label: 'Quitar del póster', icon: 'del', kbd: k('del'), fn: () => removeLayer(l), danger: true },
   ];
 }
 /** Menú de varias imágenes seleccionadas. */
-/** Alinear las seleccionadas (submenú del grupo y botón «Alinear» de la barra en móvil). */
+/** Alinear las seleccionadas (submenú del menú de varias). */
 export const alignMenu = (): MenuItem[] => [
   { label: 'A la izquierda', fn: () => alignSelected('left') },
   { label: 'Al centro (horizontal)', fn: () => alignSelected('hcenter') },
@@ -164,12 +171,14 @@ export function groupMenu(): MenuItem[] {
     { label: `Quitar ${n} del póster`, icon: 'del', kbd: k('del'), fn: removeSelected, danger: true },
   ];
 }
-export function emptyMenu(): MenuItem[] {
+/** Menú del lienzo vacío. at: dónde se tocó (mm), para «Agregar texto aquí». */
+export function emptyMenu(at?: Pt): MenuItem[] {
   const visible = st.layers.filter((l) => !l.hidden).length;
   return [
     { label: 'Pegar', icon: 'paste', kbd: k('mod+v'), fn: () => void pasteAny(), disabled: !canPaste() },
     { label: 'Seleccionar todas', icon: 'selectBox', kbd: k('mod+a'), fn: selectAll, disabled: visible < 1 },
     { label: 'Agregar imagen…', icon: 'addImage', fn: () => $<HTMLInputElement>('#file').click() },
+    { label: at ? 'Agregar texto aquí' : 'Agregar texto', icon: 'text', kbd: k('t'), fn: () => addText(at) },
     { label: 'Nuevo póster', icon: 'newPoster', fn: newPoster, disabled: isFreshPoster() },
     '-',
     { label: 'Ver todo el póster', icon: 'fitAll', kbd: k('mod+0'), fn: fitView },

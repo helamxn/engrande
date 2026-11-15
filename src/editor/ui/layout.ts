@@ -62,7 +62,8 @@ export const isSheetOpen = () => sheet !== 'peek';
 
 /** Alturas (px): solo asa y pestañas; media pantalla; hasta debajo de las herramientas. */
 function sheetHeights() {
-  const tabs = $('#sheetTabs');
+  // la cabecera visible: las pestañas o, con algo seleccionado, la de su tarjeta
+  const tabs = document.body.classList.contains('inspecting') ? $('#selectionHead') : $('#sheetTabs');
   const peek = Math.round(tabs.offsetTop + tabs.offsetHeight);
   const top = $('#tools').getBoundingClientRect().bottom + 8;
   const full = Math.max(peek, Math.round(innerHeight - top));
@@ -86,6 +87,9 @@ export function openSheet(state: SheetState) {
   $('#sheetHandle').setAttribute('aria-expanded', String(state !== 'peek'));
   update(); // y otra vez al terminar la transición (transitionend)
 }
+
+/** Vuelve a aplicar la altura del panel inferior (cambió su cabecera: pestañas o tarjeta de la selección). */
+export function refreshSheet() { if (!deskMQ?.matches) openSheet(sheet); }
 
 /** Arrastrar el asa cambia la altura; al soltar se queda en la más cercana. Un toque alterna. */
 function initSheetDrag() {

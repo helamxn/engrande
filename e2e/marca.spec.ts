@@ -1,7 +1,7 @@
 /** Identidad pública, cabecera adaptable y continuidad con los datos de Pliego. */
 import { expect, test } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
-import { addImage, expectSavedNames, listNames, openApp } from './helpers';
+import { addImage, expectSavedNames, listNames, openApp, openTab } from './helpers';
 
 test.use({ colorScheme: 'light' }); // La marca abre en oscuro incluso si el sistema usa claro.
 
@@ -79,7 +79,7 @@ test('las acciones de la cabecera caben en móvil, tableta y junto al panel de e
         expect(box.x + box.width).toBeLessThanOrEqual(boxes.header.x + boxes.header.width);
         expect(box.x + box.width).toBeLessThanOrEqual(width);
       }
-      for (const name of ['Nuevo póster', 'Agregar imagen', 'Descargar PDF']) {
+      for (const name of ['Nuevo póster', 'Descargar PDF']) {
         await expect(page.locator('header').getByRole('button', { name, exact: true })).toBeVisible();
       }
     });
@@ -111,7 +111,7 @@ test('los otros PDF descargados también llevan la nueva marca', async ({ page }
   expect(margins.suggestedFilename()).toBe('engrande-prueba-margenes-A4-vertical.pdf');
   expect((await readFile((await margins.path())!)).subarray(0, 4).toString()).toBe('%PDF');
   await addImage(page, { w: 600, h: 400 });
-  await page.locator('#tab-export').click();
+  await openTab(page, 'export');
   const singleDownload = page.waitForEvent('download');
   await page.locator('#exportSingle').click();
   const single = await singleDownload;

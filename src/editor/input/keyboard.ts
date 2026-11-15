@@ -13,6 +13,8 @@ import { setSpaceDown } from './pointer';
 import { measureCtx, stopMeasure } from '../measure';
 import { bboxMM, gridStep, stepToLines, unionBox } from '../geometry';
 import { altChangedDuringDrag, refreshMeasure } from './pointer';
+import { cancelTextPlacement, editText, startTextPlacement } from '../text/editor';
+import { isText } from '../text/text';
 
 /**
  * Botón que tiene el foco porque se pulsó con el ratón o el dedo (no con el teclado). No sirve :focus-visible: el
@@ -64,6 +66,9 @@ export function initKeyboard() {
     if (mod && (e.key === ']' || e.code === 'BracketRight') && sel) { e.preventDefault(); reorder(sel, e.shiftKey ? 'front' : 1); return; }
     if (mod && (e.key === '[' || e.code === 'BracketLeft') && sel) { e.preventDefault(); reorder(sel, e.shiftKey ? 'back' : -1); return; }
     if (e.key === 'Enter' && S.mode === 'crop') { e.preventDefault(); applyCrop(); return; }
+    // Enter con un texto seleccionado: escribir (si el foco está en un botón, Enter es pulsarlo)
+    if (e.key === 'Enter' && !mod && isText(sel) && !(e.target instanceof HTMLButtonElement)) { e.preventDefault(); editText(sel); return; }
+    if (e.key === 'Escape' && st.placingText) { cancelTextPlacement(); return; }
     if (e.key === 'Escape' && st.measureMode) { st.measureMode = false; stopMeasure(); return; }
     if (e.key === 'Escape') {
       // en un grupo abierto, Esc sale un nivel (selecciona el grupo); en el póster, deselecciona
@@ -103,6 +108,7 @@ export function initKeyboard() {
     // Espacio + arrastrar mueve la vista. También con el foco en un botón pulsado con el ratón:
     // si no, Espacio lo volvería a pulsar (p. ej. «Acercar»). Con el foco puesto con el teclado, Espacio pulsa el botón.
     if (e.code === 'Space' && spaceTarget(e.target)) { if (!e.repeat) setSpaceDown(true); e.preventDefault(); return; }
+    if (k === 't' && !e.shiftKey) { e.preventDefault(); startTextPlacement(); return; }
     if (!sel) return;
     if (k === 'c') enterCrop();
     else if (k === 'e') setMode('erase');

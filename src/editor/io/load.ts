@@ -7,6 +7,8 @@ import { snap } from '../history';
 import { S, st } from '../state';
 import { openPdf, renderPdfPage } from './pdf';
 import type { Layer } from '../types';
+import { isFontFile } from '../text/fonts';
+import { loadFonts } from '../text/textpanel';
 
 /**
  * Se espera al evento load y no a img.decode(): decode() no se resuelve mientras la pestaña está en segundo plano.
@@ -60,7 +62,10 @@ async function fileToLayer(f: File): Promise<Layer | null> {
 }
 
 export async function loadFiles(list: Iterable<File | null> | ArrayLike<File | null>) {
-  const files = [...(list as Iterable<File | null>)].filter((f): f is File => !!f);
+  const all = [...(list as Iterable<File | null>)].filter((f): f is File => !!f);
+  // las fuentes (TTF, OTF, WOFF) no son imágenes: quedan para los textos
+  const fonts = all.filter(isFontFile), files = all.filter((f) => !isFontFile(f));
+  if (fonts.length) await loadFonts(fonts);
   if (!files.length) return;
   if (S.mode === 'crop') applyCrop();
   toast(files.length > 1 ? `Cargando ${files.length} archivos…` : 'Cargando…', 0);

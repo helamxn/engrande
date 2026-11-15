@@ -52,7 +52,9 @@ test('deslizar un dedo por el fondo mueve la vista y deselecciona (sin recuadro 
   const f = await fingers(page);
   await f.swipe(outside, { x: outside.x + 80, y: outside.y - 60 });
   expect(await listNames(page)).toEqual(['foto']);
-  await expect(page.locator('#ctxbar')).toBeHidden();
+  // sin selección, la barra fija ofrece agregar imagen o texto (y no las acciones de la imagen)
+  await expect(page.locator('#ctxbar [data-addtext]')).toBeVisible();
+  await expect(page.locator('#ctxbar [data-act=crop]')).toHaveCount(0);
 });
 
 test('doble toque sobre la imagen entra en el recorte', async ({ page }) => {

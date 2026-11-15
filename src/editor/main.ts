@@ -12,12 +12,15 @@ import { dockMQ, isMac, MOD } from './platform';
 import { hydrateKeys } from './ui/keys';
 import { initRender, readColors } from './render';
 import { st, V } from './state';
-import { initContextBar } from './ui/contextbar';
+import { initContextBar, renderBar } from './ui/contextbar';
 import { initLayout } from './ui/layout';
 import { initMenu, pasteAny } from './ui/menu';
 import { initShortcuts } from './ui/shortcuts';
 import { initPanel, layoutRestored, renderList, syncExportUI, syncSel, updateHint } from './ui/panel';
 import { fitView, resize, zoomCenter } from './view';
+import { initTextPanel } from './text/textpanel';
+import { onPlacingChange } from './text/editor';
+import { restoreTextDraft } from './text/editor';
 
 /** Los títulos del marcado dicen «Ctrl+»; en Mac se muestran con ⌘ (el editor acepta las dos teclas). */
 function macTitles() {
@@ -34,6 +37,9 @@ export function startEditor() {
   initMenu();
   initContextBar();
   initPanel();
+  initTextPanel();
+  // «Agregar texto» esperando el clic: el botón de la barra se marca y la pista lo explica
+  onPlacingChange(() => { renderBar(); updateHint(); });
   initPointer(cv);
   initKeyboard();
   initLoad();
@@ -74,7 +80,7 @@ export function startEditor() {
   addEventListener('beforeunload', (e) => {
     if (isWorkSafe()) return;
     void flushSave();
-    if (hasUnexported()) e.preventDefault();
+    if (hasUnexported() || st.textDraft) e.preventDefault();
   });
 
   readColors();
@@ -100,5 +106,6 @@ export function startEditor() {
       else toast('Se recuperó tu póster.', 6000, { label: 'Empezar de nuevo', fn: newPoster });
     }
     resize(stage, cv);
+    restoreTextDraft();
   })();
 }

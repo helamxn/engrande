@@ -5,6 +5,16 @@ import { expect, type Page } from '@playwright/test';
 export interface SavedBox { x0: number; y0: number; x1: number; y1: number; w: number; h: number }
 export interface Saved { names: string[]; boxes: SavedBox[]; layout: Record<string, unknown>; dpi: number }
 
+/**
+ * «Agregar texto» y elegir dónde: el botón visible (bienvenida, barra o panel) y un clic en el lienzo, que es donde
+ * empieza el texto. Devuelve con el cuadro de escritura listo.
+ */
+export async function startText(page: Page, at = { x: 220, y: 260 }) {
+  await page.locator('[data-addtext]:visible').first().click();
+  await page.locator('#cv').click({ position: at });
+  await expect(page.locator('.text-editor')).toBeFocused();
+}
+
 /** Abre la app con el póster vacío. */
 export async function openApp(page: Page) {
   await page.goto('/');
@@ -88,8 +98,24 @@ export async function listNames(page: Page) {
     lis.map((li) => (li.querySelector('.layer-main span')?.firstChild?.textContent ?? '') + (li.classList.contains('on') ? '*' : '')));
 }
 
+/**
+ * Muestra la lista de capas: con algo seleccionado el panel es la tarjeta de la selección (sin pestañas), así que
+ * primero se cierra.
+ */
+export async function showLayers(page: Page) { await openTab(page, 'image'); }
+
+/** Abre una pestaña del panel (cerrando antes la tarjeta de la selección, si la hay). */
+export async function openTab(page: Page, tab: 'sheets' | 'image' | 'export') {
+  if (await page.locator('#selectionClose').isVisible()) await page.locator('#selectionClose').click();
+  await page.locator(`#tab-${tab}`).click();
+}
+
 /** Selecciona desde la lista la fila i (0 = la de arriba) y quita el foco, para que el teclado vaya al lienzo. */
 export async function selectRow(page: Page, i = 0) {
+  // la fila ya está (si se acaba de cargar, su selección automática no llega a mitad de camino)
+  await expect(page.locator('#layers li.layer').nth(i)).toBeAttached({ timeout: 15_000 });
+  await expect(page.locator('#toast:visible', { hasText: 'Cargando' })).toHaveCount(0);
+  await showLayers(page);
   await page.locator('#tab-image').click();
   await page.locator('#layers li.layer .layer-main').nth(i).click();
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());

@@ -1,19 +1,22 @@
-/** Barra de herramientas que flota junto a la imagen seleccionada (o acoplada abajo en móvil). */
+/**
+ * Barra de herramientas fija, abajo al centro del lienzo (en el móvil, acoplada sobre el panel inferior). Cambia con lo
+ * seleccionado: sin selección (o con varias), agregar imagen o texto; con una imagen o un texto, sus herramientas; en
+ * recorte, borrador o varita, sus controles. Las propiedades y lo que se hace con varias (alinear, repartir, agrupar)
+ * están en la tarjeta del panel.
+ */
 import {
-  alignSelected, applyCrop, autoBackground, cancelCrop, distributeSelected, duplicateSelected, enterCrop, flip,
-  groupName, groupSelected, removeLayer, rotate90, selectedGroup, setCropRatio, setMode,
-  toggleLocked, ungroupSelected,
+  applyCrop, autoBackground, cancelCrop, enterCrop, flip, removeLayer, rotate90, setCropRatio, setMode, toggleLocked,
 } from '../actions';
-import type { AlignEdge } from '../geometry';
 import { RATIOS } from '../constants';
 import { $ } from '../dom';
-import { DELK, dockMQ, MOD, SHIFT } from '../platform';
-import { cropPts, dirty } from '../render';
-import { S, st, view } from '../state';
-import { isGesturing } from '../input/pointer';
+import { DELK, dockMQ, MOD } from '../platform';
+import { dirty } from '../render';
+import { S, sheetsVisible, st, view } from '../state';
 import { ICON, type IconName } from './icons';
-import { alignMenu, distributeMenu, groupMenu, layerMenu, openMenu, ratioMenu } from './menu';
+import { layerMenu, openMenu, ratioMenu } from './menu';
 import { updateHint } from './panel';
+import { editText } from '../text/editor';
+import { isText } from '../text/text';
 
 let bar: HTMLElement;
 /**
@@ -28,8 +31,6 @@ function tb(icon: IconName | null, label: string, act: string, title = label, cl
   return `<button type="button" class="tb ${cls}" data-act="${act}" title="${title}" aria-label="${title}">${icon ? ICON[icon] : ''}${lab}</button>`;
 }
 const SEP = '<span class="sep"></span>';
-/** El nombre del grupo es dato del usuario: se escapa antes de meterlo en el HTML de la barra. */
-const escapeHtml = (t: string) => t.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 /** Separador que solo se ve junto a botones «dw» (barra acoplada con sitio). */
 const SEP_DW = '<span class="sep dw"></span>';
 
@@ -39,17 +40,11 @@ const SEP_DW = '<span class="sep dw"></span>';
  * Girar y Voltear aparecen solo si hay sitio (clase dw, ver global.css).
  */
 function dockBar(): string {
-  const n = st.group.length;
-  if (n > 1 && S.mode === 'move') {
-    return `<span class="mini"><b class="text-fg">${n}</b> imágenes</span>${SEP}`
-      + tb('alignLeft', 'Alinear', 'alignMenu', 'Alinear')
-      + `<button type="button" class="tb" data-act="distMenu" title="Repartir" aria-label="Repartir"${n < 3 ? ' disabled' : ''}>${ICON.distributeH}<span>Repartir</span></button>`
-      + tb('dup', 'Duplicar', 'dupGroup', 'Duplicar') + tb('more', 'Más', 'more', 'Más opciones');
-  }
   if (st.sel?.locked) return `<span class="mini">${ICON.lock} Bloqueada</span>${SEP}` + tb('lockOpen', 'Desbloquear', 'unlock') + tb('more', 'Más', 'more', 'Más opciones');
   switch (S.mode) {
     case 'move':
-      return tb('crop', 'Recortar', 'crop') + tb('bg', 'Quitar fondo', 'autobg') + tb('erase', 'Borrador', 'erase') + tb('wand', 'Varita', 'wand')
+      return (isText(st.sel) ? tb('text', 'Editar texto', 'editText')
+        : tb('crop', 'Recortar', 'crop') + tb('bg', 'Quitar fondo', 'autobg') + tb('erase', 'Borrador', 'erase') + tb('wand', 'Varita', 'wand'))
         + SEP_DW + tb('rot', 'Girar', 'rotR', 'Girar 90°', 'dw') + tb('flip', 'Voltear', 'flipX', 'Voltear en horizontal', 'dw')
         + SEP + tb('more', 'Más', 'more', 'Más opciones: girar, voltear, duplicar, quitar…');
     case 'crop': {
@@ -69,42 +64,31 @@ function dockBar(): string {
   }
 }
 
-/** Barra de varias imágenes: alinear entre sí, repartir (3 o más), duplicar y quitar. */
-function groupBar() {
-  const n = st.group.length, dis = n < 3 ? ' disabled' : '';
-  const al = (icon: IconName, edge: AlignEdge, t: string) =>
-    `<button type="button" class="tb" data-act="align" data-e="${edge}" title="${t}" aria-label="${t}">${ICON[icon]}</button>`;
-  const ds = (icon: IconName, axis: 'x' | 'y', t: string) =>
-    `<button type="button" class="tb" data-act="dist" data-a="${axis}" title="${t}" aria-label="${t}"${dis}>${ICON[icon]}</button>`;
-  const whole = selectedGroup() != null;
-  // compacta: junto al panel queda poco sitio. Quitar va en «Más» (y con Supr).
-  const gid = selectedGroup(), label = gid != null ? escapeHtml(groupName(gid)) + ' · ' : '';
-  return `<span class="mini">${label}<b class="text-fg">${n}</b>${whole ? '' : ' imágenes'}</span>`
-    + (whole ? tb('ungroup', '', 'ungroup', `Desagrupar (${MOD}${SHIFT}G)`) : tb('group', '', 'group', `Agrupar (${MOD}G)`))
-    + SEP + al('alignLeft', 'left', 'Alinear a la izquierda') + al('alignHCenter', 'hcenter', 'Alinear al centro (horizontal)')
-    + al('alignRight', 'right', 'Alinear a la derecha') + al('alignTop', 'top', 'Alinear arriba')
-    + al('alignVCenter', 'vcenter', 'Alinear al centro (vertical)') + al('alignBottom', 'bottom', 'Alinear abajo')
-    + SEP + ds('distributeH', 'x', n < 3 ? 'Repartir en horizontal (3 o más imágenes)' : 'Repartir en horizontal')
-    + ds('distributeV', 'y', n < 3 ? 'Repartir en vertical (3 o más imágenes)' : 'Repartir en vertical')
-    + SEP + tb('dup', 'Duplicar', 'dupGroup', `Duplicar (${MOD}D)`, '', true)
-    + tb('more', 'Más', 'more', `Más opciones: quitar (${DELK}), ocultar, bloquear…`, '', true);
-}
+/**
+ * Sin selección, o con varias: crear (con varias, alinear, repartir y agrupar están en la tarjeta del panel: no son
+ * herramientas). Con la bienvenida a la vista no hace falta (ya tiene esas acciones).
+ */
+const idleBar = () =>
+  // data-addfile y data-addtext: los atienden los mismos manejadores que los botones del panel y la bienvenida
+  `<button type="button" class="tb" data-addfile title="Agregar imágenes o PDF (${MOD}O)">${ICON.addImage}<span>Agregar imagen</span></button>`
+  + `<button type="button" class="tb" data-addtext title="Agregar texto (T)" aria-pressed="${st.placingText}">${ICON.text}<span>Agregar texto</span></button>`;
 
 export function renderBar() {
   const group = st.group.length > 1 && S.mode === 'move';
-  if (!group && (!st.sel || st.sel.hidden)) { bar.hidden = true; $('#hint').hidden = false; updateHint(); return; }
   let h = '';
-  if (dockMQ?.matches) {
+  if (group || !st.sel || st.sel.hidden) {
+    if (!sheetsVisible()) { bar.hidden = true; $('#hint').hidden = false; updateHint(); return; }
+    h = idleBar();
+  } else if (dockMQ?.matches) {
     h = dockBar();
-  } else if (group) {
-    h = groupBar();
   } else if (st.sel?.locked) {
     // bloqueada: nada se puede editar; solo desbloquear o el menú
     h = `<span class="mini">${ICON.lock} Bloqueada</span>` + SEP + tb('lockOpen', 'Desbloquear', 'unlock')
       + tb('more', 'Más', 'more', 'Más opciones (clic derecho)', '', true);
   } else if (S.mode === 'move') {
-    h = tb('crop', 'Recortar', 'crop', 'Recortar (doble clic)') + tb('bg', 'Quitar fondo', 'autobg', 'Quitar el fondo (si es de un color)')
-      + tb('erase', 'Borrador', 'erase', 'Borrador: borra o recupera a mano (E)') + tb('wand', 'Varita', 'wand', 'Varita: borra un color (W)')
+    h = (isText(st.sel) ? tb('text', 'Editar texto', 'editText', 'Editar el texto (doble clic o Enter)')
+      : tb('crop', 'Recortar', 'crop', 'Recortar (doble clic)') + tb('bg', 'Quitar fondo', 'autobg', 'Quitar el fondo (si es de un color)')
+      + tb('erase', 'Borrador', 'erase', 'Borrador: borra o recupera a mano (E)') + tb('wand', 'Varita', 'wand', 'Varita: borra un color (W)'))
       + SEP + tb('rot', 'Girar', 'rotR', 'Girar 90° (R)', '', true) + tb('flip', 'Voltear', 'flipX', 'Voltear en horizontal (H)', '', true)
       + SEP + tb('more', 'Más', 'more', 'Más opciones (clic derecho)', '', true) + tb('del', 'Quitar', 'delete', `Quitar del póster (${DELK})`, 'danger', true);
   } else if (S.mode === 'crop') {
@@ -121,6 +105,7 @@ export function renderBar() {
       + SEP + tb('bg', 'Quitar fondo', 'autobg', 'Quitar el fondo (si es de un color)') + tb('check', 'Listo', 'done', 'Listo (Esc)', 'primary');
   }
   bar.innerHTML = h; // solo constantes y números: sin datos del usuario
+  bar.classList.toggle('idle', group || !st.sel || st.sel.hidden);
   bar.hidden = false;
   barSize = null;
   bar.querySelector<HTMLInputElement>('#bBrush')?.addEventListener('input', (e) => {
@@ -139,28 +124,21 @@ export function renderBar() {
 }
 
 export function positionBar() {
-  const sel = st.sel;
-  if (!bar || bar.hidden || (!sel && st.group.length < 2)) return;
+  if (!bar || bar.hidden) return;
   const docked = !!dockMQ?.matches;
   if (bar.classList.contains('dock') !== docked) { bar.classList.toggle('dock', docked); barSize = null; }
-  bar.classList.toggle('ghost', isGesturing() || !!st.measure); // al medir, la barra no tapa las distancias
   $('#hint').hidden = docked;
   // acoplada: encima del panel inferior (móvil), que puede estar más o menos abierto
-  if (docked) { bar.style.left = ''; bar.style.top = ''; bar.style.bottom = `${view.ins.b + 8}px`; bar.style.maxWidth = ''; return; }
-  bar.style.bottom = '';
-  // nunca más ancha que la zona libre (no se mete bajo el panel); si no cupiera, se desplaza por dentro
-  bar.style.maxWidth = `${Math.max(120, view.CW - view.ins.l - view.ins.r - 16)}px`;
-  const pts = sel ? cropPts(sel) : st.group.flatMap(cropPts), xs = pts.map((p) => p.x), ys = pts.map((p) => p.y);
-  const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
+  if (docked) { bar.style.left = ''; bar.style.bottom = `${view.ins.b + 8}px`; bar.style.maxWidth = ''; return; }
+  // escritorio: abajo, en la fila de las herramientas (zoom, deshacer), centrada en la zona libre sin taparlas;
+  // nunca más ancha que el sitio que queda (si no cupiera, se desplaza por dentro)
+  const tools = $('#tools').getBoundingClientRect(), stage = $('#stage').getBoundingClientRect();
+  const minX = tools.right - stage.left + 8, maxX = view.CW - view.ins.r - 8;
+  bar.style.maxWidth = `${Math.max(120, maxX - minX)}px`;
   barSize ??= { w: bar.offsetWidth, h: bar.offsetHeight };
-  const bw = barSize.w, bh = barSize.h;
-  // dentro de la zona libre: que no quede debajo de las islas flotantes (escritorio)
-  const { ins } = view, top = ins.t + 8, left = ins.l + 8;
-  const x = Math.min(Math.max((minX + maxX) / 2 - bw / 2, left), Math.max(left, view.CW - ins.r - bw - 8));
-  let y = minY - bh - (S.mode === 'move' ? 46 : 16);
-  if (y < top) { y = maxY + 40; if (y + bh > view.CH - ins.b - 8) y = top; }
+  const x = Math.min(Math.max((view.CW - view.ins.r) / 2 - barSize.w / 2, minX), Math.max(minX, maxX - barSize.w));
   bar.style.left = Math.round(x) + 'px';
-  bar.style.top = Math.round(y) + 'px';
+  bar.style.bottom = `${Math.round(stage.bottom - tools.bottom)}px`;
 }
 
 export function initContextBar() {
@@ -171,23 +149,11 @@ export function initContextBar() {
     const b = (e.target as Element).closest<HTMLElement>('[data-act]');
     const sel = st.sel;
     if (!b) return;
-    if (!sel) {
-      // barra del grupo
-      switch (b.dataset.act) {
-        case 'align': alignSelected(b.dataset.e as AlignEdge); break;
-        case 'dist': distributeSelected(b.dataset.a === 'y' ? 'y' : 'x'); break;
-        case 'dupGroup': duplicateSelected(); break;
-        case 'more': { const r = b.getBoundingClientRect(); openMenu(r.left, r.bottom + 4, groupMenu()); break; }
-        case 'group': groupSelected(); break;
-        case 'ungroup': ungroupSelected(); break;
-        case 'alignMenu': { const r = b.getBoundingClientRect(); openMenu(r.left, r.top, alignMenu()); break; }
-        case 'distMenu': { const r = b.getBoundingClientRect(); openMenu(r.left, r.top, distributeMenu()); break; }
-      }
-      return;
-    }
+    if (!sel) return;
     switch (b.dataset.act) {
       case 'unlock': toggleLocked(sel); break;
       case 'crop': enterCrop(); break;
+      case 'editText': if (isText(sel)) editText(sel); break;
       case 'autobg': autoBackground(); break;
       case 'erase': setMode('erase'); break;
       case 'wand': setMode('wand'); break;
