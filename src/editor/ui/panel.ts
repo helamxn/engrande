@@ -13,7 +13,7 @@ import {
   rotateLayer, scaleLayer, visH, visW,
 } from '../geometry';
 import { snap } from '../history';
-import { HI_AREA, isTouch } from '../platform';
+import { deskMQ, HI_AREA, isTouch } from '../platform';
 import { rich } from './keys';
 import { C, isFreshPoster, posterGeo, S, sheetsVisible, st } from '../state';
 import { dirty } from '../render';
@@ -28,16 +28,53 @@ import type { Quality, RelayoutMode } from '../geometry';
 import { getPref, setPref } from '../prefs';
 import type { Geo, Layer, LayoutSettings, Orient, Paper } from '../types';
 import { syncTextPanel } from '../text/textpanel';
-import { initSelectionCard, syncSelectionCard } from './selectioncard';
+import { initSelectionCard, selectionKey, syncSelectionCard } from './selectioncard';
 import { renderBar } from './contextbar';
 
 /* ---------- pestañas (patrón ARIA tabs) ---------- */
 /**
- * Pestaña que sigue a la selección, con memoria:
- * - al seleccionar algo estando en Hojas, pasa a Imágenes (en Descargar no se mueve: estarías leyendo o eligiendo);
- * - al soltar la selección vuelve a Hojas, pero solo si el cambio anterior fue automático;
- * - lo que eliges a mano se respeta; en móvil solo cambia si el panel inferior está abierto (nunca lo abre).
+ * Cada sección aparece cuando hace falta.
+ * - Escritorio y tableta: Póster y Capas son tarjetas propias (se abren con sus botones); el panel lateral es solo de
+ *   la selección: aparece al elegir algo y se va al deseleccionar.
+ * - Móvil: el panel inferior tiene las tres pestañas; al elegir algo pasa a Selección (salvo desde Capas: se sigue
+ *   trabajando con la lista) y al deseleccionar vuelve a la de antes, si el cambio fue automático.
  */
+const currentTab = () => $$<HTMLButtonElement>('[role=tab]').find((b) => b.getAttribute('aria-selected') === 'true')?.dataset.tab ?? 'sheets';
+/** Móvil: pestaña a la que volver al deseleccionar (null: la actual la eligió el usuario). */
+let autoFrom: string | null = null;
+let lastKey: unknown = null;
+function followSelection() {
+  const key = selectionKey();
+  if (key === lastKey) return;
+  lastKey = key;
+  if (deskMQ?.matches) { togglePanel(!!key); return; }
+  const cur = currentTab();
+  if (key) {
+    if (cur !== 'image' && cur !== 'sel') { autoFrom = cur; showTab('sel'); }
+  } else if (autoFrom && cur === 'sel') {
+    showTab(autoFrom); autoFrom = null;
+  }
+}
+/** Ctrl+\: muestra u oculta la tarjeta de Capas (escritorio). */
+export function toggleLayersCard() { if (deskMQ?.matches) $('#layersCard').togglePopover(); }
+
+/**
+ * Lleva Póster y Capas a sus tarjetas (escritorio) o de vuelta al panel inferior (móvil). Son los mismos elementos:
+ * sus controles y sus ids no cambian.
+ */
+function placePanes() {
+  const desk = !!deskMQ?.matches, card = $('#selectionCard');
+  for (const id of ['sheets', 'image'] as const) {
+    const pane = $(`#pane-${id}`);
+    if (desk) $(`[data-slot="${id}"]`).appendChild(pane);
+    else card.before(pane);
+  }
+  if (desk) {
+    for (const c of ['#posterCard', '#layersCard']) if ($(c).matches(':popover-open')) $(c).hidePopover();
+    document.body.classList.toggle('panel-off', selectionKey() == null);
+  }
+  showTab(desk ? 'sel' : currentTab());
+}
 
 export function showTab(t: string) {
   for (const b of $$<HTMLButtonElement>('[role=tab]')) {
@@ -45,14 +82,18 @@ export function showTab(t: string) {
     b.setAttribute('aria-selected', String(on));
     b.tabIndex = on ? 0 : -1;
   }
-  for (const p of $$('[role=tabpanel]')) p.hidden = p.dataset.pane !== t;
+  // en escritorio cada sección está en su sitio (tarjeta o panel): todas a la vista
+  const desk = !!deskMQ?.matches;
+  for (const p of $$('[role=tabpanel]')) p.hidden = desk ? false : p.dataset.pane !== t;
 }
+/** Elegida a mano: se respeta (deja de ser un cambio automático). */
+function pickTab(t: string) { autoFrom = null; showTab(t); }
 /** Renombrar un grupo: lo selecciona entero y lleva al campo «Nombre del grupo». */
 export function focusGroupName(gid: number) {
   selectMany(groupMembers(gid));
   if (isPanelOff()) togglePanel(true);
   openSheet('half');
-  showTab('image');
+  pickTab('sel');
   const el = $<HTMLInputElement>('#gName');
   el.focus(); el.select();
 }
@@ -61,8 +102,7 @@ export function focusName() {
   if (!st.sel) return;
   if (isPanelOff()) togglePanel(true);
   openSheet('half');
-  showTab('image');
-  $<HTMLDetailsElement>('#selectionGeometry').open = true;
+  pickTab('sel');
   const el = $<HTMLInputElement>('#pName');
   el.focus(); el.select();
 }
@@ -131,8 +171,8 @@ export function syncLayoutUI() {
     const el = $<HTMLInputElement>(id);
     if (document.activeElement !== el) el.value = String(v);
   }
-  const n = S.cols * S.rows + (S.guide ? 1 : 0);
-  $('#exportTiles').textContent = `Descargar PDF por hojas · ${n} ${n === 1 ? 'página' : 'páginas'}`;
+  syncExportButtons(); // su título dice cuántas páginas y a qué resolución
+  updateStats(); // el resumen bajo la pestaña Póster y en el panel plegado
   syncWelcome();
 }
 /** Lado (px) del recuadro en el que cabe el icono de cada distribución (mismo valor que .sheet-box en global.css). */
@@ -193,6 +233,7 @@ export function syncSel() {
   }
   syncTextPanel();
   syncSelectionCard();
+  followSelection();
   updateStats(); updateHint();
 }
 /**
@@ -426,22 +467,31 @@ export function syncNewPoster() {
   b.disabled = fresh;
   b.title = fresh ? 'Ya es un póster nuevo' : newTitle;
 }
-/** Sin nada que imprimir no se puede descargar (las ocultas no se imprimen). También al terminar una descarga. */
+/** Páginas del PDF por hojas (una por hoja y, si se pide, la guía). */
+export const pdfPages = () => S.cols * S.rows + (S.guide ? 1 : 0);
+/** Hay algo que imprimir (las ocultas no se imprimen). */
+export const isPrintable = () => st.layers.some((l) => !l.hidden);
+/**
+ * Sin nada que imprimir no se puede descargar ni imprimir el póster (la hoja de prueba sí: no necesita imágenes).
+ * También al terminar una descarga.
+ */
 export function syncExportButtons() {
-  const n = st.layers.length, printable = st.layers.some((l) => !l.hidden);
-  const busy = document.body.classList.contains('exporting');
-  for (const id of ['#quickExport', '#exportTiles', '#exportSingle']) {
+  const n = pdfPages(), printable = isPrintable(), busy = document.body.classList.contains('exporting');
+  const why = st.layers.length ? 'Todas las imágenes están ocultas' : 'Agrega una imagen primero';
+  for (const id of ['#quickExport', '#exportTiles', '#printTiles', '#exportSingle']) {
     const b = $<HTMLButtonElement>(id);
     b.disabled = !printable || busy;
-    if (!printable) b.title = n ? 'Todas las imágenes están ocultas' : 'Agrega una imagen primero';
-    else b.removeAttribute('title');
+    b.title = printable ? '' : why;
   }
+  const pages = `${n} ${n === 1 ? 'página' : 'páginas'}`;
+  if (printable) $('#quickExport').title = `PDF por hojas · ${pages} · ${S.dpi} ppp`;
+  $<HTMLButtonElement>('#newPosterAlt').disabled = isFreshPoster();
 }
 
 /* ---------- resumen para descargar ---------- */
 /**
  * La lectura ya no flota en el lienzo: el tamaño del póster se dibuja junto a él y la calidad, en la etiqueta de la
- * imagen seleccionada. En la pestaña Descargar se dice qué se va a descargar y, solo si alguna imagen no tiene buena
+ * imagen seleccionada. Arriba de la tarjeta del PDF se dice qué se va a descargar y, solo si alguna imagen no tiene buena
  * calidad, un aviso estándar (icono, título y texto).
  */
 export function updateStats() {
@@ -450,13 +500,18 @@ export function updateStats() {
   const rows = st.layers.filter((l) => !l.hidden).map((l) => { const ppp = pppOf(l, HI_AREA); return { l, ppp, q: qualityOf(ppp) }; });
   const bad = rows.filter((r) => r.q === 'bad'), warn = rows.filter((r) => r.q === 'warn');
 
+
   const box = $('#exportSummary');
   box.textContent = '';
   const info = document.createElement('p');
   info.className = 'm-0 text-[.88rem] font-semibold';
   const orient = S.orient === 'portrait' ? (n === 1 ? 'vertical' : 'verticales') : (n === 1 ? 'horizontal' : 'horizontales');
   info.textContent = `Póster ${cm(g.W)} × ${cm(g.H)} cm · ${n} ${n === 1 ? 'hoja' : 'hojas'} ${S.paper} ${orient}`;
-  box.appendChild(info);
+  // y el PDF por hojas: cuántas páginas (con la guía) y a qué resolución
+  const pages = pdfPages(), sub = document.createElement('p');
+  sub.className = 'm-0 text-[.84rem] text-muted';
+  sub.textContent = `PDF por hojas: ${pages} ${pages === 1 ? 'página' : 'páginas'}${S.guide ? ' (con la guía)' : ''} · ${S.dpi} ppp`;
+  box.append(info, sub);
   if (!rows.length) {
     const p = document.createElement('p');
     p.className = 'm-0 text-[.86rem] text-muted';
@@ -492,21 +547,18 @@ export function updateHint() {
   const hint = document.querySelector('#hint');
   if (!hint) return;
   const t = isTouch(), sel = st.sel;
+  // solo lo que no es evidente; el resto está en la ayuda («?»)
   const H: Record<string, string> = {
-    move: st.placingText ? (t ? 'Toca donde quieras el texto' : 'Haz clic donde quieras el texto, o arrastra para darle un ancho · {esc} para cancelar')
+    move: st.placingText ? (t ? 'Toca donde quieras el texto' : 'Clic: poner el texto · arrastrar: con ancho fijo · {esc}: cancelar')
       : !st.layers.length ? 'Agrega una imagen para empezar'
-      : st.group.length > 1 ? (t
-        ? `${st.group.length} seleccionadas · arrastra para moverlas · pellizca para escalar y girar · toca fuera para deseleccionar`
-        : `${st.group.length} seleccionadas · arrastra para moverlas · esquinas: escalar · círculo: girar · {esc}: deseleccionar`)
-      : sel?.hidden ? 'Imagen oculta: no se imprime · muéstrala con el ojo de la lista'
-      : sel?.src?.kind === 'text' ? (t ? 'Doble toque para escribir · arrastra para mover · pellizca para escalar y girar' : 'Doble clic o Enter: escribir · esquinas: escalar · lados: ancho · círculo: girar · clic fuera para deseleccionar')
-      : sel ? (t ? 'Arrastra para mover · pellizca sobre la imagen para escalar y girar · toca fuera para deseleccionar' : 'Esquinas: escalar · lados: estirar · círculo: girar · clic fuera para deseleccionar')
-        : (t ? 'Toca una imagen para seleccionarla · mantén pulsado para más opciones' : 'Clic en una imagen para seleccionarla · arrastra en el fondo para elegir varias · clic derecho: más opciones'),
-    crop: t
-      ? 'Arrastra la imagen para encuadrarla · pellizca para ampliarla · bordes: tamaño del recorte'
-      : 'Arrastra la imagen para encuadrarla · rueda: ampliarla · bordes: tamaño del recorte ({shift}: proporción, {alt}: desde el centro) · {enter}: aplicar',
-    erase: S.brushMode === 'erase' ? 'Pinta sobre la imagen para borrar' : 'Pinta para recuperar lo borrado',
-    wand: t ? 'Toca un color de la imagen para borrarlo' : 'Haz clic en un color de la imagen para borrarlo',
+      : st.group.length > 1 ? (t ? `${st.group.length} seleccionadas · pellizca para escalar y girar` : `${st.group.length} seleccionadas · {shift}+clic: sumar o quitar · {esc}: deseleccionar`)
+      : sel?.hidden ? 'Oculta: no se imprime · muéstrala en Capas'
+      : sel?.src?.kind === 'text' ? (t ? 'Doble toque: escribir' : 'Doble clic o {enter}: escribir · lados: ancho del texto')
+      : sel ? (t ? 'Pellizca sobre la imagen para escalar y girar' : '{shift}: deformar o girar de 15° en 15° · {alt}: desde el centro · {alt} sobre otra: distancias')
+        : (t ? 'Mantén pulsado para más opciones' : 'Arrastra en el fondo para elegir varias · clic derecho: más opciones'),
+    crop: t ? 'Pellizca para ampliar la imagen · bordes: tamaño del recorte' : 'Rueda: ampliar · {shift}: proporción · {alt}: desde el centro · {enter}: aplicar',
+    erase: S.brushMode === 'erase' ? 'Pinta para borrar' : 'Pinta para recuperar lo borrado',
+    wand: t ? 'Toca un color para borrarlo' : 'Clic en un color para borrarlo',
   };
   hint.replaceChildren(rich(H[S.mode] ?? ''));
   // con el póster vacío la pista sobra: la pantalla de inicio ya explica qué hacer
@@ -517,10 +569,18 @@ export function updateHint() {
 export function initPanel() {
   initSelectionCard();
   // pestañas
-  // elegida a mano: se respeta (deja de ser un cambio automático)
   for (const b of $$<HTMLButtonElement>('[role=tab]')) {
-    b.addEventListener('click', () => showTab(b.dataset.tab!));
+    b.addEventListener('click', () => pickTab(b.dataset.tab!));
   }
+  // escritorio: tarjetas de Póster y de Capas (sus botones dicen si están abiertas)
+  for (const b of $$<HTMLButtonElement>('#panelOpeners [data-open]')) {
+    $(`#${b.getAttribute('popovertarget')}`).addEventListener('toggle', (e) => {
+      b.setAttribute('aria-expanded', String((e as ToggleEvent).newState === 'open'));
+    });
+  }
+  $('#panelHide').addEventListener('click', () => togglePanel(false));
+  placePanes();
+  deskMQ?.addEventListener('change', placePanes);
   $('[role=tablist]').addEventListener('keydown', (e) => {
     const tabs = $$<HTMLButtonElement>('[role=tab]'), i = tabs.indexOf(document.activeElement as HTMLButtonElement);
     if (i < 0) return;
@@ -528,7 +588,7 @@ export function initPanel() {
       : e.key === 'Home' ? 0 : e.key === 'End' ? tabs.length - 1 : -1;
     if (j < 0) return;
     e.preventDefault(); e.stopPropagation();
-    tabs[j]!.focus(); showTab(tabs[j]!.dataset.tab!);
+    tabs[j]!.focus(); pickTab(tabs[j]!.dataset.tab!);
   });
 
   // hojas

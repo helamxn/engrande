@@ -20,9 +20,10 @@ import { isFreshPoster, st } from '../state';
 import { fitView, zoomCenter } from '../view';
 import { loadFiles } from '../io/load';
 import { ICON, type IconName } from './icons';
-import { addText, editText } from '../text/editor';
+import { addText, editText, startTextPlacement } from '../text/editor';
 import { isText } from '../text/text';
 import { gesture, k, keysEl, rich, type Part } from './keys';
+import { openShortcuts } from './shortcuts';
 import type { Layer, Pt } from '../types';
 
 /** icon: solo en las opciones principales (primer nivel); los submenús van sin iconos. */
@@ -32,15 +33,6 @@ export type MenuItem = '-' | { head: string } | ActionItem | SubmenuItem;
 const isSub = (it: ActionItem | SubmenuItem): it is SubmenuItem => 'submenu' in it;
 
 /* ---------- contenido ---------- */
-/**
- * «Medir distancias»: con ratón basta con Alt al pasar por encima; en táctil no hay Alt, así que el siguiente toque
- * en otra imagen (o en el póster) muestra las distancias, hasta tocar fuera del póster o pulsar Esc.
- */
-function startMeasureMode() {
-  st.measureMode = true;
-  toast(isTouch() ? 'Toca otra imagen o el póster para medir · toca fuera del póster para terminar'
-    : rich('Pasa el ratón por otra imagen o el póster · también con {alt} pulsado · {esc} para terminar'), 6000);
-}
 /** "Pegar" primero intenta una imagen del portapapeles del sistema (como Ctrl+V); si no hay, la copiada en Pliego. */
 const canPaste = () => !!st.clip?.length || !!navigator.clipboard?.read;
 export async function pasteAny() {
@@ -93,7 +85,6 @@ export function layerMenu(l: Layer, prev: Layer[] = []): MenuItem[] {
     { label: l.hidden ? 'Mostrar' : 'Ocultar', icon: l.hidden ? 'eye' : 'eyeOff', fn: () => toggleHidden(l) },
     { label: l.locked ? 'Desbloquear' : 'Bloquear', icon: l.locked ? 'lockOpen' : 'lock', fn: () => toggleLocked(l) },
     { label: 'Renombrar…', icon: 'rename', fn: () => { select(l); focusName(); } },
-    { label: 'Medir distancias', icon: 'ruler', kbd: isTouch() ? undefined : k('alt'), fn: startMeasureMode },
     ...(l.gpath.length ? [
       { label: 'Seleccionar el grupo', icon: 'group', fn: () => selectMany(groupMembers(l.gpath.at(-1)!.id)) } satisfies ActionItem,
       { label: 'Sacar del grupo', icon: 'ungroup', fn: () => leaveGroup(l) } satisfies ActionItem,
@@ -155,7 +146,6 @@ export function groupMenu(): MenuItem[] {
     { label: 'Copiar', icon: 'copy', kbd: k('mod+c'), fn: copySelected },
     { label: 'Cortar', icon: 'cut', kbd: k('mod+x'), fn: cutSelected },
     { label: 'Duplicar', icon: 'dup', kbd: k('mod+d'), fn: duplicateSelected },
-    { label: 'Medir distancias', icon: 'ruler', kbd: isTouch() ? undefined : k('alt'), fn: startMeasureMode },
     whole != null
       ? { label: 'Desagrupar', icon: 'ungroup', kbd: k('mod+shift+g'), fn: ungroupSelected }
       : { label: 'Agrupar', icon: 'group', kbd: k('mod+g'), fn: groupSelected },
@@ -171,19 +161,27 @@ export function groupMenu(): MenuItem[] {
     { label: `Quitar ${n} del póster`, icon: 'del', kbd: k('del'), fn: removeSelected, danger: true },
   ];
 }
+/** «＋ Agregar» de la barra: lo que crea capas nuevas (con los mismos nombres que la bienvenida). */
+export const addMenu = (): MenuItem[] => [
+  { label: 'Agregar imagen o PDF…', icon: 'addImage', kbd: k('mod+o'), fn: () => $<HTMLInputElement>('#file').click() },
+  { label: 'Agregar texto', icon: 'text', kbd: k('t'), fn: startTextPlacement },
+  { label: 'Pegar', icon: 'paste', kbd: k('mod+v'), fn: () => void pasteAny(), disabled: !canPaste() },
+];
 /** Menú del lienzo vacío. at: dónde se tocó (mm), para «Agregar texto aquí». */
 export function emptyMenu(at?: Pt): MenuItem[] {
   const visible = st.layers.filter((l) => !l.hidden).length;
   return [
     { label: 'Pegar', icon: 'paste', kbd: k('mod+v'), fn: () => void pasteAny(), disabled: !canPaste() },
     { label: 'Seleccionar todas', icon: 'selectBox', kbd: k('mod+a'), fn: selectAll, disabled: visible < 1 },
-    { label: 'Agregar imagen…', icon: 'addImage', fn: () => $<HTMLInputElement>('#file').click() },
+    { label: 'Agregar imagen o PDF…', icon: 'addImage', kbd: k('mod+o'), fn: () => $<HTMLInputElement>('#file').click() },
     { label: at ? 'Agregar texto aquí' : 'Agregar texto', icon: 'text', kbd: k('t'), fn: () => addText(at) },
     { label: 'Nuevo póster', icon: 'newPoster', fn: newPoster, disabled: isFreshPoster() },
     '-',
     { label: 'Ver todo el póster', icon: 'fitAll', kbd: k('mod+0'), fn: fitView },
     { label: 'Acercar', icon: 'zoomInLens', kbd: k('+'), fn: () => zoomCenter(1.4) },
     { label: 'Alejar', icon: 'zoomOutLens', kbd: k('−'), fn: () => zoomCenter(1 / 1.4) },
+    '-',
+    { label: 'Atajos y gestos', icon: 'keyboard', kbd: k('?'), fn: openShortcuts },
   ];
 }
 

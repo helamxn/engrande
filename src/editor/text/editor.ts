@@ -324,7 +324,7 @@ export function addText(P?: Pt, widthMM?: number) {
 /** Editar las palabras de un texto (doble clic, Enter o «Editar texto»). */
 export function editText(l: TextLayer) {
   if (session || !isText(l)) return;
-  if (l.locked) { toast('El texto está bloqueado. Desbloquéalo con el candado de la lista.'); return; }
+  if (l.locked) { toast('El texto está bloqueado. Desbloquéalo en la barra o en la pestaña Capas.'); return; }
   const s = specOf(l), f = getFont(s.font);
   if (!f && s.font.startsWith('u:')) {
     toast(`Para cambiar las palabras, vuelve a cargar la fuente «${s.fontName}» (o elige otra en el panel).`, 7000,

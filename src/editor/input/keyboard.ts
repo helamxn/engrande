@@ -7,7 +7,7 @@ import { redo, snap, undo } from '../history';
 import { S, st } from '../state';
 import { fitView, zoomCenter } from '../view';
 import { isMenuOpen } from '../ui/menu';
-import { togglePanel } from '../ui/layout';
+import { toggleLayersCard } from '../ui/panel';
 import { isShortcutsOpen, openShortcuts } from '../ui/shortcuts';
 import { setSpaceDown } from './pointer';
 import { measureCtx, stopMeasure } from '../measure';
@@ -46,6 +46,8 @@ export function initKeyboard() {
   addEventListener('blur', () => altOn(false));
   document.addEventListener('keydown', (e) => {
     if (isMenuOpen() || isShortcutsOpen()) return;
+    // con una ventana abierta (PDF, Póster, Capas), Esc solo la cierra (lo hace el navegador): no deselecciona
+    if (e.key === 'Escape' && document.querySelector(':popover-open')) return;
     const mod = e.ctrlKey || e.metaKey, k = e.key.toLowerCase(), sel = st.sel;
     const typing = (e.target as Element).matches?.('input,textarea,select') ?? false;
     if (mod && k === 'z' && !typing) { e.preventDefault(); if (e.shiftKey) redo(); else undo(); return; }
@@ -56,7 +58,7 @@ export function initKeyboard() {
     if (mod && k === 'o') { e.preventDefault(); document.querySelector<HTMLInputElement>('#file')?.click(); return; }
     if (mod && k === '0') { e.preventDefault(); fitView(); return; }
     // Ctrl+\ como en Figma (en teclado español, la tecla ç ocupa esa posición)
-    if (mod && (e.code === 'Backslash' || e.key === '\\')) { e.preventDefault(); togglePanel(); return; }
+    if (mod && (e.code === 'Backslash' || e.key === '\\')) { e.preventDefault(); toggleLayersCard(); return; }
     const any = selected().length > 0;
     if (mod && k === 'g') { e.preventDefault(); if (e.shiftKey) ungroupSelected(); else groupSelected(); return; }
     if (mod && k === 'a') { e.preventDefault(); if (S.mode === 'crop') applyCrop(); selectAll(); return; }
@@ -69,7 +71,6 @@ export function initKeyboard() {
     // Enter con un texto seleccionado: escribir (si el foco está en un botón, Enter es pulsarlo)
     if (e.key === 'Enter' && !mod && isText(sel) && !(e.target instanceof HTMLButtonElement)) { e.preventDefault(); editText(sel); return; }
     if (e.key === 'Escape' && st.placingText) { cancelTextPlacement(); return; }
-    if (e.key === 'Escape' && st.measureMode) { st.measureMode = false; stopMeasure(); return; }
     if (e.key === 'Escape') {
       // en un grupo abierto, Esc sale un nivel (selecciona el grupo); en el póster, deselecciona
       if (S.mode === 'crop') cancelCrop(); else if (S.mode !== 'move') setMode('move'); else exitGroup();

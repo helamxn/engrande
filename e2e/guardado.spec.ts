@@ -1,6 +1,6 @@
 /** Guardado automático en el navegador: lo que se hace sigue ahí al recargar. */
 import { expect, test, type Page } from '@playwright/test';
-import { addImage, expectSavedNames, listNames, openApp, saved, selectRow } from './helpers';
+import { addImage, expectSavedNames, listNames, openApp, openTab, saved, selectRow } from './helpers';
 
 test.beforeEach(async ({ page }) => { await openApp(page); });
 
@@ -60,6 +60,7 @@ test('cambiar algo mientras el póster se recupera no borra lo guardado', async 
   await slowImages(slow, 3000);
   await slow.goto('/');
   // aún no llegó ninguna imagen: el póster parece vacío y el usuario cambia la distribución
+  await openTab(slow, 'sheets');
   await slow.locator('#presets button', { hasText: '2×2' }).click();
   await slow.waitForTimeout(2000); // pasa el plazo del guardado automático (1,2 s) con el póster a medias
   expect((await saved(slow))?.names).toEqual(['foto']);

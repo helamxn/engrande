@@ -10,7 +10,7 @@ test('«?» abre los atajos, sin buscador; Esc y la X los cierran', async ({ pag
   await expect(dialog.getByRole('searchbox')).toHaveCount(0);
   const rows = dialog.locator('.sk-row dt');
   await expect(rows.first()).toHaveText('Ver esta ayuda');
-  await expect(dialog.locator('.sk-row', { hasText: 'Agregar imágenes o PDF' }).locator('kbd')).toHaveText(['Ctrl', 'O']);
+  await expect(dialog.locator('.sk-row', { hasText: 'Agregar imagen o PDF' }).locator('kbd')).toHaveText(['Ctrl', 'O']);
   await page.keyboard.press('Escape');
   await expect(dialog).toBeHidden();
   // también desde la bienvenida, y la X la cierra
@@ -18,6 +18,14 @@ test('«?» abre los atajos, sin buscador; Esc y la X los cierran', async ({ pag
   await expect(dialog).toBeVisible();
   await page.locator('#shortcutsClose').click();
   await expect(dialog).toBeHidden();
+  // y desde «?» de la isla de vista, arriba
+  await page.locator('#tools').getByRole('button', { name: 'Atajos de teclado y gestos' }).click();
+  await expect(dialog).toBeVisible();
+  await page.keyboard.press('Escape');
+  // y desde el menú del lienzo vacío
+  await page.locator('#cv').click({ button: 'right', position: { x: 40, y: 300 } });
+  await page.locator('#menu').getByRole('menuitem', { name: /Atajos y gestos/ }).click();
+  await expect(dialog).toBeVisible();
 });
 
 test('las teclas se ven igual en el menú que en la ayuda: una tecla por <kbd>', async ({ page }) => {

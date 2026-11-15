@@ -1,7 +1,7 @@
 /** Copiar y pegar, recorte con proporciones y descarga del PDF. */
 import { expect, test } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
-import { addImage, listNames, openApp, savedBox, screenMap, selectRow, openTab } from './helpers';
+import { addImage, listNames, openApp, openPdfCard, openTab, pdfCardButton, savedBox, screenMap, selectRow } from './helpers';
 
 test.beforeEach(async ({ page }) => { await openApp(page); });
 
@@ -40,12 +40,36 @@ test('ir y venir entre proporciones de recorte no encoge el marco; «Libre» lo 
 
 test('«Descargar PDF por hojas» genera una página de guía y una por hoja, del tamaño del papel', async ({ page }) => {
   await addImage(page);
-  await openTab(page, 'export');
-  const [download] = await Promise.all([page.waitForEvent('download'), page.locator('#exportTiles').click()]);
+  await expect(page.locator('#quickExport')).toHaveAttribute('title', 'PDF por hojas · 3 páginas · 150 ppp');
+  const [download] = await Promise.all([page.waitForEvent('download'), page.locator('#quickExport').click()]);
   expect(download.suggestedFilename()).toBe('engrande-2x1-A4.pdf');
   const pdf = (await readFile((await download.path())!)).toString('latin1');
   expect(pdf.match(/\/Type \/Page[^s]/g)).toHaveLength(3); // guía + 2 hojas
   expect([...new Set(pdf.match(/\/MediaBox \[[^\]]+\]/g))]).toEqual(['/MediaBox [0 0 595.2755905511811534 841.8897637795276978]']); // A4
+  // la flecha abre la tarjeta del PDF: qué se descarga, sus opciones y las salidas; Esc la cierra
+  await openPdfCard(page);
+  const card = page.locator('#pdfCard');
+  await expect(card.locator('#exportSummary')).toContainText('Póster 38,6 × 28,5 cm · 2 hojas A4');
+  await expect(card.locator('#exportSummary')).toContainText('PDF por hojas: 3 páginas (con la guía) · 150 ppp');
+  await card.locator('[data-dpi="200"]').click();
+  await expect(page.locator('#quickExport')).toHaveAttribute('title', 'PDF por hojas · 3 páginas · 200 ppp');
+  await page.keyboard.press('Escape');
+  await expect(card).toBeHidden();
+});
+
+test('«Imprimir» abre el PDF por hojas en el cuadro de impresión, sin descargarlo', async ({ page }) => {
+  const csp: string[] = [];
+  page.on('console', (m) => { if (/Content Security Policy/i.test(m.text())) csp.push(m.text()); });
+  await addImage(page);
+  let downloads = 0;
+  page.on('download', () => { downloads++; });
+  await pdfCardButton(page, '#printTiles');
+  await expect(page.locator('#pdfCard')).toBeHidden();
+  // el PDF va a un marco oculto con el visor del navegador (blob:), permitido por la CSP
+  await expect(page.locator('iframe.print-frame')).toHaveAttribute('src', /^blob:/, { timeout: 20_000 });
+  await expect(page.locator('#toast')).toContainText('cuadro de impresión');
+  expect(downloads).toBe(0);
+  expect(csp).toEqual([]);
 });
 
 test('retocar una imagen con transparencia parcial no la aclara en el PDF de alta resolución', async ({ page }) => {
@@ -76,9 +100,9 @@ test('retocar una imagen con transparencia parcial no la aclara en el PDF de alt
   await selectRow(page);
   const b = await savedBox(page), m = await screenMap(page, b), corner = m.toScreen(b.x0, b.y0);
   const exported = async (n: number) => {
-    await openTab(page, 'export');
+    await openPdfCard(page);
     await page.locator('[data-dpi="300"]').click();
-    await page.locator('#exportSingle').click();
+    await pdfCardButton(page, '#exportSingle');
     await expect.poll(() => page.evaluate(() => (window as unknown as { __px: number[] }).__px.length), { timeout: 40_000 }).toBe(n);
     return page.evaluate(() => (window as unknown as { __px: number[] }).__px.at(-1)!);
   };

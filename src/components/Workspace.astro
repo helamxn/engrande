@@ -2,41 +2,14 @@
 import Icon from './Icon.astro';
 import { BRAND } from '../brand';
 /**
- * Mesa de trabajo: historial, zoom y lienzo con las hojas.
- * El lienzo ocupa toda la ventana (es el fondo de la app) y lo demás flota encima como «islas»: las herramientas
- * abajo a la izquierda en escritorio y bajo la cabecera en móvil. El tamaño del póster se dibuja junto a él y la
- * calidad, en la etiqueta de la imagen seleccionada (ver render.ts).
+ * Mesa de trabajo: el lienzo con las hojas, la bienvenida y la barra de abajo.
+ * El lienzo ocupa toda la ventana (es el fondo de la app) y lo demás flota encima como «islas»: arriba la cabecera
+ * y la vista (Header.astro), abajo a la izquierda la barra (contextbar.ts) y el panel. El tamaño del póster se
+ * dibuja junto a él y la calidad, en la etiqueta de la imagen seleccionada (ver render.ts).
  */
-const icon = 'size-[17px]';
 ---
 
-<section
-  class="pointer-events-none fixed top-[68px] left-2 z-10 flex items-end gap-2 desk:top-auto desk:bottom-3 desk:left-3 desk:max-w-[calc(100vw-var(--pr)-24px)]"
->
-  <div id="tools" class="island pointer-events-auto relative z-[1] flex items-center p-1">
-    <!-- zoom: − porcentaje + (el porcentaje encaja el póster entero al pulsarlo) -->
-    <div class="tgroup" role="group" aria-label="Zoom">
-      <button type="button" id="zoomOut" title="Alejar (−)" aria-label="Alejar">
-        <Icon name="zoomOut" class={icon} />
-      </button>
-      <button type="button" id="zoomFit" class="tpct" title="Ver todo el póster (Ctrl+0) · 100 % = tamaño real aproximado">
-        <span id="zoomPct">100%</span>
-      </button>
-      <button type="button" id="zoomIn" title="Acercar (+)" aria-label="Acercar">
-        <Icon name="zoomIn" class={icon} />
-      </button>
-    </div>
-    <span class="mx-0.5 h-6 w-px bg-line" aria-hidden="true"></span>
-    <div class="tgroup" role="group" aria-label="Historial">
-      <button type="button" id="undo" title="Deshacer (Ctrl+Z)" aria-label="Deshacer" disabled>
-        <Icon name="undo" class={icon} />
-      </button>
-      <button type="button" id="redo" title="Rehacer (Ctrl+Y)" aria-label="Rehacer" disabled>
-        <Icon name="redo" class={icon} />
-      </button>
-    </div>
-  </div>
-
+<section class="pointer-events-none fixed inset-0 z-10">
   <div
     id="stage"
     class="pointer-events-auto fixed inset-0 overflow-hidden bg-desk"
@@ -64,20 +37,25 @@ const icon = 'size-[17px]';
           <p class="welcome-tag">{BRAND.tagline}</p>
           <p class="welcome-note">Reparte tu imagen en hojas A4, A3 o Carta y descarga el PDF para imprimirlo en casa. Todo se queda en este navegador.</p>
           <ul class="welcome-actions" aria-label="Para empezar">
-            <li><button type="button" data-addfile><Icon name="addImage" /><span>Elegir imagen o PDF</span><span data-keys="mod+o"></span></button></li>
-            <li><button type="button" data-addtext><Icon name="text" /><span>Escribir un texto</span><span data-keys="t"></span></button></li>
-            <li><button type="button" id="welcomePaste"><Icon name="paste" /><span>Pegar una imagen</span><span data-keys="mod+v"></span></button></li>
+            <li><button type="button" data-addfile><Icon name="addImage" /><span>Agregar imagen o PDF</span><span data-keys="mod+o"></span></button></li>
+            <li><button type="button" data-addtext><Icon name="text" /><span>Agregar texto</span><span data-keys="t"></span></button></li>
+            <li><button type="button" id="welcomePaste"><Icon name="paste" /><span>Pegar</span><span data-keys="mod+v"></span></button></li>
             <li><button type="button" data-shortcuts><Icon name="keyboard" /><span>Atajos y ayuda</span><span data-keys="?"></span></button></li>
           </ul>
           <p class="welcome-drop">También puedes soltarla aquí.</p>
         </div>
       </div>
-      <div
-        id="hint"
-        class="pointer-events-none absolute bottom-2.5 left-1/2 w-max max-w-[calc(100%-20px)] -translate-x-1/2 rounded-full border border-line bg-panel/90 px-3 py-1 text-center text-[.78rem] text-muted"
-      ></div>
     </div>
-    <div id="ctxbar" class="ctxbar" role="toolbar" aria-label="Herramientas de la imagen" hidden></div>
+    <div id="ctxbar" class="ctxbar" role="toolbar" aria-label="Barra de acciones" hidden></div>
+    <!--
+      línea de estado (escritorio, con ratón): qué hacer en el estado actual, abajo a la izquierda, en la fila de la
+      isla de vista (a la derecha). Una caja de una línea; su ancho y su altura en la fila los pone layout.ts.
+    -->
+    <div
+      id="hint"
+      class="pointer-events-none absolute bottom-3 left-3 overflow-hidden rounded-xl border border-line bg-panel/90 h-[30px] px-3 py-1 text-ellipsis whitespace-nowrap text-[.78rem] leading-5 text-muted"
+      aria-live="polite"
+    ></div>
     <div
       id="drop"
       class="pointer-events-none absolute inset-0 grid place-items-center border-2 border-dashed border-accent bg-accent/20 font-bold text-accent"

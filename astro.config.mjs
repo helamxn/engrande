@@ -31,6 +31,8 @@ export default defineConfig({
         // worker de pdf.js, servido desde el propio dominio
         "worker-src 'self'",
         "connect-src 'self' blob: data:",
+        // «Imprimir»: el PDF generado se abre en un marco oculto (blob:) para el cuadro de impresión
+        "frame-src 'self' blob:",
         "object-src 'none'",
         "base-uri 'none'",
         "form-action 'none'",

@@ -348,12 +348,13 @@ export function render() {
       ctx.setLineDash([]); ctx.globalAlpha = 1;
     }
 
-    // tamaño del póster y hojas, encima de su esquina (como el nombre de un marco en Figma); si no cabe, solo el tamaño
+    // tamaño del póster y hojas, encima de su esquina (como el nombre de un marco en Figma); si no cabe, solo el tamaño.
+    // En táctil no: chocaba con el tirador de giro y lo mismo se lee en la pestaña Póster
     const n = S.cols * S.rows, size = `${cm(g.W)} × ${cm(g.H)} cm`;
     const full = `Póster ${size} · ${n} ${n === 1 ? 'hoja' : 'hojas'} ${S.paper}` + (g.m > 0 ? ` · margen ${Math.round(g.m)} mm` : '');
     ctx.font = '500 11.5px "IBM Plex Mono", ui-monospace, monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
     const paperW = pwS + 2 * mS, txt = ctx.measureText(full).width <= paperW ? full : size, ly = pt.y - 8;
-    if (ly > view.ins.t + 12 && ctx.measureText(txt).width <= paperW + 40) { ctx.fillStyle = C.muted!; ctx.fillText(txt, pt.x, ly); }
+    if (!isTouch() && ly > view.ins.t + 12 && ctx.measureText(txt).width <= paperW + 40) { ctx.fillStyle = C.muted!; ctx.fillText(txt, pt.x, ly); }
     // sobre la franja: qué es
     if (st.hoverBand && st.hover) {
       const t = `Margen sin imprimir · ${Math.round(g.m)} mm · se recorta`;

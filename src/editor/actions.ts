@@ -78,7 +78,7 @@ export function toggleHidden(l: Layer) {
   toast(l.hidden ? `«${l.name}» oculta: no se imprimirá` : `«${l.name}» visible de nuevo`);
 }
 
-const LOCKED_MSG = 'La imagen está bloqueada. Desbloquéala con el candado de la lista.';
+const LOCKED_MSG = 'La imagen está bloqueada. Desbloquéala en la barra o en la pestaña Capas.';
 /** Los textos no se recortan ni se borran por ahora (ver text/text.ts). */
 const isTextLayer = (l: Layer | null | undefined) => l?.src?.kind === 'text';
 const TEXT_NO_PIXELS = 'Por ahora el texto no se puede recortar ni borrar. Puedes moverlo, girarlo y cambiar su tamaño.';

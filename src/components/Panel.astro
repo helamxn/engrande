@@ -2,38 +2,42 @@
 import Icon from './Icon.astro';
 import SelectionCard from './SelectionCard.astro';
 /**
- * Panel lateral con tres pestañas: Hojas, Capas y Descargar; con algo seleccionado, en su lugar, la tarjeta de la
- * selección (SelectionCard). En escritorio flota a la derecha y se puede plegar.
+ * Póster (las hojas), Capas (la lista) y Selección (SelectionCard).
+ * - Escritorio y tableta: cada una aparece cuando hace falta. Póster y Capas son tarjetas propias que se abren con
+ *   sus botones de arriba a la derecha; Selección es el panel lateral, que aparece al seleccionar algo y se va al
+ *   deseleccionar. panel.ts (placePanes) lleva cada sección a su tarjeta.
+ * - Móvil: panel inferior deslizable con las tres pestañas.
+ * Las descargas están en la cabecera (Descargar PDF y su flecha).
  */
 const pane = 'flex min-h-0 flex-1 flex-col gap-[18px] overflow-x-hidden overflow-y-auto overscroll-contain p-4';
 const field = 'flex flex-col gap-2';
 const tabs = [
-  { id: 'sheets', label: 'Hojas' },
-  { id: 'image', label: 'Capas' },
-  { id: 'export', label: 'Descargar' },
+  { id: 'sheets', label: 'Póster', pane: 'pane-sheets' },
+  { id: 'image', label: 'Capas', pane: 'pane-image' },
+  { id: 'sel', label: 'Selección', pane: 'selectionCard' },
 ];
 ---
 
 <!--
-  Escritorio: tarjeta flotante a la derecha (plegable). Móvil: panel inferior deslizable con tres alturas
+  Escritorio: panel a la derecha, solo con la selección. Móvil: panel inferior deslizable con tres alturas
   (solo pestañas, media pantalla, completa); la altura la pone layout.ts.
 -->
 <aside
   id="panel"
-  class="island fixed inset-x-0 bottom-0 z-20 flex min-h-0 min-w-0 flex-col overflow-hidden rounded-t-2xl rounded-b-none border-x-0 border-b-0 pb-[env(safe-area-inset-bottom)] desk:top-3 desk:right-3 desk:bottom-3 desk:left-auto desk:w-[360px] desk:rounded-xl desk:border desk:pb-0 desk:panel-off:hidden"
+  class="island fixed inset-x-0 bottom-0 z-20 flex min-h-0 min-w-0 flex-col overflow-hidden rounded-t-2xl rounded-b-none border-x-0 border-b-0 pb-[env(safe-area-inset-bottom)] desk:top-[calc(var(--top-row,64px)+8px)] desk:right-3 desk:bottom-auto desk:left-auto desk:max-h-[calc(100dvh-var(--top-row,64px)-84px)] desk:w-(--pw) desk:rounded-xl desk:border desk:pb-0 desk:panel-off:hidden"
 >
   <!-- móvil: asa para arrastrar o tocar (cambia la altura del panel) -->
   <button
     type="button"
     id="sheetHandle"
-    class="flex h-7 w-full flex-none cursor-grab touch-none items-center justify-center border-0 bg-transparent desk:hidden"
+    class="flex h-5 w-full flex-none cursor-grab touch-none items-center justify-center border-0 bg-transparent desk:hidden"
     aria-controls="panel"
     aria-expanded="false"
     aria-label="Mostrar más o menos opciones"
   >
     <span class="h-1 w-10 rounded-full bg-line"></span>
   </button>
-  <div id="sheetTabs" class="flex flex-none items-center border-b border-line px-1">
+  <div id="sheetTabs" class="flex flex-none items-center border-b border-line px-1 desk:hidden">
     <div class="flex min-w-0 flex-1" role="tablist" aria-label="Panel de opciones">
       {tabs.map((t, i) => (
         <button
@@ -41,7 +45,7 @@ const tabs = [
           class="tab"
           role="tab"
           id={`tab-${t.id}`}
-          aria-controls={`pane-${t.id}`}
+          aria-controls={t.pane}
           aria-selected={i === 0 ? 'true' : 'false'}
           tabindex={i === 0 ? 0 : -1}
           data-tab={t.id}
@@ -62,7 +66,7 @@ const tabs = [
     </button>
   </div>
 
-  <!-- Hojas -->
+  <!-- Póster: las hojas (cuántas, papel, orientación, margen y solape). El PDF tiene su tarjeta (Header.astro) -->
   <div class={pane} role="tabpanel" id="pane-sheets" aria-labelledby="tab-sheets" data-pane="sheets">
     <div class={field}>
       <div class="lbl">Distribución <span class="val">columnas × filas</span></div>
@@ -115,11 +119,7 @@ const tabs = [
     <div class={field}>
       <label class="lbl" for="margin">Margen sin imprimir <output id="marginOut">6 mm</output></label>
       <input type="range" id="margin" min="0" max="15" step="1" value="6" />
-      <p class="note">La mayoría de impresoras caseras no imprimen los últimos 4–6 mm del borde. Para saber cuánto deja la tuya, imprime una hoja de prueba (una sola página).</p>
-      <button type="button" class="btn self-start" id="marginTest">
-        <Icon name="printer" />
-        Hoja de prueba de márgenes
-      </button>
+      <p class="note">La mayoría de impresoras caseras no imprimen los últimos 4–6 mm del borde. Para saber cuánto deja la tuya, imprime la «Hoja de prueba de márgenes» (una sola página): está en la flecha de «Descargar PDF».</p>
     </div>
     <div class={field}>
       <label class="lbl" for="overlap">Solape para pegar <output id="overlapOut">10 mm</output></label>
@@ -133,60 +133,35 @@ const tabs = [
     <div class={field} id="posterLayers">
       <div class="lbl">Capas en el póster <span class="val" id="layerCount"></span></div>
       <ol class="m-0 flex list-none flex-col gap-1.5 p-0" id="layers"></ol>
-      <div class="flex flex-wrap gap-2 [&>.btn]:flex-auto">
-        <button type="button" class="btn" data-addfile>
-          <Icon name="addImage" />
-          Agregar imagen
-        </button>
-        <button type="button" class="btn" data-addtext>
-          <Icon name="text" />
-          Agregar texto
-        </button>
-      </div>
+      <!-- sin botones de agregar: están en «＋ Agregar» de la barra de abajo, siempre en el mismo sitio -->
       <p class="note">Arriba en la lista = al frente en el póster. Arrastra las filas (o usa <span data-keys="alt+↑|alt+↓">Alt + ↑ o ↓</span>) para cambiar el orden.</p>
       <p class="note" id="saveInfo" aria-live="polite">Tu póster se guarda automáticamente en este navegador.</p>
     </div>
-    <button type="button" class="btn self-start poster-shortcuts" data-shortcuts>
-      <Icon name="keyboard" />
-      Atajos de teclado y gestos
-      <kbd>?</kbd>
-    </button>
   </div>
 
   <SelectionCard />
 
-  <!-- Descargar -->
-  <div class={pane} role="tabpanel" id="pane-export" aria-labelledby="tab-export" data-pane="export" hidden>
-    <!-- qué se va a descargar y, solo si hace falta, un aviso de calidad (lo rellena updateStats) -->
-    <div id="exportSummary" class="flex flex-col gap-2.5" aria-live="polite"></div>
-    <div class={field}>
-      <div class="lbl" id="lblDpi">Resolución del PDF</div>
-      <div class="seg full" role="group" aria-labelledby="lblDpi">
-        <button type="button" data-dpi="150" aria-pressed="true">150 ppp</button>
-        <button type="button" data-dpi="200" aria-pressed="false">200 ppp</button>
-        <button type="button" data-dpi="300" aria-pressed="false">300 ppp</button>
-      </div>
-      <p class="note">Puntos por pulgada (ppp). 150 basta para un póster que se mira a un metro; 300 da archivos mucho más pesados.</p>
-    </div>
-    <label class="check"><input type="checkbox" id="marks" checked /><span>Marcas de corte y de solape<small>Esquinas para recortar y línea discontinua donde va la hoja vecina.</small></span></label>
-    <label class="check"><input type="checkbox" id="guide" checked /><span>Página de guía de armado<small>Primera página con el mapa de hojas y los pasos.</small></span></label>
-    <div class={field}>
-      <button type="button" class="btn btn-primary" id="exportTiles">Descargar PDF por hojas</button>
-      <button type="button" class="btn" id="exportSingle">PDF en una sola hoja grande (para imprenta)</button>
-      <div class="min-h-[1.2em] font-mono text-[.8rem] text-muted" id="status" aria-live="polite"></div>
-    </div>
-    <p class="note">Imprime en el mismo papel que elegiste, sin «Ajustar al área de impresión». Comprueba con la regla de la guía: si no mide 10 cm, la impresora reescaló y las hojas no encajarán.</p>
-  </div>
 </aside>
 
-<!-- con el panel plegado (solo escritorio): botón flotante para volver a mostrarlo -->
-<button
-  type="button"
-  id="panelShow"
-  class="island hidden size-11 cursor-pointer place-items-center text-muted hover:text-fg desk:fixed desk:top-3 desk:right-3 desk:z-20 desk:panel-off:grid"
-  aria-controls="panel"
-  aria-label="Mostrar panel"
-  title="Mostrar panel (Ctrl+\)"
->
-  <Icon name="panelOpen" class="size-[18px]" />
-</button>
+<!--
+  Escritorio: botones fijos arriba a la derecha para abrir las tarjetas de Póster y de Capas (el panel de la
+  selección se abre debajo). Cada tarjeta es una ventana emergente nativa: se cierra con Esc, con su ✕ o al hacer clic fuera.
+-->
+<div id="panelOpeners" class="island hidden gap-1 p-1 desk:fixed desk:top-3 desk:right-3 desk:z-20 desk:flex" role="group" aria-label="Póster y capas">
+  <button type="button" class="tb" data-open="sheets" popovertarget="posterCard" aria-expanded="false" title="Hojas: cuántas, papel, margen y solape"><Icon name="layoutGrid" />Póster</button>
+  <button type="button" class="tb" data-open="image" popovertarget="layersCard" aria-expanded="false" title="Lista de capas: orden, ver, bloquear (Ctrl+\)"><Icon name="layers" />Capas</button>
+</div>
+<div id="posterCard" popover role="dialog" aria-labelledby="posterCardTitle" class="side-card">
+  <div class="side-card-head">
+    <h2 id="posterCardTitle" class="lbl m-0">Póster</h2>
+    <button type="button" class="selection-close" popovertarget="posterCard" popovertargetaction="hide" aria-label="Cerrar" title="Cerrar (Esc)"><Icon name="x" /></button>
+  </div>
+  <div class="contents" data-slot="sheets"></div>
+</div>
+<div id="layersCard" popover role="dialog" aria-labelledby="layersCardTitle" class="side-card">
+  <div class="side-card-head">
+    <h2 id="layersCardTitle" class="lbl m-0">Capas</h2>
+    <button type="button" class="selection-close" popovertarget="layersCard" popovertargetaction="hide" aria-label="Cerrar" title="Cerrar (Esc)"><Icon name="x" /></button>
+  </div>
+  <div class="contents" data-slot="image"></div>
+</div>

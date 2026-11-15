@@ -4,8 +4,8 @@
  *   alineado, con una × en cada punto que coincide.
  * - Separación igual: al mover, si el hueco con una vecina iguala otro de la misma fila o columna (o queda centrada
  *   entre dos), se pega y se ven las medidas iguales. Es lo único que muestra números al arrastrar.
- * - Medir: con algo seleccionado, Alt al pasar el ratón por otra imagen (o por el póster) muestra las distancias.
- *   En táctil, «Medir» en el menú y luego tocar con qué medir.
+ * - Medir: no es una herramienta. Con algo seleccionado, Alt al pasar el ratón por otra imagen (o por el póster)
+ *   muestra las distancias; también al mover con Alt + flechas o al arrastrar con Alt.
  * - Ctrl o ⌘ al arrastrar: sin ayudas. Las flechas no tienen imán ni medidas (son para precisión).
  */
 import { alignedLines, bboxMM, guideSegments, measureBetween, snapTargets, unionBox, type Box, type SnapTargets } from './geometry';

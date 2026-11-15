@@ -23,14 +23,14 @@ let lib: Promise<typeof import('jspdf')> | null = null;
 const jspdf = () => (lib ??= import('jspdf'));
 
 /* ---------- estado de la interfaz ---------- */
-const setStatus = (t: string) => { $('#status').textContent = t; if (t) toast(t, 5000); };
-/** Progreso visible aunque la pestaña Descargar esté cerrada. */
-const progress = (t: string) => { $('#status').textContent = t; toast(t, 0); };
+const setStatus = (t: string) => { if (t) toast(t, 5000); };
+/** Progreso en el aviso de abajo: se ve esté donde esté el usuario. */
+const progress = (t: string) => { toast(t, 0); };
 function setBusy(b: boolean) {
   document.body.classList.toggle('exporting', b); // mientras dura, la lista no vuelve a activar los botones
-  for (const s of ['#exportTiles', '#exportSingle', '#quickExport', '#marginTest']) $<HTMLButtonElement>(s).disabled = b;
-  // al terminar, las de descarga del póster solo se activan si hay algo que imprimir (la hoja de prueba, siempre)
-  if (!b) syncExportButtons();
+  for (const s of ['#quickExport', '#exportMore', '#exportTiles', '#printTiles', '#exportSingle', '#marginTest']) $<HTMLButtonElement>(s).disabled = b;
+  // al terminar, las salidas del póster solo se activan si hay algo que imprimir (la flecha y la hoja de prueba, siempre)
+  if (!b) { syncExportButtons(); $<HTMLButtonElement>('#exportMore').disabled = false; $<HTMLButtonElement>('#marginTest').disabled = false; }
   $('#qeLabel').textContent = b ? 'Generando…' : 'Descargar PDF';
 }
 function canExport() {
@@ -232,7 +232,34 @@ function saveFile(blob: Blob, filename: string, note = '', poster = true) {
   }
 }
 
-export async function exportTiles() {
+/**
+ * Imprimir sin descargar: el mismo PDF por hojas, abierto en un marco oculto con el visor de PDF del navegador y su
+ * cuadro de impresión. Si el navegador no deja imprimir el marco (algunos móviles), el PDF se abre en otra pestaña,
+ * desde donde se imprime o se comparte.
+ */
+function printFile(blob: Blob) {
+  const url = URL.createObjectURL(blob), frame = document.createElement('iframe');
+  frame.className = 'print-frame';
+  frame.title = 'PDF para imprimir';
+  frame.src = url;
+  const fallback = () => { window.open(url, '_blank', 'noopener'); };
+  frame.addEventListener('load', () => {
+    // el visor de PDF termina de cargar un poco después del evento load
+    setTimeout(() => {
+      try { frame.contentWindow!.focus(); frame.contentWindow!.print(); } catch { fallback(); }
+    }, 400);
+  }, { once: true });
+  document.body.appendChild(frame);
+  // el marco se queda mientras dura el cuadro de impresión; se limpia más tarde
+  setTimeout(() => { frame.remove(); URL.revokeObjectURL(url); }, 10 * 60_000);
+  markExported();
+  setStatus('Se abrió el cuadro de impresión. Elige el papel del póster y escala 100 % (tamaño real).');
+}
+
+export const exportTiles = () => buildTiles('download');
+export const printTiles = () => buildTiles('print');
+
+async function buildTiles(to: 'download' | 'print') {
   if (!canExport()) return;
   setBusy(true);
   let hi: HiMap | undefined;
@@ -262,7 +289,8 @@ export async function exportTiles() {
       if (r === 0 && c === 0) sheetRuler(pdf, g);
     }
     progress('Generando archivo…'); await tick();
-    saveFile(pdf.output('blob'), `${BRAND.name}-${S.cols}x${S.rows}-${S.paper}.pdf`);
+    if (to === 'print') printFile(pdf.output('blob'));
+    else saveFile(pdf.output('blob'), `${BRAND.name}-${S.cols}x${S.rows}-${S.paper}.pdf`);
   } catch (err) {
     console.error(err);
     setStatus('Algo falló al crear el PDF. Prueba con menos calidad.');

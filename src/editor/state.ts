@@ -35,12 +35,10 @@ export const st = {
   guides: null as GuideSeg[] | null,
   /** Separación igual durante un gesto: las medidas iguales, en rojo. */
   gaps: null as Gap[] | null,
-  /** Medir (Alt al pasar el ratón, o «Medir» en el menú en táctil): distancias de la selección a target. */
+  /** Medir (Alt al pasar el ratón por otra imagen o el póster): distancias de la selección a target. */
   measure: null as { gaps: Gap[]; dashes: Dash[]; target: Box } | null,
   /** Alt pulsado (para medir al pasar el ratón). */
   altDown: false,
-  /** Táctil: «Medir» activado desde el menú; el siguiente toque elige con qué medir. */
-  measureMode: false,
   /** El ratón está sobre el margen sin imprimir (la franja alrededor del póster): se explica qué es. */
   hoverBand: false,
   /** Se está ajustando el margen o el solape: se dibuja el papel entero de cada hoja. */
@@ -71,9 +69,11 @@ export const V = { k: 1, ox: 0, oy: 0, fitted: true };
 
 /**
  * Tamaño del lienzo en px CSS y densidad de píxeles.
- * ins: márgenes (px) que tapan las islas flotantes en escritorio; lo que queda dentro es la zona libre.
+ * ins: márgenes (px) que tapan ahora las islas y los paneles; lo que queda dentro es la zona libre a la vista.
+ * fit: los márgenes con los que se encaja el póster: solo lo fijo (cabecera, barra, isla de vista, pestañas del
+ * panel inferior). El panel de la selección y el panel inferior abierto van encima: no mueven el lienzo.
  */
-export const view = { dpr: 1, CW: 0, CH: 0, ins: { t: 0, r: 0, b: 0, l: 0 } };
+export const view = { dpr: 1, CW: 0, CH: 0, ins: { t: 0, r: 0, b: 0, l: 0 }, fit: { t: 0, r: 0, b: 0, l: 0 } };
 
 /** Colores del tema leídos de las variables CSS (el canvas no entiende var()). */
 export const C: Record<string, string> = {};

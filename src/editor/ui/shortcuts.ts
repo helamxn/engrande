@@ -18,10 +18,11 @@ const ARROWS = '← ↑ → ↓';
 const GROUPS: Group[] = [
   { title: 'General', rows: [
     ['Ver esta ayuda', ['?']],
-    ['Agregar imágenes o PDF', [C, 'O']],
+    ['Agregar imagen o PDF', [C, 'O']],
+    ['Agregar texto', ['T']],
     ['Deshacer', [C, 'Z']],
     ['Rehacer', [C, 'Y'], [C, S, 'Z']],
-    [`Pegar una imagen o lo copiado en ${BRAND.name}`, [C, 'V']],
+    [`Pegar (una imagen o lo copiado en ${BRAND.name})`, [C, 'V']],
     ['Menú de opciones', [t('Clic derecho')]],
     ['Salir de la herramienta o del grupo, o deseleccionar', ['Esc']],
   ] },
@@ -31,7 +32,7 @@ const GROUPS: Group[] = [
     ['Acercar o alejar con el ratón', [t('Rueda')]],
     ['Mover la vista', ['Espacio', t('arrastrar')], [t('Botón central')]],
     ['Mover la vista con el trackpad', [t('Dos dedos')]],
-    ['Mostrar u ocultar el panel', [C, '\\']],
+    ['Mostrar u ocultar las capas', [C, '\\']],
   ] },
   { title: 'Herramientas', rows: [
     ['Mover', ['V']],
@@ -40,7 +41,6 @@ const GROUPS: Group[] = [
     ['Varita', ['W']],
   ] },
   { title: 'Texto', rows: [
-    ['Agregar un texto', ['T']],
     ['Editar el texto seleccionado', ['Enter'], [t('Doble clic')]],
     ['Nueva línea', ['Enter']],
     ['Terminar de escribir', ['Esc'], [C, 'Enter']],
@@ -78,7 +78,7 @@ const GROUPS: Group[] = [
     ['Mover solo en horizontal o vertical', [S, t('arrastrar')]],
     ['Mover sin imán ni rejilla', [C, t('arrastrar')]],
     ['Arrastrar una copia', [A, t('arrastrar')]],
-    ['Medir distancias a otra imagen o al póster', [A, t('pasar el ratón')]],
+    ['Ver distancias a otra imagen o al póster', [A, t('pasar el ratón')]],
   ] },
   { title: 'Recortar', rows: [
     ['Encuadrar la imagen', [t('Arrastrar')]],
@@ -94,7 +94,6 @@ const GROUPS: Group[] = [
     ['Acercar o alejar', [t('Pellizcar en el fondo')]],
     ['Escalar y girar la imagen', [t('Pellizcar sobre ella')]],
     ['Recortar', [t('Doble toque')]],
-    ['Medir distancias', [t('Menú › Medir distancias')]],
   ] },
 ];
 

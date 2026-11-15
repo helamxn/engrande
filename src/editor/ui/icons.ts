@@ -69,6 +69,7 @@ import typeIcon from 'lucide-static/icons/type.svg?raw';
 import textStart from 'lucide-static/icons/text-align-start.svg?raw';
 import textCenter from 'lucide-static/icons/text-align-center.svg?raw';
 import textEnd from 'lucide-static/icons/text-align-end.svg?raw';
+import layoutGrid from 'lucide-static/icons/layout-grid.svg?raw';
 
 /** Quita el comentario de licencia y marca el icono como decorativo (el texto accesible va en el botón). */
 const clean = (svg: string) =>
@@ -82,8 +83,8 @@ const RAW = {
   // lista de imágenes
   up: arrowUp, down: arrowDown, dup: copyPlus, eye, eyeOff,
   // cabecera y herramientas
-  newPoster: filePlus, addImage: imagePlus, download, undo, redo, zoomIn: plus, zoomOut: minus, lock, lockOpen, printer,
-  plus, minus, keyboard, panelClose: panelRightClose, panelOpen: panelRightOpen,
+  newPoster: filePlus, addImage: imagePlus, download, undo, redo, lock, lockOpen, printer,
+  plus, minus, keyboard, panelClose: panelRightClose, panelOpen: panelRightOpen, layoutGrid,
   // menú contextual (flechas de submenú e iconos de las opciones principales)
   chevronRight, chevronLeft, copy, cut: scissors, paste: clipboardPaste, layers, scaling, history, fitAll: maximize,
   zoomInLens, zoomOutLens,

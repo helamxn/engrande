@@ -3,7 +3,7 @@ import { BRAND } from '../brand';
 import { afterHistory, cancelCrop, newPoster, pasteLayer, select } from './actions';
 import { $, toast } from './dom';
 import { clearHistory, hasUnexported, redo, setHistoryHooks, undo } from './history';
-import { exportMarginTest, exportSingle, exportTiles } from './io/export';
+import { exportMarginTest, exportSingle, exportTiles, printTiles } from './io/export';
 import { handlePaste, initLoad } from './io/load';
 import { flushSave, initPersistence, isOtherTabOpen, isWorkSafe, restoreProject, scheduleSave } from './io/persist';
 import { initKeyboard } from './input/keyboard';
@@ -16,8 +16,8 @@ import { initContextBar, renderBar } from './ui/contextbar';
 import { initLayout } from './ui/layout';
 import { initMenu, pasteAny } from './ui/menu';
 import { initShortcuts } from './ui/shortcuts';
-import { initPanel, layoutRestored, renderList, syncExportUI, syncSel, updateHint } from './ui/panel';
-import { fitView, resize, zoomCenter } from './view';
+import { initPanel, layoutRestored, renderList, syncExportButtons, syncExportUI, syncSel, updateHint } from './ui/panel';
+import { fitView, resize } from './view';
 import { initTextPanel } from './text/textpanel';
 import { onPlacingChange } from './text/editor';
 import { restoreTextDraft } from './text/editor';
@@ -26,6 +26,30 @@ import { restoreTextDraft } from './text/editor';
 function macTitles() {
   if (!isMac) return;
   document.querySelectorAll<HTMLElement>('[title*="Ctrl+"]').forEach((el) => { el.title = el.title.replaceAll('Ctrl+', MOD); });
+}
+
+/**
+ * Tarjeta del PDF (flecha de «Descargar PDF»): se abre 8 px bajo la cabecera, alineada con ella, como la barra de
+ * acciones. Elegir una salida la cierra (el progreso sigue en el aviso de abajo).
+ */
+function initPdfCard() {
+  const card = $('#pdfCard'), more = $('#exportMore');
+  card.addEventListener('toggle', (e) => {
+    const open = (e as ToggleEvent).newState === 'open';
+    more.setAttribute('aria-expanded', String(open));
+    if (!open) return;
+    syncExportButtons();
+    // bajo la cabecera, alineada con su borde izquierdo y a 8 px (la misma separación que la barra de acciones)
+    const r = $('header').getBoundingClientRect(), w = card.offsetWidth;
+    card.style.left = `${Math.round(Math.min(Math.max(8, r.left), innerWidth - w - 8))}px`;
+    card.style.top = `${Math.round(r.bottom + 8)}px`;
+  });
+  const run = (id: string, fn: () => unknown) => $(id).addEventListener('click', () => { card.hidePopover(); void fn(); });
+  run('#exportTiles', exportTiles);
+  run('#printTiles', printTiles);
+  run('#exportSingle', exportSingle);
+  run('#marginTest', exportMarginTest);
+  run('#newPosterAlt', newPoster);
 }
 
 export function startEditor() {
@@ -56,15 +80,11 @@ export function startEditor() {
 
   $('#undo').addEventListener('click', undo);
   $('#redo').addEventListener('click', redo);
-  $('#zoomIn').addEventListener('click', () => zoomCenter(1.4));
-  $('#zoomOut').addEventListener('click', () => zoomCenter(1 / 1.4));
   $('#zoomFit').addEventListener('click', fitView);
-  $('#exportTiles').addEventListener('click', () => void exportTiles());
-  $('#exportSingle').addEventListener('click', () => void exportSingle());
   $('#quickExport').addEventListener('click', () => void exportTiles());
-  $('#marginTest').addEventListener('click', () => void exportMarginTest());
+  initPdfCard();
   $('#newPoster').addEventListener('click', newPoster);
-  // bienvenida: «Pegar una imagen» hace lo mismo que Pegar del menú (portapapeles del sistema o la copia interna)
+  // bienvenida: «Pegar» hace lo mismo que Pegar del menú (portapapeles del sistema o la copia interna)
   $('#welcomePaste').addEventListener('click', () => void pasteAny());
   document.addEventListener('paste', (e) => handlePaste(e, pasteLayer));
 
@@ -90,6 +110,7 @@ export function startEditor() {
   // el guardado del navegador responda, que puede tardar o no estar disponible
   renderList();
   syncSel();
+  renderBar(); // «＋ Agregar» ya con la bienvenida
 
   void (async () => {
     // se restaura sin preguntar: solo hay una versión del trabajo, no hay nada que elegir

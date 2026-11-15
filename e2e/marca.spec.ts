@@ -1,7 +1,7 @@
 /** Identidad pública, cabecera adaptable y continuidad con los datos de Pliego. */
 import { expect, test } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
-import { addImage, expectSavedNames, listNames, openApp, openTab } from './helpers';
+import { addImage, expectSavedNames, listNames, openApp, openPdfCard, openTab, pdfCardButton } from './helpers';
 
 test.use({ colorScheme: 'light' }); // La marca abre en oscuro incluso si el sistema usa claro.
 
@@ -42,17 +42,19 @@ test('la bienvenida presenta la marca solo con el póster vacío; la cabecera no
   const welcome = page.locator('#empty');
   await expect(welcome.locator('.welcome-logo')).toHaveText('engrande');
   await expect(welcome.getByText('Dale espacio a lo que imaginas.')).toBeVisible();
-  for (const name of [/Elegir imagen o PDF/, /Pegar una imagen/, /Atajos y ayuda/]) await expect(welcome.getByRole('button', { name })).toBeVisible();
+  for (const name of [/Agregar imagen o PDF/, /Agregar texto/, /^Pegar/, /Atajos y ayuda/]) await expect(welcome.getByRole('button', { name })).toBeVisible();
   await expect(page.locator('header img')).toHaveCount(0);
   // Ctrl+O elige archivos, como el botón
   const chooser = page.waitForEvent('filechooser');
   await page.keyboard.press('Control+o');
   await chooser;
   // cualquier acción que muestra el papel la quita (si no, quedaría encima de la hoja blanca); deshacer la devuelve
+  await openTab(page, 'sheets');
   await page.locator('#presets [data-c="3"][data-r="1"]').click();
   await expect(welcome).toBeHidden();
   await page.locator('#undo').click();
   await expect(welcome).toBeVisible();
+  await openTab(page, 'sheets'); // el clic en «Deshacer» cerró la tarjeta (es una ventana emergente)
   await page.locator('[data-paper="A3"]').click();
   await expect(welcome).toBeHidden();
   await page.locator('#undo').click();
@@ -72,15 +74,27 @@ test('las acciones de la cabecera caben en móvil, tableta y junto al panel de e
       await page.setViewportSize({ width, height: 860 });
       const boxes = await page.locator('header').evaluate((header) => ({
         header: header.getBoundingClientRect().toJSON(),
-        buttons: [...header.querySelectorAll('button')].map((b) => b.getBoundingClientRect().toJSON()),
+        buttons: [...header.querySelectorAll('button')].filter((b) => b.offsetParent).map((b) => b.getBoundingClientRect().toJSON()),
       }));
       for (const box of boxes.buttons) {
         expect(box.x).toBeGreaterThanOrEqual(boxes.header.x);
         expect(box.x + box.width).toBeLessThanOrEqual(boxes.header.x + boxes.header.width);
         expect(box.x + box.width).toBeLessThanOrEqual(width);
       }
-      for (const name of ['Nuevo póster', 'Descargar PDF']) {
-        await expect(page.locator('header').getByRole('button', { name, exact: true })).toBeVisible();
+      // la isla de vista, al lado o debajo, tampoco se sale ni se mete bajo el panel de escritorio
+      const tools = (await page.locator('#tools').boundingBox())!, panel = await page.locator('#panel').boundingBox();
+      expect(tools.x + tools.width).toBeLessThanOrEqual(width);
+      if (width >= 960 && panel) expect(tools.x + tools.width).toBeLessThanOrEqual(panel.x);
+      await expect(page.locator('header').getByRole('button', { name: 'Descargar PDF', exact: true })).toBeVisible();
+      // deshacer y rehacer, junto al zoom
+      for (const name of ['Deshacer', 'Rehacer']) await expect(page.locator('#tools').getByRole('button', { name, exact: true })).toBeVisible();
+      // «Nuevo póster»: en la cabecera desde 640 px; más estrecho, en la flecha de la descarga
+      if (width >= 640) await expect(page.locator('header').getByRole('button', { name: 'Nuevo póster', exact: true })).toBeVisible();
+      else {
+        await expect(page.locator('#newPoster')).toBeHidden();
+        await openPdfCard(page);
+        await expect(page.locator('#newPosterAlt')).toBeVisible();
+        await page.keyboard.press('Escape');
       }
     });
   }
@@ -105,15 +119,18 @@ test('recupera las preferencias históricas y sigue guardando en la base existen
 
 test('los otros PDF descargados también llevan la nueva marca', async ({ page }) => {
   await page.goto('/');
+  // la hoja de prueba no necesita imágenes; las demás salidas, sí
+  await openPdfCard(page);
+  await expect(page.locator('#exportSingle')).toBeDisabled();
+  await expect(page.locator('#printTiles')).toBeDisabled();
   const marginDownload = page.waitForEvent('download');
   await page.locator('#marginTest').click();
   const margins = await marginDownload;
   expect(margins.suggestedFilename()).toBe('engrande-prueba-margenes-A4-vertical.pdf');
   expect((await readFile((await margins.path())!)).subarray(0, 4).toString()).toBe('%PDF');
   await addImage(page, { w: 600, h: 400 });
-  await openTab(page, 'export');
   const singleDownload = page.waitForEvent('download');
-  await page.locator('#exportSingle').click();
+  await pdfCardButton(page, '#exportSingle');
   const single = await singleDownload;
   expect(single.suggestedFilename()).toMatch(/^engrande-\d+x\d+cm\.pdf$/);
   expect((await readFile((await single.path())!)).subarray(0, 4).toString()).toBe('%PDF');

@@ -4,52 +4,62 @@
  * escritorio y, en móvil, se maneja el panel inferior deslizable.
  */
 import { $ } from '../dom';
-import { deskMQ } from '../platform';
-import { getPref, setPref } from '../prefs';
+import { deskMQ, dockMQ } from '../platform';
 import { setInsets } from '../view';
 
 let free: HTMLElement;
 let panel: HTMLElement;
 
-/** Márgenes que tapan las islas, en px desde cada borde del lienzo. */
+
+/**
+ * Márgenes en px desde cada borde del lienzo:
+ * - ins: lo que tapan ahora las islas y los paneles (la pista, la etiqueta de tamaño y la barra se quedan a la vista);
+ * - fit: solo lo fijo, con lo que se encaja el póster. El panel de la selección (escritorio) y el panel inferior
+ *   abierto (móvil) van encima del lienzo: aparecer o irse no lo mueve.
+ */
 function measure() {
   const s = $('#stage').getBoundingClientRect();
   const p = panel.getBoundingClientRect();
+  // arriba: la fila de la cabecera (en móvil, también la vista) y la barra de acciones, fija bajo ella
+  const bar = $('#ctxbar');
+  const t = Math.round((bar.hidden ? $('#topbar').getBoundingClientRect().bottom : bar.getBoundingClientRect().bottom) - s.top);
+  // móvil: abajo, el panel inferior a la altura que tenga; para encajar, solo sus pestañas (lo que siempre se ve)
   if (!deskMQ?.matches) {
-    // móvil: arriba la cabecera y las herramientas; abajo, el panel inferior a la altura que tenga
-    return { t: Math.round($('#tools').getBoundingClientRect().bottom - s.top), r: 0, b: Math.round(s.bottom - p.top), l: 0 };
+    return { ins: { t, r: 0, b: Math.round(s.bottom - p.top), l: 0 }, fit: { t, r: 0, b: sheetHeights().peek, l: 0 } };
   }
-  const head = $('header').getBoundingClientRect();
-  const foot = $('#tools').getBoundingClientRect().top;
-  return {
-    t: Math.round(head.bottom - s.top),
-    // plegado, el panel mide 0: solo queda el botón para mostrarlo, que va en la franja de la cabecera
-    r: p.width ? Math.round(s.right - p.left) : 0,
-    b: Math.round(s.bottom - foot),
-    l: 0,
-  };
+  // abajo: la isla de vista (12 px de margen + su alto)
+  const b = Math.round(s.bottom - $('#tools').getBoundingClientRect().top);
+  return { ins: { t, r: p.width ? Math.round(s.right - p.left) : 0, b, l: 0 }, fit: { t, r: 0, b, l: 0 } };
 }
 
 function update() {
-  const ins = measure();
+  // dónde termina la fila de arriba (la cabecera): las tarjetas de Póster y Capas se abren 8 px por debajo
+  document.documentElement.style.setProperty('--top-row', `${Math.round($('header').getBoundingClientRect().bottom)}px`);
+  const { ins, fit } = measure();
   free.style.inset = `${ins.t}px ${ins.r}px ${ins.b}px ${ins.l}px`;
-  setInsets(ins);
+  setInsets(ins, fit);
+  // la línea de estado (una caja de una línea), en la fila de la isla de vista: centrada con ella y sin llegar a ella
+  const hint = $('#hint'), tools = $('#tools').getBoundingClientRect(), s = $('#stage').getBoundingClientRect();
+  hint.style.maxWidth = `${Math.max(0, Math.round(tools.left - s.left - 36))}px`;
+  hint.style.bottom = `${Math.round(s.bottom - tools.bottom + (tools.height - 30) / 2)}px`;
 }
 
 /* ---------- escritorio: plegar el panel ---------- */
 export const isPanelOff = () => document.body.classList.contains('panel-off');
 
-/** Pliega o despliega el panel (solo en escritorio). Se recuerda en este navegador. */
+/**
+ * Muestra u oculta el panel (solo en escritorio). Empieza oculto: aparece al seleccionar algo o al pedirlo (ver
+ * followSelection en panel.ts); no se recuerda entre visitas.
+ */
 export function togglePanel(on = isPanelOff()) {
   if (!deskMQ?.matches) return;
   const active = document.activeElement;
   document.body.classList.toggle('panel-off', !on);
   $('#panelHide').setAttribute('aria-expanded', String(on));
-  $('#panelShow').setAttribute('aria-expanded', String(on));
-  setPref('panel', on ? 'on' : 'off');
+  for (const b of document.querySelectorAll('#panelOpeners button')) b.setAttribute('aria-expanded', String(on));
   // el foco no se pierde con el botón que desaparece: pasa al que lo sustituye
-  if (active === $('#panelHide') || active === $('#panelShow') || (!on && panel.contains(active))) {
-    $<HTMLButtonElement>(on ? '#panelHide' : '#panelShow').focus();
+  if (active === $('#panelHide') || $('#panelOpeners').contains(active) || (!on && panel.contains(active))) {
+    $<HTMLButtonElement>(on ? '#panelHide' : '#panelOpeners button').focus();
   }
   update();
 }
@@ -62,10 +72,10 @@ export const isSheetOpen = () => sheet !== 'peek';
 
 /** Alturas (px): solo asa y pestañas; media pantalla; hasta debajo de las herramientas. */
 function sheetHeights() {
-  // la cabecera visible: las pestañas o, con algo seleccionado, la de su tarjeta
-  const tabs = document.body.classList.contains('inspecting') ? $('#selectionHead') : $('#sheetTabs');
+  const tabs = $('#sheetTabs');
   const peek = Math.round(tabs.offsetTop + tabs.offsetHeight);
-  const top = $('#tools').getBoundingClientRect().bottom + 8;
+  // completo, llega hasta debajo de la barra de acciones (o de la cabecera, si aún no está)
+  const bar = $('#ctxbar'), top = (bar.hidden ? $('#topbar') : bar).getBoundingClientRect().bottom + 8;
   const full = Math.max(peek, Math.round(innerHeight - top));
   const half = Math.min(full, Math.max(peek + 160, Math.round(innerHeight * 0.5)));
   return { peek, half, full };
@@ -87,9 +97,6 @@ export function openSheet(state: SheetState) {
   $('#sheetHandle').setAttribute('aria-expanded', String(state !== 'peek'));
   update(); // y otra vez al terminar la transición (transitionend)
 }
-
-/** Vuelve a aplicar la altura del panel inferior (cambió su cabecera: pestañas o tarjeta de la selección). */
-export function refreshSheet() { if (!deskMQ?.matches) openSheet(sheet); }
 
 /** Arrastrar el asa cambia la altura; al soltar se queda en la más cercana. Un toque alterna. */
 function initSheetDrag() {
@@ -139,20 +146,18 @@ function syncSheetMode() {
 export function initLayout() {
   free = $('#free');
   panel = $('#panel');
-  const off = getPref('panel') === 'off';
-  document.body.classList.toggle('panel-off', off);
-  $('#panelHide').setAttribute('aria-expanded', String(!off));
-  $('#panelShow').setAttribute('aria-expanded', String(!off));
-  $('#panelHide').addEventListener('click', () => togglePanel(false));
-  $('#panelShow').addEventListener('click', () => togglePanel(true));
+  // el panel empieza oculto: aparece cuando hace falta (al seleccionar o al pedirlo)
+  document.body.classList.add('panel-off');
+  $('#panelHide').setAttribute('aria-expanded', 'false'); // su clic lo atiende panel.ts (deja de ser automático)
   initSheetDrag();
   panel.addEventListener('transitionend', (e) => { if (e.target === panel) update(); });
   syncSheetMode();
 
   // las islas cambian de tamaño con la ventana, al plegar o deslizar el panel o cuando la lectura ocupa otra línea
   const ro = new ResizeObserver(update);
-  for (const sel of ['#stage', 'header', '#tools', '#panel']) ro.observe($(sel));
+  for (const sel of ['#stage', '#topbar', '#panel', '#panelOpeners', '#ctxbar', '#tools']) ro.observe($(sel));
   deskMQ?.addEventListener('change', () => { syncSheetMode(); update(); });
+  dockMQ?.addEventListener('change', update); // la franja de la barra cambia de alto
   addEventListener('resize', () => { if (!deskMQ?.matches) openSheet(sheet); });
   update();
 }

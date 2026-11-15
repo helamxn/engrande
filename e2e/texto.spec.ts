@@ -1,17 +1,17 @@
 /** Textos: escribir sobre el lienzo, editarlos, su panel, fuentes del usuario y el guardado como contornos. */
 import { expect, test, type Page } from '@playwright/test';
-import { saved, expectSavedNames, listNames, openApp, selectRow, startText } from './helpers';
+import { saved, expectSavedNames, listNames, openApp, openTab, selectRow, startText } from './helpers';
 
-/** Lo guardado de cada capa: su clase de origen y, si es texto, sus palabras y su fuente. */
+/** Lo guardado de cada capa: su clase de origen y, si es texto, sus palabras, su fuente y su color. */
 function savedSources(page: Page) {
-  return page.evaluate(() => new Promise<{ kind: string; text?: string; font?: string }[] | null>((res) => {
+  return page.evaluate(() => new Promise<{ kind: string; text?: string; font?: string; color?: string }[] | null>((res) => {
     const q = indexedDB.open('pliego', 1);
     q.onupgradeneeded = () => { q.result.createObjectStore('project'); q.result.createObjectStore('blobs'); };
     q.onsuccess = () => {
       const t = q.result.transaction('project'), g = t.objectStore('project').get('current');
       t.oncomplete = () => {
-        const p = g.result as { layers: { src: { kind: string; spec?: { text: string; font: string } } }[] } | undefined;
-        res(p ? p.layers.map((l) => ({ kind: l.src.kind, text: l.src.spec?.text, font: l.src.spec?.font })) : null);
+        const p = g.result as { layers: { src: { kind: string; spec?: { text: string; font: string; color: string } } }[] } | undefined;
+        res(p ? p.layers.map((l) => ({ kind: l.src.kind, text: l.src.spec?.text, font: l.src.spec?.font, color: l.src.spec?.color })) : null);
       };
     };
   }));
@@ -37,7 +37,7 @@ test('escribir un texto lo deja en el póster como contornos; Enter lo edita y v
   await expect(page.locator('#tFont')).toHaveValue('b:archivo-black');
   await expect(page.locator('#tCap')).not.toHaveValue('');
   await expectSavedNames(page, ['Hola']);
-  expect(await savedSources(page)).toEqual([{ kind: 'text', text: 'Hola', font: 'b:archivo-black' }]);
+  expect(await savedSources(page)).toEqual([{ kind: 'text', text: 'Hola', font: 'b:archivo-black', color: '#111111' }]);
 
   // Enter: escribir otra vez, con el cursor al final; el nombre sigue a las palabras
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
@@ -260,6 +260,8 @@ test('un arrastre de color reutiliza la vista previa y genera un solo paso de de
   await page.locator('#undo').click();
   await expect(page.locator('#tColorHex')).toHaveValue('#111111');
   await expect(page.locator('#layers li.layer')).toHaveCount(1);
+  // antes de recargar, el texto ya está guardado (el guardado espera 1,2 s: recargar antes podía perderlo)
+  await expect.poll(async () => (await savedSources(page))?.[0]?.color?.toLowerCase(), { timeout: 15000 }).toBe('#111111');
   await page.reload(); await selectRow(page);
   await expect(page.locator('#tColorHex')).toHaveValue('#111111');
 });
@@ -333,6 +335,7 @@ test('con ancho fijo las líneas se parten entre palabras; automático las vuelv
 test('un texto nuevo sale a 96 pt en cualquier póster, sin encogerse, y el siguiente usa el último tamaño', async ({ page }) => {
   await openApp(page);
   // un póster pequeño (1×1) y un texto largo: no se reduce para caber
+  await openTab(page, 'sheets');
   await page.locator('#presets [data-c="1"][data-r="1"]').click();
   await writeText(page, 'Feliz cumpleaños querida Ana');
   await expect(page.locator('#tSize')).toHaveValue('96');

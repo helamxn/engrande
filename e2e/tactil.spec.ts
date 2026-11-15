@@ -52,8 +52,8 @@ test('deslizar un dedo por el fondo mueve la vista y deselecciona (sin recuadro 
   const f = await fingers(page);
   await f.swipe(outside, { x: outside.x + 80, y: outside.y - 60 });
   expect(await listNames(page)).toEqual(['foto']);
-  // sin selección, la barra fija ofrece agregar imagen o texto (y no las acciones de la imagen)
-  await expect(page.locator('#ctxbar [data-addtext]')).toBeVisible();
+  // sin selección, la barra fija ofrece agregar (y no las acciones de la imagen)
+  await expect(page.locator('#ctxbar [data-act=add]')).toBeVisible();
   await expect(page.locator('#ctxbar [data-act=crop]')).toHaveCount(0);
 });
 

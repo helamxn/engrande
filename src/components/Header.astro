@@ -2,23 +2,100 @@
 import Icon from './Icon.astro';
 import { BRAND } from '../brand';
 /**
- * Cabecera: póster nuevo y descarga rápida del PDF por hojas (agregar imagen o texto está en la barra fija). Arriba a la
- * izquierda (en pantallas estrechas, solo iconos). La marca no se queda aquí ocupando sitio: se presenta en la
- * bienvenida, con el póster vacío (Workspace.astro); el título queda para lectores de pantalla.
+ * - Cabecera del póster, arriba: póster nuevo y la descarga del PDF por hojas. Su flecha abre la tarjeta del PDF:
+ *   opciones, descargas, imprimir.
+ * - Isla de historial y vista: deshacer, rehacer, zoom y ayuda. En escritorio, fija abajo a la derecha; en un
+ *   teléfono, en la fila de arriba, junto a la cabecera («Nuevo» pasa a la tarjeta del PDF).
+ * La marca no se queda aquí ocupando sitio: se presenta en la bienvenida, con el póster vacío (Workspace.astro); el
+ * título queda para lectores de pantalla.
  */
+const icon = 'size-[17px]';
 ---
 
-<header
-  class="island fixed top-2 left-2 z-20 flex max-w-[calc(100vw-16px)] items-center gap-2 p-1.5 desk:top-3 desk:left-3 desk:max-w-[calc(100vw-var(--pr)-24px)]"
+<div
+  id="topbar"
+  class="pointer-events-none fixed top-2 left-2 z-20 flex max-w-[calc(100vw-16px)] flex-wrap items-start gap-2 desk:top-3 desk:left-3 desk:max-w-[calc(100vw-var(--pr)-24px)]"
 >
-  <h1 class="sr-only">{BRAND.name}</h1>
-  <button class="btn" type="button" id="newPoster" title="Empezar un póster nuevo y borrar el trabajo guardado en este navegador" aria-label="Nuevo póster">
-    <Icon name="newPoster" />
-    <span class="hidden min-[1100px]:inline">Nuevo</span>
-  </button>
-  <input id="file" class="sr-only" type="file" accept="image/*,application/pdf" multiple tabindex="-1" aria-hidden="true" />
-  <button class="btn btn-primary" type="button" id="quickExport">
-    <Icon name="download" />
-    <span id="qeLabel" class="max-sm:sr-only">Descargar PDF</span>
-  </button>
-</header>
+  <header class="island pointer-events-auto flex max-w-full items-center gap-2 p-1.5">
+    <h1 class="sr-only">{BRAND.name}</h1>
+    <!-- en pantallas estrechas no cabe: está en la tarjeta del PDF -->
+    <button class="btn max-sm:hidden" type="button" id="newPoster" title="Empezar un póster nuevo y borrar el trabajo guardado en este navegador" aria-label="Nuevo póster">
+      <Icon name="newPoster" />
+      <span class="hidden min-[1100px]:inline">Nuevo</span>
+    </button>
+    <input id="file" class="sr-only" type="file" accept="image/*,application/pdf" multiple tabindex="-1" aria-hidden="true" />
+    <!-- la descarga de siempre (PDF por hojas) en un clic; la flecha abre la tarjeta del PDF -->
+    <div class="btn-split">
+      <button class="btn btn-primary" type="button" id="quickExport">
+        <Icon name="download" />
+        <span id="qeLabel" class="max-[60rem]:sr-only">Descargar PDF</span>
+      </button>
+      <button class="btn btn-primary" type="button" id="exportMore" popovertarget="pdfCard" aria-haspopup="dialog" aria-expanded="false" aria-label="Opciones del PDF e imprimir" title="Opciones del PDF, imprimir y otras descargas">
+        <Icon name="chevronDown" />
+      </button>
+    </div>
+  </header>
+
+  <div id="tools" class="island pointer-events-auto flex items-center p-1 desk:fixed desk:right-3 desk:bottom-3" role="group" aria-label="Historial y vista">
+    <!-- deshacer y rehacer, junto al zoom (como en Excalidraw): a mano en una esquina fija, fuera de la cabecera -->
+    <div class="tgroup" role="group" aria-label="Historial">
+      <button type="button" id="undo" title="Deshacer (Ctrl+Z)" aria-label="Deshacer" disabled>
+        <Icon name="undo" class={icon} />
+      </button>
+      <button type="button" id="redo" title="Rehacer (Ctrl+Y)" aria-label="Rehacer" disabled>
+        <Icon name="redo" class={icon} />
+      </button>
+    </div>
+    <span class="mx-0.5 h-6 w-px bg-line" aria-hidden="true"></span>
+    <!-- zoom: el porcentaje; al pulsarlo encaja el póster entero (acercar y alejar: rueda, pellizco, + y −, menú) -->
+    <div class="tgroup" role="group" aria-label="Zoom">
+      <button type="button" id="zoomFit" class="tpct" title="Ver todo el póster (Ctrl+0) · rueda, + o − para acercar o alejar · 100 % = tamaño real aproximado">
+        <span id="zoomPct">100%</span>
+      </button>
+    </div>
+    <span class="mx-0.5 h-6 w-px bg-line" aria-hidden="true"></span>
+    <div class="tgroup">
+      <button type="button" data-shortcuts title="Atajos de teclado y gestos (?)" aria-label="Atajos de teclado y gestos">
+        <span class="text-[.95rem] font-bold">?</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!--
+  Tarjeta del PDF (flecha de «Descargar PDF»): qué se va a descargar, sus opciones y las salidas. Ventana emergente
+  nativa (popover): se cierra con Esc o al hacer clic fuera. La coloca main.ts bajo la flecha.
+-->
+<div id="pdfCard" popover role="dialog" aria-labelledby="pdfCardTitle" class="side-card pdf-card">
+  <!-- la misma tarjeta que Póster y Capas (Panel.astro): cabecera con su ✕ y el contenido debajo, que se desplaza -->
+  <div class="side-card-head">
+    <h2 id="pdfCardTitle" class="lbl m-0">PDF</h2>
+    <button type="button" class="selection-close" popovertarget="pdfCard" popovertargetaction="hide" aria-label="Cerrar" title="Cerrar (Esc)"><Icon name="x" /></button>
+  </div>
+  <div class="side-card-body">
+  <!-- tamaño, hojas y, solo si hace falta, un aviso de calidad (lo rellena updateStats) -->
+  <div id="exportSummary" class="flex flex-col gap-2.5" aria-live="polite"></div>
+  <div class="flex flex-col gap-2">
+    <div class="lbl" id="lblDpi">Resolución</div>
+    <div class="seg full" role="group" aria-labelledby="lblDpi">
+      <button type="button" data-dpi="150" aria-pressed="true">150 ppp</button>
+      <button type="button" data-dpi="200" aria-pressed="false">200 ppp</button>
+      <button type="button" data-dpi="300" aria-pressed="false">300 ppp</button>
+    </div>
+    <p class="note">150 basta para un póster que se mira a un metro; 300 da archivos mucho más pesados.</p>
+  </div>
+  <label class="check"><input type="checkbox" id="marks" checked /><span>Marcas de corte y de solape<small>Esquinas para recortar y línea discontinua donde va la hoja vecina.</small></span></label>
+  <label class="check"><input type="checkbox" id="guide" checked /><span>Página de guía de armado<small>Primera página con el mapa de hojas y los pasos.</small></span></label>
+  <div class="grid grid-cols-2 gap-2">
+    <button type="button" class="btn btn-primary" id="exportTiles"><Icon name="download" /><span id="exportTilesLabel">Descargar</span></button>
+    <button type="button" class="btn" id="printTiles"><Icon name="printer" />Imprimir</button>
+  </div>
+  <p class="note">Imprime en tamaño real (escala 100 %), sin «Ajustar al área de impresión», y en el papel que elegiste. Comprueba con la regla de la guía: si no mide 10 cm, la impresora reescaló.</p>
+  <hr class="m-0 border-0 border-t border-line" />
+  <div class="flex flex-col">
+    <button type="button" class="pdf-link" id="exportSingle"><Icon name="fitAll" />PDF en una sola hoja grande (imprenta)</button>
+    <button type="button" class="pdf-link" id="marginTest"><Icon name="printer" />Hoja de prueba de márgenes</button>
+    <button type="button" class="pdf-link sm:!hidden" id="newPosterAlt"><Icon name="newPoster" />Nuevo póster</button>
+  </div>
+  </div>
+</div>

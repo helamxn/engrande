@@ -8,19 +8,24 @@ import type { Pt } from './types';
 export const s2mm = (p: Pt): Pt => ({ x: (p.x - V.ox) / V.k, y: (p.y - V.oy) / V.k });
 export const mm2s = (p: Pt): Pt => ({ x: p.x * V.k + V.ox, y: p.y * V.k + V.oy });
 
-/** Zona libre del lienzo (px): lo que no tapan las islas ni la barra acoplada (móvil). */
-export function freeArea() {
-  const { CW, CH, ins } = view, bottom = ins.b + (dockMQ?.matches ? 64 : 0);
-  return { x: ins.l, y: ins.t, w: Math.max(1, CW - ins.l - ins.r), h: Math.max(1, CH - ins.t - bottom) };
+/** Zona del lienzo (px) dentro de unos márgenes. */
+function area(ins: typeof view.ins) {
+  const { CW, CH } = view;
+  return { x: ins.l, y: ins.t, w: Math.max(1, CW - ins.l - ins.r), h: Math.max(1, CH - ins.t - ins.b) };
 }
+/** Lo que se ve ahora del lienzo (sin lo que tapan islas y paneles): p. ej., dónde aparece un texto nuevo. */
+export const freeArea = () => area(view.ins);
 
-/** Encaja el póster entero en la zona libre. */
+/**
+ * Encaja el póster entero en la zona libre de lo fijo (view.fit): el panel de la selección y el panel inferior
+ * abierto van encima, así que abrirlos o cerrarlos no cambia el encuadre.
+ */
 export function fitView() {
-  const g = posterGeo(), f = freeArea(), framed = view.ins.t > 0;
+  const g = posterGeo(), f = area(view.fit), framed = view.fit.t > 0;
   // con islas alrededor el margen ya lo dan ellas: basta un respiro menor
   const pad = f.w < 500 ? 18 : framed ? 28 : 40;
-  // abajo, además, el hueco de la pista (#hint) para que no tape la etiqueta de tamaño; acoplada no se muestra
-  const padB = pad + (dockMQ?.matches ? 0 : 26);
+  // abajo, el hueco para la etiqueta de tamaño de la selección, que va bajo ella
+  const padB = pad + 8;
   // se encaja el papel entero: el póster y su margen sin imprimir alrededor
   const m = g.m, PW = g.W + 2 * m, PH = g.H + 2 * m;
   V.k = Math.max(0.01, Math.min((f.w - 2 * pad) / PW, (f.h - pad - padB) / PH));
@@ -59,12 +64,16 @@ export function panBy(dx: number, dy: number) {
   dirty();
 }
 
-/** Cambian las islas (tamaño de ventana, panel plegado…): si el póster estaba encajado, se vuelve a encajar. */
-export function setInsets(ins: typeof view.ins) {
-  const o = view.ins;
-  if (o.t === ins.t && o.r === ins.r && o.b === ins.b && o.l === ins.l) return;
-  view.ins = ins;
-  if (V.fitted) fitView(); else dirty();
+const same = (a: typeof view.ins, b: typeof view.ins) => a.t === b.t && a.r === b.r && a.b === b.b && a.l === b.l;
+/**
+ * Márgenes nuevos. El lienzo solo se reencaja si cambió lo fijo (fit: la ventana, la cabecera, la barra…) y el
+ * póster estaba encajado; si solo se abrió o cerró un panel (ins), el póster no se mueve.
+ */
+export function setInsets(ins: typeof view.ins, fit: typeof view.fit) {
+  const fitChanged = !same(view.fit, fit);
+  if (!fitChanged && same(view.ins, ins)) return;
+  view.ins = ins; view.fit = fit;
+  if (fitChanged && V.fitted) fitView(); else dirty();
 }
 
 export function resize(stage: HTMLElement, cv: HTMLCanvasElement) {

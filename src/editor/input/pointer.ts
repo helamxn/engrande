@@ -233,11 +233,11 @@ function edgeHelpers(e: PointerEvent, l: Layer, m: Pt, apply: (m: Pt) => void, s
   if (eq.length) st.gaps = eq;
 }
 
-/** Alt al pasar el ratón (o «Medir» en táctil): distancias de la selección a la imagen de debajo o al póster. */
+/** Alt al pasar el ratón: distancias de la selección a la imagen de debajo o al póster (no es una herramienta: se ve cuando toca). */
 export function refreshMeasure(p: Pt | null = st.hover) {
   if (measurable(drag)) return; // durante el gesto mide measureDuring
   const sel = selected();
-  if (!(st.altDown || st.measureMode) || !sel.length || !p || S.mode !== 'move') { stopMeasure(); return; }
+  if (!st.altDown || !sel.length || !p || S.mode !== 'move') { stopMeasure(); return; }
   const h = hitLayer(p, false);
   measureTo(sel, h && !sel.includes(h) ? h : null);
 }
@@ -299,14 +299,6 @@ export function initPointer(cv: HTMLCanvasElement) {
       return;
     }
     if (ptrs.size > 2) return;
-    if (st.measureMode && ptrs.size === 1) {
-      const h = hitLayer(p, false), mm = s2mm(p), g = posterGeo();
-      const onPoster = mm.x >= 0 && mm.y >= 0 && mm.x <= g.W && mm.y <= g.H;
-      if ((h && !isSelected(h)) || onPoster) refreshMeasure(p);
-      else { st.measureMode = false; stopMeasure(); } // tocar fuera del póster termina
-      ptrs.delete(e.pointerId);
-      return;
-    }
     lpStart = p;
     if (e.pointerType !== 'mouse') {
       // mantener pulsado = menú contextual
@@ -419,7 +411,7 @@ export function initPointer(cv: HTMLCanvasElement) {
           setCursor(h ? handleCursor(sel, h.id) : insideImage(sel, s2mm(p)) ? 'grab' : 'default');
         }
       }
-      if ((st.altDown || st.measureMode) && e.pointerType === 'mouse') refreshMeasure(p);
+      if (st.altDown && e.pointerType === 'mouse') refreshMeasure(p);
       // solo se redibuja si cambia algo visible: el círculo del pincel o la imagen resaltada
       if (S.mode === 'erase' || st.hoverL !== prevHoverL) dirty();
       return;

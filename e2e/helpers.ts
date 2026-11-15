@@ -6,11 +6,16 @@ export interface SavedBox { x0: number; y0: number; x1: number; y1: number; w: n
 export interface Saved { names: string[]; boxes: SavedBox[]; layout: Record<string, unknown>; dpi: number }
 
 /**
- * «Agregar texto» y elegir dónde: el botón visible (bienvenida, barra o panel) y un clic en el lienzo, que es donde
- * empieza el texto. Devuelve con el cuadro de escritura listo.
+ * «Agregar texto» y elegir dónde: el de la bienvenida o el de «＋ Agregar» en la barra, y un clic en el lienzo, que
+ * es donde empieza el texto. Devuelve con el cuadro de escritura listo.
  */
 export async function startText(page: Page, at = { x: 220, y: 260 }) {
-  await page.locator('[data-addtext]:visible').first().click();
+  const welcome = page.locator('#empty [data-addtext]');
+  if (await welcome.isVisible()) await welcome.click();
+  else {
+    await page.locator('#ctxbar [data-act=add]').click();
+    await page.locator('#menu').getByRole('menuitem', { name: /Agregar texto/ }).click();
+  }
   await page.locator('#cv').click({ position: at });
   await expect(page.locator('.text-editor')).toBeFocused();
 }
@@ -98,26 +103,53 @@ export async function listNames(page: Page) {
     lis.map((li) => (li.querySelector('.layer-main span')?.firstChild?.textContent ?? '') + (li.classList.contains('on') ? '*' : '')));
 }
 
-/**
- * Muestra la lista de capas: con algo seleccionado el panel es la tarjeta de la selección (sin pestañas), así que
- * primero se cierra.
- */
+/** Muestra la lista de capas. */
 export async function showLayers(page: Page) { await openTab(page, 'image'); }
 
-/** Abre una pestaña del panel (cerrando antes la tarjeta de la selección, si la hay). */
-export async function openTab(page: Page, tab: 'sheets' | 'image' | 'export') {
-  if (await page.locator('#selectionClose').isVisible()) await page.locator('#selectionClose').click();
-  await page.locator(`#tab-${tab}`).click();
+/**
+ * Muestra una sección: en el móvil, su pestaña del panel inferior; en escritorio, la tarjeta de Póster o de Capas
+ * (con su botón de arriba a la derecha) o el panel de la selección (aparece solo al seleccionar algo).
+ */
+export async function openTab(page: Page, tab: 'sheets' | 'image' | 'sel') {
+  const t = page.locator(`#tab-${tab}`);
+  if (await t.isVisible()) { await t.click(); return; }
+  if (tab === 'sel') { await expect(page.locator('#selectionCard')).toBeVisible(); return; }
+  const pane = page.locator(`#pane-${tab}`);
+  if (!(await pane.isVisible())) await page.locator(`#panelOpeners [data-open="${tab}"]`).click();
+  await expect(pane).toBeVisible();
 }
 
-/** Selecciona desde la lista la fila i (0 = la de arriba) y quita el foco, para que el teclado vaya al lienzo. */
+/** Cierra las tarjetas de Póster y de Capas (escritorio), para que no tapen el lienzo. */
+export async function closeCards(page: Page) {
+  await page.evaluate(() => {
+    for (const c of document.querySelectorAll<HTMLElement>('#posterCard, #layersCard')) if (c.matches(':popover-open')) c.hidePopover();
+  });
+}
+
+/** Abre la tarjeta del PDF (flecha de «Descargar PDF»): resolución, marcas, guía, imprimir y otras descargas. */
+export async function openPdfCard(page: Page) {
+  if (!(await page.locator('#pdfCard').isVisible())) await page.locator('#exportMore').click();
+  await expect(page.locator('#pdfCard')).toBeVisible();
+}
+
+/** Pulsa una salida de la tarjeta del PDF (#exportTiles, #printTiles, #exportSingle, #marginTest…). */
+export async function pdfCardButton(page: Page, id: string) {
+  await openPdfCard(page);
+  await page.locator(id).click();
+}
+
+/**
+ * Selecciona desde la lista la fila i (0 = la de arriba), deja a la vista sus propiedades (Selección), cierra la
+ * tarjeta de Capas para que no tape el lienzo y quita el foco, para que el teclado vaya al lienzo.
+ */
 export async function selectRow(page: Page, i = 0) {
   // la fila ya está (si se acaba de cargar, su selección automática no llega a mitad de camino)
   await expect(page.locator('#layers li.layer').nth(i)).toBeAttached({ timeout: 15_000 });
   await expect(page.locator('#toast:visible', { hasText: 'Cargando' })).toHaveCount(0);
   await showLayers(page);
-  await page.locator('#tab-image').click();
   await page.locator('#layers li.layer .layer-main').nth(i).click();
+  await openTab(page, 'sel');
+  await closeCards(page);
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
 }
 
