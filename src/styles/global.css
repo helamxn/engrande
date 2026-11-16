@@ -154,6 +154,8 @@
       @apply grid h-9 min-w-9 cursor-pointer place-items-center rounded-lg border-0 bg-transparent px-2 text-muted;
       &:hover:not(:disabled) { @apply bg-panel text-fg; }
       &:disabled { @apply cursor-default opacity-40; }
+      /* interruptor encendido (p. ej., la persona de referencia) */
+      &[aria-pressed="true"], &[aria-pressed="true"]:hover { @apply bg-accent-soft text-accent; }
     }
     & .tpct { @apply min-w-[4.5rem] text-[.9rem] font-medium text-fg tabular-nums; }
     /* valor entre − y + (columnas, filas) */

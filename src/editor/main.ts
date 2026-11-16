@@ -18,6 +18,7 @@ import { initMenu, pasteAny } from './ui/menu';
 import { initShortcuts } from './ui/shortcuts';
 import { initPanel, layoutRestored, renderList, syncExportButtons, syncExportUI, syncSel, updateHint } from './ui/panel';
 import { fitView, resize } from './view';
+import { initScaleRef, toggleScaleRef } from './scaleref';
 import { initTextPanel } from './text/textpanel';
 import { onPlacingChange } from './text/editor';
 import { restoreTextDraft } from './text/editor';
@@ -70,6 +71,7 @@ export function startEditor() {
   initPersistence();
   initShortcuts();
   initLayout();
+  initScaleRef();
 
   setHistoryHooks({
     afterHistory,
@@ -81,6 +83,7 @@ export function startEditor() {
   $('#undo').addEventListener('click', undo);
   $('#redo').addEventListener('click', redo);
   $('#zoomFit').addEventListener('click', fitView);
+  $('#scaleRef').addEventListener('click', () => toggleScaleRef());
   $('#quickExport').addEventListener('click', () => void exportTiles());
   initPdfCard();
   $('#newPoster').addEventListener('click', newPoster);

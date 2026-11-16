@@ -666,3 +666,25 @@ export function flipOnScreen(l: LayerGeom, axis: 'x' | 'y') {
     x.rot = normDeg(-x.rot);
   });
 }
+
+/* ---------- escala de referencia (persona junto al póster) ---------- */
+/** Altura de la persona de referencia (mm) y su ancho de hombro a hombro con los brazos. */
+export const PERSON_H = 1700;
+export const PERSON_HALF_W = 240;
+/** Separación entre la persona y el papel (mm). */
+export const PERSON_GAP = 200;
+/**
+ * Dónde está la persona de referencia (mm del póster): a la izquierda del papel, con los pies a la altura del borde
+ * de abajo del papel, como si el póster estuviera apoyado en el mismo suelo.
+ */
+export function personBox(g: Pick<Geo, 'W' | 'H' | 'm'>): Box {
+  const x1 = -g.m - PERSON_GAP, y1 = g.H + g.m;
+  return { x0: x1 - 2 * PERSON_HALF_W, y0: y1 - PERSON_H, x1, y1 };
+}
+/** Lo que se encaja al ver todo: el papel y, si se muestra, la persona de referencia. */
+export function contentBox(g: Pick<Geo, 'W' | 'H' | 'm'>, person: boolean): Box {
+  const b = { x0: -g.m, y0: -g.m, x1: g.W + g.m, y1: g.H + g.m };
+  if (!person) return b;
+  const p = personBox(g);
+  return { x0: Math.min(b.x0, p.x0), y0: Math.min(b.y0, p.y0), x1: Math.max(b.x1, p.x1), y1: Math.max(b.y1, p.y1) };
+}

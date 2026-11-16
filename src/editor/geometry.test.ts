@@ -3,7 +3,7 @@ import {
   alignShifts, alignedLines, applyCropDrag, equalSpacing, guideSegments, measureBetween, nearestBox, gridLevels, snapBox, snapEdges, snapSize, snapTargets, applyFit, boxInside, distributeShifts, unionBox, applyScale, bboxMM, conformCrop, cropCenter, cropPtsMM, fitLayer, geo, hasCutMarks, inside,
   displaySide, flipOnScreen, isStretched, localToMM, markLen, mmToLocal, newLayoutMemory, normDeg, panInFrame, pppOf, relayout,
   rotateLayer, sheetNo, solvePointer, srcDims, startScale, stepToLines, gridStep, onGrid, toGrid, type RelayoutMode,
-  unstretch, visH, visW, zoomInFrame,
+  unstretch, visH, visW, zoomInFrame, contentBox, personBox, PERSON_GAP, PERSON_H,
 } from './geometry';
 import type { Fit, LayerGeom, Settings, Source } from './types';
 
@@ -648,5 +648,24 @@ describe('número de hoja (sheetNo)', () => {
   });
   it('8 × 8 llega a 64', () => {
     expect(sheetNo(7, 7, 8)).toBe(64);
+  });
+});
+
+describe('persona de referencia', () => {
+  const g = { W: 400, H: 280, m: 6 };
+  it('queda a la izquierda del papel, con los pies en su borde de abajo', () => {
+    const p = personBox(g);
+    expect(p.x1).toBe(-6 - PERSON_GAP);
+    expect(p.y1).toBe(286);
+    expect(p.y1 - p.y0).toBe(PERSON_H);
+  });
+  it('se suma a lo que se encaja solo si se muestra', () => {
+    expect(contentBox(g, false)).toEqual({ x0: -6, y0: -6, x1: 406, y1: 286 });
+    const b = contentBox(g, true);
+    expect(b.x0).toBe(personBox(g).x0);
+    expect(b.y0).toBe(286 - PERSON_H);
+    expect(b.x1).toBe(406);
+    // en un póster más alto que la persona, arriba manda el papel
+    expect(contentBox({ W: 1000, H: 2400, m: 6 }, true).y0).toBe(-6);
   });
 });

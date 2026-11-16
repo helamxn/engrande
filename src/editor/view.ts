@@ -1,7 +1,7 @@
 /** Vista del lienzo: conversión pantalla ↔ mm, zoom, encuadre y tamaño. */
-import { clamp } from './geometry';
+import { clamp, contentBox } from './geometry';
 import { dockMQ } from './platform';
-import { posterGeo, V, view } from './state';
+import { posterGeo, sheetsVisible, st, V, view } from './state';
 import { dirty } from './render';
 import type { Pt } from './types';
 
@@ -16,28 +16,31 @@ function area(ins: typeof view.ins) {
 /** Lo que se ve ahora del lienzo (sin lo que tapan islas y paneles): p. ej., dónde aparece un texto nuevo. */
 export const freeArea = () => area(view.ins);
 
+/** Lo que se encaja al ver todo (mm): el papel y, si se muestra, la persona de referencia. */
+const content = () => contentBox(posterGeo(), st.scaleRef && sheetsVisible());
+
 /**
  * Encaja el póster entero en la zona libre de lo fijo (view.fit): el panel de la selección y el panel inferior
  * abierto van encima, así que abrirlos o cerrarlos no cambia el encuadre.
  */
 export function fitView() {
-  const g = posterGeo(), f = area(view.fit), framed = view.fit.t > 0;
+  const f = area(view.fit), framed = view.fit.t > 0;
   // con islas alrededor el margen ya lo dan ellas: basta un respiro menor
   const pad = f.w < 500 ? 18 : framed ? 28 : 40;
   // abajo, el hueco para la etiqueta de tamaño de la selección, que va bajo ella
   const padB = pad + 8;
-  // se encaja el papel entero: el póster y su margen sin imprimir alrededor
-  const m = g.m, PW = g.W + 2 * m, PH = g.H + 2 * m;
+  // se encaja el papel entero (el póster y su margen sin imprimir alrededor) y la persona de referencia, si está
+  const b = content(), PW = b.x1 - b.x0, PH = b.y1 - b.y0;
   V.k = Math.max(0.01, Math.min((f.w - 2 * pad) / PW, (f.h - pad - padB) / PH));
-  V.ox = f.x + (f.w - PW * V.k) / 2 + m * V.k;
-  V.oy = f.y + pad + (f.h - pad - padB - PH * V.k) / 2 + m * V.k;
+  V.ox = f.x + (f.w - PW * V.k) / 2 - b.x0 * V.k;
+  V.oy = f.y + pad + (f.h - pad - padB - PH * V.k) / 2 - b.y0 * V.k;
   V.fitted = true;
   syncZoomLabel();
   dirty();
 }
 
 export function zoomAt(sx: number, sy: number, f: number) {
-  const g = posterGeo(), a = freeArea(), base = Math.min((a.w - 36) / g.W, (a.h - 36) / g.H);
+  const b = content(), a = freeArea(), base = Math.min((a.w - 36) / (b.x1 - b.x0), (a.h - 36) / (b.y1 - b.y0));
   const nk = clamp(V.k * f, base * 0.3, base * 25);
   const r = nk / V.k;
   V.ox = sx - (sx - V.ox) * r; V.oy = sy - (sy - V.oy) * r; V.k = nk; V.fitted = false;

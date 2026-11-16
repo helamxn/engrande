@@ -41,6 +41,8 @@ export const st = {
   altDown: false,
   /** El ratón está sobre el margen sin imprimir (la franja alrededor del póster): se explica qué es. */
   hoverBand: false,
+  /** Persona de 1,70 m junto al póster, para ver su tamaño real (ver scaleref.ts). */
+  scaleRef: false,
   /** Se está ajustando el margen o el solape: se dibuja el papel entero de cada hoja. */
   showPaper: false,
   /** Recuadro de selección mientras se arrastra (px de pantalla). */

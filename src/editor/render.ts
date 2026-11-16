@@ -13,6 +13,7 @@ import { positionBar } from './ui/contextbar';
 import { positionTextEditor } from './text/editor';
 import { isText } from './text/text';
 import { renderList } from './ui/panel';
+import { drawScaleRef, syncScaleRefButton } from './scaleref';
 import { HI_AREA, isTouch } from './platform';
 import type { HandleId, Layer, Pt } from './types';
 
@@ -288,6 +289,9 @@ export function render() {
   // mesa de trabajo y papel
   ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = C.desk!; ctx.fillRect(0, 0, cv.width, cv.height);
   drawGrid();
+  // la persona de referencia, detrás del papel y de las imágenes
+  drawScaleRef(ctx);
+  syncScaleRefButton();
   // el papel y las hojas solo cuando el usuario ya hizo algo (cargar una imagen o elegir la distribución):
   // antes, un tamaño que nadie eligió sobra; solo se ven la mesa de puntos y la pantalla de inicio
   if (sheetsVisible()) {

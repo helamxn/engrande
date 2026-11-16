@@ -55,6 +55,11 @@ const icon = 'size-[17px]';
     </div>
     <span class="mx-0.5 h-6 w-px bg-line" aria-hidden="true"></span>
     <div class="tgroup">
+      <!-- escala de referencia: una persona de 1,70 m junto al póster (ver scaleref.ts). En el teléfono no cabe en la
+           fila de arriba: está en el menú del lienzo vacío (pulsación larga) -->
+      <button type="button" id="scaleRef" class="max-sm:hidden" aria-pressed="false" title="Persona de 1,70 m junto al póster, para ver su tamaño real" aria-label="Persona de 1,70 m junto al póster" disabled>
+        <Icon name="person" class={icon} />
+      </button>
       <button type="button" data-shortcuts title="Atajos de teclado y gestos (?)" aria-label="Atajos de teclado y gestos">
         <span class="text-[.95rem] font-bold">?</span>
       </button>

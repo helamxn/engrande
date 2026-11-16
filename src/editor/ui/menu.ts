@@ -16,8 +16,9 @@ import { focusGroupName, focusName } from './panel';
 import { $, toast } from '../dom';
 import { isStretched } from '../geometry';
 import { isTouch } from '../platform';
-import { isFreshPoster, st } from '../state';
+import { isFreshPoster, sheetsVisible, st } from '../state';
 import { fitView, zoomCenter } from '../view';
+import { toggleScaleRef } from '../scaleref';
 import { loadFiles } from '../io/load';
 import { ICON, type IconName } from './icons';
 import { addText, editText, startTextPlacement } from '../text/editor';
@@ -180,6 +181,10 @@ export function emptyMenu(at?: Pt): MenuItem[] {
     { label: 'Ver todo el póster', icon: 'fitAll', kbd: k('mod+0'), fn: fitView },
     { label: 'Acercar', icon: 'zoomInLens', kbd: k('+'), fn: () => zoomCenter(1.4) },
     { label: 'Alejar', icon: 'zoomOutLens', kbd: k('−'), fn: () => zoomCenter(1 / 1.4) },
+    {
+      label: st.scaleRef ? 'Quitar la persona de 1,70 m' : 'Persona de 1,70 m al lado', icon: 'person',
+      fn: () => toggleScaleRef(), disabled: !sheetsVisible(),
+    },
     '-',
     { label: 'Atajos y gestos', icon: 'keyboard', kbd: k('?'), fn: openShortcuts },
   ];
