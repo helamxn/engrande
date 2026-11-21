@@ -42,7 +42,7 @@ test('«Descargar PDF por hojas» genera una página de guía y una por hoja, de
   await addImage(page);
   await expect(page.locator('#quickExport')).toHaveAttribute('title', 'PDF por hojas · 3 páginas · 150 ppp');
   const [download] = await Promise.all([page.waitForEvent('download'), page.locator('#quickExport').click()]);
-  expect(download.suggestedFilename()).toBe('engrande-2x1-A4.pdf');
+  expect(download.suggestedFilename()).toBe('engrande-39x29cm-2hojas-A4.pdf'); // medida, hojas que se imprimen y papel
   const pdf = (await readFile((await download.path())!)).toString('latin1');
   expect(pdf.match(/\/Type \/Page[^s]/g)).toHaveLength(3); // guía + 2 hojas
   expect([...new Set(pdf.match(/\/MediaBox \[[^\]]+\]/g))]).toEqual(['/MediaBox [0 0 595.2755905511811534 841.8897637795276978]']); // A4

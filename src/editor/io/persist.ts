@@ -9,7 +9,7 @@ import type { PDFDocumentProxy } from 'pdfjs-dist';
 import { BRAND } from '../../brand';
 import { makeCanvas, newLayer } from '../actions';
 import { toast } from '../dom';
-import { S, st } from '../state';
+import { DEFAULT_EXPORT, layoutOf, readLayout, S, st } from '../state';
 import { clonePath, nextGroupName, normalizeGroups, type GroupRef, type Groupable } from '../groups';
 import { loadImg } from './load';
 import { openPdf, renderPdfPage } from './pdf';
@@ -48,6 +48,8 @@ interface SavedProject {
   draft?: TextDraft | null;
   schema: number; savedAt: number;
   layout: LayoutSettings; dpi: number; marks: boolean; guide: boolean;
+  /** Falta en los guardados de antes: se omiten (valor de siempre). */
+  skipBlank?: boolean;
   layers: SavedLayer[];
 }
 
@@ -174,8 +176,8 @@ async function save() {
   const project: SavedProject = {
     draft: st.textDraft,
     schema: SCHEMA, savedAt: Date.now(),
-    layout: { paper: S.paper, orient: S.orient, cols: S.cols, rows: S.rows, margin: S.margin, overlap: S.overlap },
-    dpi: S.dpi, marks: S.marks, guide: S.guide, layers,
+    layout: layoutOf(S),
+    dpi: S.dpi, marks: S.marks, guide: S.guide, skipBlank: S.skipBlank, layers,
   };
 
   // 2. escribir todo en una transacción y borrar los archivos que ya no usa ninguna imagen
@@ -321,7 +323,13 @@ async function readProject(): Promise<{ failed: string[] } | null> {
   nameUnnamedGroups(st.layers);
   // Una capa irrecuperable no debe hacer que el borrador se aplique a otra capa.
   if (!st.textDraft && draft) st.textDraft = { ...draft, target: draftLayer ? st.layers.indexOf(draftLayer) : null };
-  Object.assign(S, project.layout, { dpi: project.dpi, marks: project.marks, guide: project.guide });
+  // lo guardado puede venir de otra versión o estar dañado: cada valor fuera de lo que admite el panel vuelve al de siempre
+  Object.assign(S, readLayout(project.layout), {
+    dpi: [150, 200, 300].includes(project.dpi) ? project.dpi : DEFAULT_EXPORT.dpi,
+    marks: typeof project.marks === 'boolean' ? project.marks : DEFAULT_EXPORT.marks,
+    guide: typeof project.guide === 'boolean' ? project.guide : DEFAULT_EXPORT.guide,
+    skipBlank: typeof project.skipBlank === 'boolean' ? project.skipBlank : DEFAULT_EXPORT.skipBlank,
+  });
   stored = used;
   // si algo falló, el próximo guardado limpia lo que ya no se usa
   if (failedNames.length) scheduleSave();

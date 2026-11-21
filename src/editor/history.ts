@@ -2,7 +2,7 @@
 import { UNDO_MAX } from './constants';
 import { PIX_BUDGET } from './platform';
 import { clonePath } from './groups';
-import { S, st } from './state';
+import { layoutOf, S, st } from './state';
 import type { Snapshot } from './types';
 
 const undoStack: Snapshot[] = [];
@@ -36,9 +36,9 @@ export function takeSnap(): Snapshot {
       name: l.name, locked: l.locked, opacity: l.opacity, gpath: clonePath(l.gpath), src: l.src,
     })),
     // la distribución de hojas también se deshace (cambiarla mueve y reajusta las imágenes)
-    layout: { paper: S.paper, orient: S.orient, cols: S.cols, rows: S.rows, margin: S.margin, overlap: S.overlap },
+    layout: layoutOf(S),
     // resolución, marcas y guía: «Nuevo póster» los restablece y deshacerlo debe devolverlos
-    exp: { dpi: S.dpi, marks: S.marks, guide: S.guide },
+    exp: { dpi: S.dpi, marks: S.marks, guide: S.guide, skipBlank: S.skipBlank },
     sheetsOn: st.sheetsOn,
   };
 }
@@ -51,7 +51,7 @@ export function restoreSnap(s: Snapshot) {
       name: p.name, locked: p.locked, opacity: p.opacity, gpath: clonePath(p.gpath), src: p.src,
     });
   }
-  Object.assign(S, s.layout, s.exp);
+  Object.assign(S, layoutOf({ ...s.layout, size: s.layout.size ?? null }), s.exp);
   if (s.sheetsOn !== undefined) st.sheetsOn = s.sheetsOn;
   st.sel = s.sel && st.layers.includes(s.sel) ? s.sel : null;
   const g = (s.group ?? []).filter((l) => st.layers.includes(l));

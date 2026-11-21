@@ -35,15 +35,20 @@ function macTitles() {
  */
 function initPdfCard() {
   const card = $('#pdfCard'), more = $('#exportMore');
+  // bajo la cabecera, alineada con su borde izquierdo y a 8 px (la misma separación que la barra de acciones), y sin
+  // pasar del borde de abajo. Se coloca antes de mostrarse (beforetoggle): en «toggle», que llega después, se veía un
+  // instante en la esquina de la pantalla
+  const place = () => {
+    const r = $('header').getBoundingClientRect(), w = card.offsetWidth, top = Math.round(r.bottom + 8);
+    card.style.left = `${Math.round(w ? Math.min(Math.max(8, r.left), innerWidth - w - 8) : Math.max(8, r.left))}px`;
+    card.style.top = `${top}px`;
+    card.style.maxHeight = `${Math.max(160, innerHeight - top - 8)}px`;
+  };
+  card.addEventListener('beforetoggle', (e) => { if ((e as ToggleEvent).newState === 'open') { syncExportButtons(); place(); } });
   card.addEventListener('toggle', (e) => {
     const open = (e as ToggleEvent).newState === 'open';
     more.setAttribute('aria-expanded', String(open));
-    if (!open) return;
-    syncExportButtons();
-    // bajo la cabecera, alineada con su borde izquierdo y a 8 px (la misma separación que la barra de acciones)
-    const r = $('header').getBoundingClientRect(), w = card.offsetWidth;
-    card.style.left = `${Math.round(Math.min(Math.max(8, r.left), innerWidth - w - 8))}px`;
-    card.style.top = `${Math.round(r.bottom + 8)}px`;
+    if (open) place(); // ya con su ancho real
   });
   const run = (id: string, fn: () => unknown) => $(id).addEventListener('click', () => { card.hidePopover(); void fn(); });
   run('#exportTiles', exportTiles);

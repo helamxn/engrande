@@ -3,7 +3,7 @@ import { expect, type Page } from '@playwright/test';
 
 /** Caja de una imagen en mm (zona visible, sin girar), tal como queda guardada. */
 export interface SavedBox { x0: number; y0: number; x1: number; y1: number; w: number; h: number }
-export interface Saved { names: string[]; boxes: SavedBox[]; layout: Record<string, unknown>; dpi: number }
+export interface Saved { names: string[]; boxes: SavedBox[]; layout: Record<string, unknown>; dpi: number; skipBlank?: boolean }
 
 /**
  * «Agregar texto» y elegir dónde: el de la bienvenida o el de «＋ Agregar» en la barra, y un clic en el lienzo, que
@@ -57,7 +57,7 @@ export function saved(page: Page): Promise<Saved | null> {
       t.oncomplete = () => {
         const p = g.result as undefined | {
           layers: { name: string; cx: number; cy: number; w: number; h: number; crop: { x0: number; y0: number; x1: number; y1: number } }[];
-          layout: Record<string, unknown>; dpi: number;
+          layout: Record<string, unknown>; dpi: number; skipBlank?: boolean;
         };
         if (!p) { res(null); return; }
         res({
@@ -68,7 +68,7 @@ export function saved(page: Page): Promise<Saved | null> {
             const x1 = l.cx - l.w / 2 + l.w * l.crop.x1, y1 = l.cy - l.h / 2 + l.h * l.crop.y1;
             return { x0, y0, x1, y1, w: x1 - x0, h: y1 - y0 };
           }),
-          layout: p.layout, dpi: p.dpi,
+          layout: p.layout, dpi: p.dpi, skipBlank: p.skipBlank,
         });
       };
     };
@@ -209,10 +209,11 @@ export async function addFile(page: Page, name: string, mimeType: string, buffer
   await page.locator('#file').setInputFiles({ name, mimeType, buffer });
 }
 
-/** Color (r, g, b) del centro de la miniatura de la fila i de la lista (lo que se ve de la imagen, a 88 px). */
+/** Color (r, g, b) de la miniatura de la fila i de la lista (lo que se ve de la imagen, a 88 px), bajo el centro. */
 export function thumbColor(page: Page, i = 0) {
+  // por debajo del centro: en los PDF de makePdf el centro cae sobre el texto blanco, y su antialias cambia con el sistema
   return page.locator('#layers li.layer canvas').nth(i).evaluate((c: HTMLCanvasElement) =>
-    [...c.getContext('2d')!.getImageData(44, 44, 1, 1).data].slice(0, 3));
+    [...c.getContext('2d')!.getImageData(44, 66, 1, 1).data].slice(0, 3));
 }
 
 /* ---------- toques de verdad ---------- */

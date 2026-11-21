@@ -14,7 +14,15 @@ export const PRESETS: ReadonlyArray<readonly [number, number]> = [
 /** Lado máximo del lienzo de trabajo. La exportación usa el archivo original (ver HI_AREA). */
 export const MAX_SIDE = 2400;
 export const UNDO_MAX = 20;
-export const MAX_COLS_ROWS = 8;
+/** Hojas por lado como máximo (12 × 12 en A4 vertical: unos 2,3 × 3,3 m). */
+export const MAX_COLS_ROWS = 12;
+/** Medida más pequeña que se puede pedir (mm). */
+export const MIN_SIZE = 50;
+
+/** Tamaños de póster habituales (mm, en vertical). */
+export const SIZE_PRESETS: ReadonlyArray<readonly [string, number, number]> = [
+  ['A2', 420, 594], ['A1', 594, 841], ['A0', 841, 1189], ['50 × 70', 500, 700], ['70 × 100', 700, 1000],
+];
 
 /** Archivos que se rechazan para no colgar la pestaña (imágenes "bomba" o PDF enormes). Megapíxeles: ver LIMITS. */
 export const MAX_FILE_BYTES = 150 * 1024 * 1024;

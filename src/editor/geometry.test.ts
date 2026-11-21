@@ -3,12 +3,12 @@ import {
   alignShifts, alignedLines, applyCropDrag, equalSpacing, guideSegments, measureBetween, nearestBox, gridLevels, snapBox, snapEdges, snapSize, snapTargets, applyFit, boxInside, distributeShifts, unionBox, applyScale, bboxMM, conformCrop, cropCenter, cropPtsMM, fitLayer, geo, hasCutMarks, inside,
   displaySide, flipOnScreen, isStretched, localToMM, markLen, mmToLocal, newLayoutMemory, normDeg, panInFrame, pppOf, relayout,
   rotateLayer, sheetNo, solvePointer, srcDims, startScale, stepToLines, gridStep, onGrid, toGrid, type RelayoutMode,
-  unstretch, visH, visW, zoomInFrame, contentBox, personBox, PERSON_GAP, PERSON_H,
+  unstretch, visH, visW, zoomInFrame, contentBox, personBox, PERSON_GAP, PERSON_H, tiles, sheetsFor, sheetCount, maxSize, sizeSlack, span,
 } from './geometry';
 import type { Fit, LayerGeom, Settings, Source } from './types';
 
 const settings = (o: Partial<Settings> = {}) =>
-  ({ paper: 'A4', orient: 'portrait', cols: 2, rows: 2, margin: 6, overlap: 10, ...o }) as Settings;
+  ({ paper: 'A4', orient: 'portrait', cols: 2, rows: 2, size: null, margin: 6, overlap: 10, ...o }) as Settings;
 
 /** Capa de prueba: imagen de 1000×500 px colocada a 200×100 mm centrada en (100, 50). */
 const layer = (o: Partial<LayerGeom & { src: Source | null; fit: Fit }> = {}) => ({
@@ -17,6 +17,58 @@ const layer = (o: Partial<LayerGeom & { src: Source | null; fit: Fit }> = {}) =>
 });
 
 const close = (a: number, b: number, d = 1e-6) => expect(Math.abs(a - b)).toBeLessThan(d);
+
+describe('póster por medidas', () => {
+  const size = { w: 1000, h: 700 };
+  it('sin medida, las hojas cubren justo el póster', () => {
+    const g = geo(settings());
+    expect([g.cols, g.rows]).toEqual([2, 2]);
+    expect([g.GW, g.GH]).toEqual([g.W, g.H]);
+  });
+  it('con medida, el póster mide exactamente eso y las hojas lo cubren (100 × 70 cm en A4)', () => {
+    const v = geo(settings({ size }));
+    expect([v.W, v.H]).toEqual([1000, 700]);
+    expect([v.cols, v.rows]).toEqual([6, 3]);
+    expect(v.GW).toBeGreaterThanOrEqual(1000); expect(v.GH).toBeGreaterThanOrEqual(700);
+    const h = geo(settings({ size, orient: 'landscape' }));
+    expect([h.cols, h.rows]).toEqual([4, 4]);
+    const a3 = geo(settings({ size, paper: 'A3' }));
+    expect([a3.cols, a3.rows]).toEqual([4, 2]);
+  });
+  it('una medida justa en el borde de n hojas no pide una más', () => {
+    expect(sheetsFor(span(3, 198, 10), 198, 10)).toBe(3);
+    expect(sheetsFor(span(3, 198, 10) + 0.005, 198, 10)).toBe(3);
+    expect(sheetsFor(span(3, 198, 10) + 1, 198, 10)).toBe(4);
+    expect(sheetsFor(80, 198, 10)).toBe(1); // más pequeño que una hoja
+  });
+  it('la última columna y fila van a medias y siempre llevan algo propio', () => {
+    const g = geo(settings({ size })), ts = tiles(g);
+    expect(ts).toHaveLength(18);
+    const last = ts.at(-1)!;
+    expect(last.x0 + last.w).toBeCloseTo(1000); expect(last.y0 + last.h).toBeCloseTo(700);
+    expect(last.w).toBeGreaterThan(g.ov); expect(last.h).toBeGreaterThan(g.ov);
+    expect(ts[0]).toEqual({ r: 0, c: 0, x0: 0, y0: 0, w: 198, h: 285 });
+    // orden de las hojas = sheetNo
+    ts.forEach((t, i) => expect(sheetNo(t.r, t.c, g.cols)).toBe(i + 1));
+  });
+  it('cuenta las hojas en cada orientación y el máximo', () => {
+    expect(sheetCount(settings(), size, 'portrait').n).toBe(18);
+    expect(sheetCount(settings(), size, 'landscape').n).toBe(16);
+    expect(maxSize(settings(), 12)).toEqual({ w: span(12, 198, 10), h: span(12, 285, 10) });
+  });
+  it('avisa cuando la última columna o fila se aprovecha poco', () => {
+    // 2 hojas A4 de ancho llegan a 386 mm: con 400 mm, la tercera columna lleva solo 14 mm propios
+    const s = sizeSlack(geo(settings({ size: { w: 400, h: 285 } })));
+    expect(s?.axis).toBe('w'); expect(s?.trim).toBeCloseTo(14);
+    expect(sizeSlack(geo(settings({ size: { w: 550, h: 285 } })))).toBeNull(); // 164 mm: bien aprovechada
+    expect(sizeSlack(geo(settings({ size: { w: 150, h: 200 } })))).toBeNull(); // una sola hoja: no hay qué ahorrar
+    expect(sizeSlack(geo(settings()))).toBeNull();
+  });
+  it('lo que se encaja en la vista incluye las hojas enteras', () => {
+    const g = geo(settings({ size: { w: 400, h: 285 } }));
+    expect(contentBox(g, false).x1).toBeCloseTo(g.GW + g.m);
+  });
+});
 
 describe('geo', () => {
   it('calcula el póster 2×2 A4 vertical con solape', () => {

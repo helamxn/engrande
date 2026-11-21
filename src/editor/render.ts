@@ -14,6 +14,7 @@ import { positionTextEditor } from './text/editor';
 import { isText } from './text/text';
 import { renderList } from './ui/panel';
 import { drawScaleRef, syncScaleRefButton } from './scaleref';
+import { sheetPlan } from './sheets';
 import { HI_AREA, isTouch } from './platform';
 import type { HandleId, Layer, Pt } from './types';
 
@@ -296,15 +297,21 @@ export function render() {
   // antes, un tamaño que nadie eligió sobra; solo se ven la mesa de puntos y la pantalla de inicio
   if (sheetsVisible()) {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const tl = mm2s({ x: 0, y: 0 }), pwS = g.W * V.k, phS = g.H * V.k;
+    const tl = mm2s({ x: 0, y: 0 }), pwS = g.W * V.k, phS = g.H * V.k, gwS = g.GW * V.k, ghS = g.GH * V.k;
     // el papel: el póster impreso y, alrededor, el margen sin imprimir de las hojas de fuera (rayado). Entre hojas
-    // no hay margen a la vista: al pegar, cada hoja tapa el de su vecina
+    // no hay margen a la vista: al pegar, cada hoja tapa el de su vecina. Con medida, las hojas de la última columna
+    // y fila sobresalen del póster: ese sobrante también va rayado (no se imprime y se recorta)
     const mS = g.m * V.k, pt = { x: tl.x - mS, y: tl.y - mS };
     ctx.save(); ctx.shadowColor = 'rgba(0,0,0,.22)'; ctx.shadowBlur = 14; ctx.shadowOffsetY = 3;
-    ctx.fillStyle = '#ffffff'; ctx.fillRect(pt.x, pt.y, pwS + 2 * mS, phS + 2 * mS); ctx.restore();
-    if (mS > 0 && hatch) {
-      ctx.fillStyle = hatch; ctx.fillRect(pt.x, pt.y, pwS + 2 * mS, phS + 2 * mS);
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(pt.x, pt.y, gwS + 2 * mS, ghS + 2 * mS); ctx.restore();
+    if ((mS > 0 || gwS > pwS || ghS > phS) && hatch) {
+      ctx.fillStyle = hatch; ctx.fillRect(pt.x, pt.y, gwS + 2 * mS, ghS + 2 * mS);
       ctx.fillStyle = '#ffffff'; ctx.fillRect(tl.x, tl.y, pwS, phS);
+    }
+    if (gwS > pwS || ghS > phS) {
+      // el borde del póster, por donde se corta
+      ctx.strokeStyle = C.muted!; ctx.lineWidth = 1; ctx.setLineDash([6, 4]);
+      ctx.strokeRect(Math.round(tl.x) + 0.5, Math.round(tl.y) + 0.5, Math.round(pwS), Math.round(phS)); ctx.setLineDash([]);
     }
     if (editing && checker) { ctx.save(); ctx.translate(tl.x, tl.y); ctx.fillStyle = checker; ctx.fillRect(0, 0, pwS, phS); ctx.restore(); }
 
@@ -325,16 +332,29 @@ export function render() {
     }
     ctx.restore();
 
-    // franjas de solape y líneas discontinuas
+    // hojas en blanco que no se imprimen: atenuadas, con su aviso si cabe (no mientras se borra: ahí se ve el damero)
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const plan = editing ? null : sheetPlan(g);
+    if (plan?.blank.size) {
+      ctx.font = '500 11px "IBM Plex Mono", ui-monospace, monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      for (const i of plan.blank) {
+        const t = plan.tiles[i]!, a = mm2s({ x: t.x0, y: t.y0 }), w = t.w * V.k, h = t.h * V.k;
+        ctx.fillStyle = C.desk!; ctx.globalAlpha = 0.28; ctx.fillRect(a.x, a.y, w, h); ctx.globalAlpha = 1;
+        const label = 'No se imprime';
+        if (ctx.measureText(label).width + 16 <= w && h >= 28) { ctx.fillStyle = C.muted!; ctx.fillText(label, a.x + w / 2, a.y + h / 2); }
+      }
+      ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+    }
+
+    // franjas de solape y líneas discontinuas
     ctx.fillStyle = C.mark!; ctx.globalAlpha = 0.13;
-    for (let c = 1; c < S.cols; c++) { const a = mm2s({ x: c * (g.tw - g.ov), y: 0 }); ctx.fillRect(a.x, a.y, g.ov * V.k, phS); }
-    for (let r = 1; r < S.rows; r++) { const a = mm2s({ x: 0, y: r * (g.th - g.ov) }); ctx.fillRect(a.x, a.y, pwS, g.ov * V.k); }
+    for (let c = 1; c < g.cols; c++) { const a = mm2s({ x: c * (g.tw - g.ov), y: 0 }); ctx.fillRect(a.x, a.y, g.ov * V.k, phS); }
+    for (let r = 1; r < g.rows; r++) { const a = mm2s({ x: 0, y: r * (g.th - g.ov) }); ctx.fillRect(a.x, a.y, pwS, g.ov * V.k); }
     ctx.globalAlpha = 1; ctx.strokeStyle = C.mark!; ctx.lineWidth = 1; ctx.setLineDash([5, 4]); ctx.beginPath();
-    for (let c = 1; c < S.cols; c++) for (const x of [c * (g.tw - g.ov), c * (g.tw - g.ov) + g.ov]) {
+    for (let c = 1; c < g.cols; c++) for (const x of [c * (g.tw - g.ov), c * (g.tw - g.ov) + g.ov]) {
       const X = Math.round(mm2s({ x, y: 0 }).x) + 0.5; ctx.moveTo(X, tl.y); ctx.lineTo(X, tl.y + phS);
     }
-    for (let r = 1; r < S.rows; r++) for (const y of [r * (g.th - g.ov), r * (g.th - g.ov) + g.ov]) {
+    for (let r = 1; r < g.rows; r++) for (const y of [r * (g.th - g.ov), r * (g.th - g.ov) + g.ov]) {
       const Y = Math.round(mm2s({ x: 0, y }).y) + 0.5; ctx.moveTo(tl.x, Y); ctx.lineTo(tl.x + pwS, Y);
     }
     ctx.stroke(); ctx.setLineDash([]);
@@ -345,7 +365,7 @@ export function render() {
     // haría un rayado de líneas pegadas a los bordes de la franja
     if (st.showPaper && g.m * V.k >= 3) {
       ctx.strokeStyle = C.muted!; ctx.lineWidth = 1; ctx.globalAlpha = 0.55; ctx.setLineDash([2, 3]);
-      for (let r = 0; r < S.rows; r++) for (let c = 0; c < S.cols; c++) {
+      for (let r = 0; r < g.rows; r++) for (let c = 0; c < g.cols; c++) {
         const a = mm2s({ x: c * (g.tw - g.ov) - g.m, y: r * (g.th - g.ov) - g.m });
         ctx.strokeRect(Math.round(a.x) + 0.5, Math.round(a.y) + 0.5, Math.round(g.pw * V.k), Math.round(g.ph * V.k));
       }
@@ -354,10 +374,11 @@ export function render() {
 
     // tamaño del póster y hojas, encima de su esquina (como el nombre de un marco en Figma); si no cabe, solo el tamaño.
     // En táctil no: chocaba con el tirador de giro y lo mismo se lee en la pestaña Póster
-    const n = S.cols * S.rows, size = `${cm(g.W)} × ${cm(g.H)} cm`;
-    const full = `Póster ${size} · ${n} ${n === 1 ? 'hoja' : 'hojas'} ${S.paper}` + (g.m > 0 ? ` · margen ${Math.round(g.m)} mm` : '');
+    const n = g.cols * g.rows, size = `${cm(g.W)} × ${cm(g.H)} cm`, printed = plan ? plan.printed : n;
+    const sheets = printed < n ? `${printed} de ${n} hojas` : `${n} ${n === 1 ? 'hoja' : 'hojas'}`;
+    const full = `Póster ${size} · ${sheets} ${S.paper}` + (g.m > 0 ? ` · margen ${Math.round(g.m)} mm` : '');
     ctx.font = '500 11.5px "IBM Plex Mono", ui-monospace, monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-    const paperW = pwS + 2 * mS, txt = ctx.measureText(full).width <= paperW ? full : size, ly = pt.y - 8;
+    const paperW = gwS + 2 * mS, txt = ctx.measureText(full).width <= paperW ? full : size, ly = pt.y - 8;
     if (!isTouch() && ly > view.ins.t + 12 && ctx.measureText(txt).width <= paperW + 40) { ctx.fillStyle = C.muted!; ctx.fillText(txt, pt.x, ly); }
     // sobre la franja: qué es
     if (st.hoverBand && st.hover) {

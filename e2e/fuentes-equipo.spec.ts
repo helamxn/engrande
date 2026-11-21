@@ -74,14 +74,17 @@ test('sin API local se ofrece cargar archivos sin bloquear la edición', async (
   await expect(page.locator('#tLocalStatus')).toContainText('Cargar archivo de fuente');
 });
 
-test('Edge puede usar una fuente instalada real con permiso en el perfil temporal', async ({ page, context }) => {
+test('Edge o Chrome pueden usar una fuente instalada real con permiso en el perfil temporal', async ({ page, context }) => {
   test.setTimeout(120_000);
   await context.grantPermissions(['local-fonts']);
   await openApp(page); await addText(page);
   // leer todas las fuentes instaladas tarda (más con las pruebas en paralelo)
   await expect(page.locator('#tFont optgroup[label="De tu equipo"] option').first()).toBeAttached({ timeout: 90_000 });
-  const id = await page.locator('#tFont optgroup[label="De tu equipo"] option').evaluateAll(options =>
-    (options.find(o => o.textContent === 'Arial') as HTMLOptionElement | undefined)?.value ?? '');
+  // Arial si está (Windows, macOS); si no, la primera instalada (en Linux no suele haber Arial)
+  const id = await page.locator('#tFont optgroup[label="De tu equipo"] option').evaluateAll(options => {
+    const o = (options.find(o => o.textContent === 'Arial') ?? options[0]) as HTMLOptionElement | undefined;
+    return o?.value ?? '';
+  });
   expect(id).toMatch(/^l:/);
   await page.selectOption('#tFont', id);
   await expect(page.locator('#tFontStyle')).toHaveValue(id);

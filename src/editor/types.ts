@@ -119,17 +119,29 @@ export interface Layer extends LayerGeom {
   gpath: GroupRef[];
 }
 
+/** Medida del póster en mm. */
+export interface Size { w: number; h: number }
+
 export interface Settings {
   paper: Paper;
   orient: Orient;
+  /** Columnas y filas elegidas a mano. Con medidas (size), las hojas salen de ellas: ver geo(). */
   cols: number;
   rows: number;
+  /**
+   * Medida del póster elegida por el usuario (mm). null = el póster mide lo que dan las columnas y filas. Con medida,
+   * cambiar el papel, el margen o el solape conserva el tamaño y recalcula las hojas; la última columna y la última fila
+   * pueden ir a medias (lo que sobra se recorta).
+   */
+  size: Size | null;
   /** Margen sin imprimir, en mm. */
   margin: number;
   /** Solape para pegar, en mm. */
   overlap: number;
   marks: boolean;
   guide: boolean;
+  /** No incluir en el PDF por hojas las que no llevan nada (ver blank.ts). */
+  skipBlank: boolean;
   dpi: number;
   mode: Mode;
   /** Radio del pincel en px de pantalla. */
@@ -148,8 +160,13 @@ export interface Geo {
   /** Margen efectivo. */ m: number;
   /** Zona imprimible de cada hoja. */ tw: number; th: number;
   /** Solape efectivo. */ ov: number;
-  /** Tamaño total del póster. */ W: number; H: number;
+  /** Tamaño del póster (lo que se imprime). */ W: number; H: number;
+  /** Hojas: columnas y filas. */ cols: number; rows: number;
+  /** Lo que cubren las hojas (≥ W × H: con medida, la última columna y fila pueden ir a medias). */ GW: number; GH: number;
 }
+
+/** Una hoja: su fila y columna (desde 0), su esquina en el póster y lo que lleva impreso (mm; las del borde, a medias). */
+export interface Tile { r: number; c: number; x0: number; y0: number; w: number; h: number }
 
 export interface LayerProps extends Transform {
   l: Layer;
@@ -168,7 +185,7 @@ export interface LayerProps extends Transform {
 }
 
 /** Ajustes que definen la geometría del póster (se guardan en el historial). */
-export type LayoutSettings = Pick<Settings, 'paper' | 'orient' | 'cols' | 'rows' | 'margin' | 'overlap'>;
+export type LayoutSettings = Pick<Settings, 'paper' | 'orient' | 'cols' | 'rows' | 'size' | 'margin' | 'overlap'>;
 
 export interface Snapshot {
   layers: Layer[];
@@ -177,7 +194,7 @@ export interface Snapshot {
   props: LayerProps[];
   layout: LayoutSettings;
   /** Ajustes de descarga (opcional: los pasos de antes no los tenían). */
-  exp?: Pick<Settings, 'dpi' | 'marks' | 'guide'>;
+  exp?: Pick<Settings, 'dpi' | 'marks' | 'guide'> & Partial<Pick<Settings, 'skipBlank'>>;
   /** Se veían las hojas (en un póster sin imágenes, solo si se eligió la distribución). */
   sheetsOn?: boolean;
 }

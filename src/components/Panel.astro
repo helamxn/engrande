@@ -68,8 +68,28 @@ const tabs = [
 
   <!-- Póster: las hojas (cuántas, papel, orientación, margen y solape). El PDF tiene su tarjeta (Header.astro) -->
   <div class={pane} role="tabpanel" id="pane-sheets" aria-labelledby="tab-sheets" data-pane="sheets">
+    <!--
+      Tamaño del póster por medidas: lo más directo («lo quiero de 100 × 70 cm»). Las hojas salen solas; la última
+      columna y fila pueden ir a medias. Muestra siempre la medida actual, también cuando sale de las hojas.
+    -->
     <div class={field}>
-      <div class="lbl">Distribución <span class="val">columnas × filas</span></div>
+      <div class="lbl">Tamaño del póster</div>
+      <div class="grid grid-cols-[1fr_auto_1fr] items-end gap-2">
+        <label class="pf"><span>Ancho</span><span class="unit"><input id="sizeW" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" aria-describedby="sizeNote" /><em>cm</em></span></label>
+        <button type="button" class="lock" id="sizeLock" aria-pressed="false" title="Mantener proporción" aria-label="Mantener proporción">
+          <Icon name="ratioOff" />
+        </button>
+        <label class="pf"><span>Alto</span><span class="unit"><input id="sizeH" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" aria-describedby="sizeNote" /><em>cm</em></span></label>
+      </div>
+      <div class="flex flex-wrap gap-1.5" id="sizePresets" role="group" aria-label="Tamaños habituales">
+        <button type="button" class="chip chip-size" id="sizeImage" title="Mismo formato que la imagen seleccionada (o la primera), con el ancho de ahora">Como la imagen</button>
+      </div>
+      <p class="note" id="sizeNote" aria-live="polite"></p>
+      <!-- sugerencias que ahorran hojas (solo si las hay); cada una se aplica con su botón -->
+      <div class="flex flex-col gap-1.5 empty:hidden" id="sizeTips"></div>
+    </div>
+    <div class={field}>
+      <div class="lbl">O elige las hojas <span class="val">columnas × filas</span></div>
       <!-- presets en cuadrícula de 4: dos filas parejas en vez de 5 + 3 -->
       <div class="grid grid-cols-4 gap-1.5" id="presets"></div>
       <!-- columnas y filas con la misma estructura que el zoom de la barra: [− valor +] -->

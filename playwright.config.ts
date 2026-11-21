@@ -19,7 +19,10 @@ export default defineConfig({
   expect: { timeout: 6_000 }, // el guardado espera 1,2 s después del último cambio
   use: {
     baseURL: `http://localhost:${PORT}`,
-    channel: process.env.PW_CHANNEL ?? 'msedge',
+    // PW_EXECUTABLE: ruta a un Chromium ya instalado (CI o contenedores); si no, el canal instalado en el equipo
+    ...(process.env.PW_EXECUTABLE
+      ? { launchOptions: { executablePath: process.env.PW_EXECUTABLE } }
+      : { channel: process.env.PW_CHANNEL ?? 'msedge' }),
     viewport: { width: 1400, height: 860 },
     locale: 'es-ES',
     trace: 'retain-on-failure',

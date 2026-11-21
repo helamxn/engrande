@@ -179,6 +179,15 @@
   }
   .chip-layout[aria-pressed="true"] .sheet-grid i { @apply opacity-100; }
 
+  /* tamaños habituales: a lo ancho que pida su texto, varios por fila */
+  .chip.chip-size { @apply w-auto min-w-9 px-2.5; }
+  /* sugerencia aplicable (ahorrar hojas): texto y su botón en la misma línea */
+  .tip {
+    @apply flex items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-[.84rem];
+    background: color-mix(in srgb, var(--accent) 8%, transparent);
+    & button { @apply flex-none cursor-pointer rounded-md border-0 bg-transparent px-1.5 py-1 font-semibold text-accent; }
+    & button:hover { @apply bg-accent-soft; }
+  }
   .chip {
     @apply h-9 w-full cursor-pointer rounded-lg border border-line bg-transparent px-2 font-mono text-[.85rem];
     &:hover:not([aria-pressed="true"]) { @apply border-muted; }
@@ -493,6 +502,7 @@
     .btn, .tb { @apply min-w-11 justify-center; }
     .tgroup button { @apply h-11 min-w-11; }
     .seg button, .chip { @apply h-11; }
+    .chip.chip-size { @apply min-w-11; }
     .lock { @apply h-11 w-11; }
     .unit { @apply min-h-11; }
     .selection-close, .layer .act, .group-row .act { @apply size-11; }

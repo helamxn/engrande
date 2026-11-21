@@ -3,7 +3,7 @@
  * Todo está en milímetros del póster; las coordenadas locales (u, v) van de 0 a 1 sobre la imagen completa.
  */
 import { PAPERS } from './constants';
-import type { Crop, CropDrag, Fit, FitMode, Geo, HandleId, LayerGeom, Pt, ScaleDrag, Settings, Source, Transform, UV } from './types';
+import type { Crop, CropDrag, Fit, FitMode, Geo, HandleId, LayerGeom, Pt, ScaleDrag, Settings, Size, Source, Tile, Transform, UV } from './types';
 
 export const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
 export const rad = (d: number) => (d * Math.PI) / 180;
@@ -19,13 +19,67 @@ export const normDeg = (d: number) => {
  */
 export const sheetNo = (r: number, c: number, cols: number) => r * cols + c + 1;
 
-export function geo(s: Pick<Settings, 'paper' | 'orient' | 'cols' | 'rows' | 'margin' | 'overlap'>): Geo {
+/** Margen, zona imprimible y solape efectivos de cada hoja. */
+function sheetGeo(s: Pick<Settings, 'paper' | 'orient' | 'margin' | 'overlap'>) {
   let [pw, ph] = PAPERS[s.paper];
   if (s.orient === 'landscape') [pw, ph] = [ph, pw];
   const m = Math.min(s.margin, pw / 4);
   const tw = pw - 2 * m, th = ph - 2 * m;
   const ov = Math.min(s.overlap, tw / 3, th / 3);
-  return { pw, ph, m, tw, th, ov, W: s.cols * tw - (s.cols - 1) * ov, H: s.rows * th - (s.rows - 1) * ov };
+  return { pw, ph, m, tw, th, ov };
+}
+/** Lo que cubren n hojas seguidas de ancho útil t con solape ov. */
+export const span = (n: number, t: number, ov: number) => n * t - (n - 1) * ov;
+/**
+ * Hojas que hacen falta para cubrir L mm (sin límite). La última lleva algo que no está en la penúltima: si L cae justo
+ * en el borde de n hojas, son n (la tolerancia evita una hoja de más por redondeos de 0,01 mm).
+ */
+export const sheetsFor = (L: number, t: number, ov: number) => Math.max(1, Math.ceil((L - ov - 0.01) / (t - ov)));
+
+export function geo(s: Pick<Settings, 'paper' | 'orient' | 'cols' | 'rows' | 'size' | 'margin' | 'overlap'>): Geo {
+  const b = sheetGeo(s);
+  if (!s.size) {
+    const W = span(s.cols, b.tw, b.ov), H = span(s.rows, b.th, b.ov);
+    return { ...b, W, H, cols: s.cols, rows: s.rows, GW: W, GH: H };
+  }
+  const cols = sheetsFor(s.size.w, b.tw, b.ov), rows = sheetsFor(s.size.h, b.th, b.ov);
+  return { ...b, W: s.size.w, H: s.size.h, cols, rows, GW: span(cols, b.tw, b.ov), GH: span(rows, b.th, b.ov) };
+}
+
+/** Hojas del póster en orden (1, 2, 3… de izquierda a derecha y de arriba abajo), con lo que lleva impreso cada una. */
+export function tiles(g: Geo): Tile[] {
+  const out: Tile[] = [];
+  for (let r = 0; r < g.rows; r++) for (let c = 0; c < g.cols; c++) {
+    const x0 = c * (g.tw - g.ov), y0 = r * (g.th - g.ov);
+    out.push({ r, c, x0, y0, w: Math.min(g.tw, g.W - x0), h: Math.min(g.th, g.H - y0) });
+  }
+  return out;
+}
+
+/** Medida más grande que admiten MAX hojas por lado con este papel, margen y solape (mm). */
+export function maxSize(s: Pick<Settings, 'paper' | 'orient' | 'margin' | 'overlap'>, max: number): Size {
+  const b = sheetGeo(s);
+  return { w: span(max, b.tw, b.ov), h: span(max, b.th, b.ov) };
+}
+
+/** Cuántas hojas lleva una medida en cada orientación (para sugerir la que usa menos). */
+export function sheetCount(s: Pick<Settings, 'paper' | 'margin' | 'overlap'>, size: Size, orient: Settings['orient']) {
+  const b = sheetGeo({ ...s, orient });
+  const cols = sheetsFor(size.w, b.tw, b.ov), rows = sheetsFor(size.h, b.th, b.ov);
+  return { cols, rows, n: cols * rows };
+}
+
+/**
+ * La última columna o fila lleva poco póster: cuánto de él va solo en ella (mm), que es lo que habría que acortar la
+ * medida para ahorrarla. null si se aprovecha bien (más de un 25 % de la hoja), si no hay medida o si es la única.
+ */
+export function sizeSlack(g: Geo): { axis: 'w' | 'h'; trim: number } | null {
+  const extra = (L: number, n: number, t: number) => (n > 1 ? L - span(n - 1, t, g.ov) : Infinity);
+  const ex = extra(g.W, g.cols, g.tw), ey = extra(g.H, g.rows, g.th);
+  const ux = ex / (g.tw - g.ov), uy = ey / (g.th - g.ov);
+  const axis = ux <= uy ? 'w' : 'h', u = Math.min(ux, uy);
+  if (u > 0.25) return null;
+  return { axis, trim: axis === 'w' ? ex : ey };
 }
 
 /* ---------- coordenadas locales ---------- */
@@ -682,8 +736,8 @@ export function personBox(g: Pick<Geo, 'W' | 'H' | 'm'>): Box {
   return { x0: x1 - 2 * PERSON_HALF_W, y0: y1 - PERSON_H, x1, y1 };
 }
 /** Lo que se encaja al ver todo: el papel y, si se muestra, la persona de referencia. */
-export function contentBox(g: Pick<Geo, 'W' | 'H' | 'm'>, person: boolean): Box {
-  const b = { x0: -g.m, y0: -g.m, x1: g.W + g.m, y1: g.H + g.m };
+export function contentBox(g: Pick<Geo, 'W' | 'H' | 'm'> & Partial<Pick<Geo, 'GW' | 'GH'>>, person: boolean): Box {
+  const b = { x0: -g.m, y0: -g.m, x1: (g.GW ?? g.W) + g.m, y1: (g.GH ?? g.H) + g.m };
   if (!person) return b;
   const p = personBox(g);
   return { x0: Math.min(b.x0, p.x0), y0: Math.min(b.y0, p.y0), x1: Math.max(b.x1, p.x1), y1: Math.max(b.y1, p.y1) };

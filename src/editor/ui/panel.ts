@@ -5,17 +5,18 @@ import {
   reorder, select, selectedGroup, selectMany, setOpacity, toggleGroupFlag, toggleHidden, toggleInSelection,
   toggleLocked, unstretchSel,
 } from '../actions';
-import { MAX_COLS_ROWS, PRESETS } from '../constants';
+import { MAX_COLS_ROWS, MIN_SIZE, PRESETS, SIZE_PRESETS } from '../constants';
 import { $, $$, toast } from '../dom';
 import { cm, fmt1, parseNum } from '../format';
 import {
-  applyFit, bboxMM, cropCenter, geo, isStretched, keepCenter, natRatio, newLayoutMemory, normDeg, pppOf, qualityOf, relayout,
-  rotateLayer, scaleLayer, visH, visW,
+  applyFit, bboxMM, cropCenter, geo, isStretched, keepCenter, maxSize, natRatio, newLayoutMemory, normDeg, pppOf, qualityOf, relayout,
+  rotateLayer, scaleLayer, sheetCount, sizeSlack, visH, visW,
 } from '../geometry';
+import { onBlankChange, sheetPlan } from '../sheets';
 import { snap } from '../history';
 import { deskMQ, HI_AREA, isTouch } from '../platform';
 import { rich } from './keys';
-import { C, isFreshPoster, posterGeo, S, sheetsVisible, st } from '../state';
+import { C, clampSize, isFreshPoster, posterGeo, S, sheetsVisible, st } from '../state';
 import { dirty } from '../render';
 import { fitView } from '../view';
 import { renderPdfPage } from '../io/pdf';
@@ -26,7 +27,7 @@ import { initListDrag } from './listdrag';
 import { groupMenu, layerMenu, openMenu } from './menu';
 import type { Quality, RelayoutMode } from '../geometry';
 import { getPref, setPref } from '../prefs';
-import type { Geo, Layer, LayoutSettings, Orient, Paper } from '../types';
+import type { Geo, Layer, LayoutSettings, Orient, Paper, Size } from '../types';
 import { syncTextPanel } from '../text/textpanel';
 import { initSelectionCard, selectionKey, syncSelectionCard } from './selectioncard';
 import { renderBar } from './contextbar';
@@ -122,6 +123,7 @@ function syncRelayoutUI() {
   $('#relayoutNote').textContent = RELAYOUT_NOTE[relayoutMode];
 }
 export function layoutChanged() {
+  fitSizeToMax();
   const g = posterGeo();
   if (prevG) relayout(st.layers, prevG, g, relayoutMode, layoutMem);
   prevG = g;
@@ -133,6 +135,7 @@ export function syncExportUI() {
   for (const x of $$('[data-dpi]')) x.setAttribute('aria-pressed', String(Number(x.dataset.dpi) === S.dpi));
   $<HTMLInputElement>('#marks').checked = S.marks;
   $<HTMLInputElement>('#guide').checked = S.guide;
+  $<HTMLInputElement>('#skipBlank').checked = S.skipBlank;
   syncLayoutUI();
   syncNewPoster();
 }
@@ -150,7 +153,7 @@ export function layoutRestored() {
  */
 let lastLayoutEdit = { key: '', t: 0 };
 function editLayout<K extends keyof LayoutSettings>(key: K, value: LayoutSettings[K], coalesce = false) {
-  if (S[key] === value) return;
+  if (S[key] === value || (key === 'size' && sameSize(S.size, value as Size | null))) return;
   const now = performance.now();
   if (!(coalesce && lastLayoutEdit.key === key && now - lastLayoutEdit.t < 1000)) snap();
   lastLayoutEdit = { key, t: now };
@@ -159,9 +162,12 @@ function editLayout<K extends keyof LayoutSettings>(key: K, value: LayoutSetting
   layoutChanged();
 }
 export function syncLayoutUI() {
-  $('#colsOut').textContent = String(S.cols);
-  $('#rowsOut').textContent = String(S.rows);
-  for (const b of $$('#presets [data-c]')) b.setAttribute('aria-pressed', String(+b.dataset.c! === S.cols && +b.dataset.r! === S.rows));
+  const g = posterGeo();
+  $('#colsOut').textContent = String(g.cols);
+  $('#rowsOut').textContent = String(g.rows);
+  // una distribución solo está elegida si el tamaño sale de las hojas (con medida, las hojas son una consecuencia)
+  for (const b of $$('#presets [data-c]')) b.setAttribute('aria-pressed', String(!S.size && +b.dataset.c! === S.cols && +b.dataset.r! === S.rows));
+  syncSizeUI(g);
   syncPresetIcons();  for (const b of $$('[data-paper]')) b.setAttribute('aria-pressed', String(b.dataset.paper === S.paper));
   for (const b of $$('[data-orient]')) b.setAttribute('aria-pressed', String(b.dataset.orient === S.orient));
   $('#marginOut').textContent = S.margin + ' mm';
@@ -175,6 +181,121 @@ export function syncLayoutUI() {
   updateStats(); // el resumen bajo la pestaña Póster y en el panel plegado
   syncWelcome();
 }
+/* ---------- tamaño por medidas ---------- */
+const sameSize = (a: Size | null, b: Size | null) => a === b || (!!a && !!b && a.w === b.w && a.h === b.h);
+/** Proporción (ancho / alto) que se mantiene con el eslabón; null = suelto. */
+let sizeRatio: number | null = null;
+const paperName = () => `${S.paper} ${S.orient === 'portrait' ? 'vertical' : 'horizontal'}`;
+/** Medida más grande que admite el papel de ahora (12 × 12 hojas). */
+const sizeMax = () => maxSize(S, MAX_COLS_ROWS);
+
+/**
+ * Pone el póster a w × h mm (redondeado a mm, entre el mínimo y lo que caben 12 × 12 hojas). Si hubo que recortar la
+ * medida, lo dice: es mejor que ver otro número sin saber por qué.
+ */
+function setSize(w: number, h: number) {
+  const max = sizeMax(), next = { w: clampSize(w, max.w), h: clampSize(h, max.h) };
+  if (Math.round(w) > Math.floor(max.w) || Math.round(h) > Math.floor(max.h)) {
+    toast(`Con ${paperName()}, el póster llega hasta ${cm(max.w)} × ${cm(max.h)} cm (${MAX_COLS_ROWS} × ${MAX_COLS_ROWS} hojas). Para más, usa A3.`, 7000);
+  } else if (Math.round(w) < MIN_SIZE || Math.round(h) < MIN_SIZE) toast(`La medida más pequeña es ${cm(MIN_SIZE)} cm.`, 5000);
+  editLayout('size', next);
+  syncLayoutUI(); // aunque no cambie (medida recortada igual a la de antes), el campo vuelve a mostrar la buena
+}
+/** Al cambiar a un papel más pequeño, una medida grande puede no caber en 12 × 12 hojas: se reduce y se avisa. */
+function fitSizeToMax() {
+  if (!S.size) return;
+  const max = sizeMax();
+  if (S.size.w <= max.w && S.size.h <= max.h) return;
+  S.size = { w: clampSize(S.size.w, max.w), h: clampSize(S.size.h, max.h) };
+  toast(`El póster se redujo a ${cm(S.size.w)} × ${cm(S.size.h)} cm: con ${paperName()} no caben más de ${MAX_COLS_ROWS} × ${MAX_COLS_ROWS} hojas.`, 7000);
+}
+/** Imagen de referencia para «Como la imagen»: la seleccionada o, si no, la primera visible. */
+const refLayer = () => (st.sel && !st.sel.hidden ? st.sel : st.layers.find((l) => !l.hidden) ?? null);
+
+/** Campo de medida (cm con coma decimal). Enter o salir aplica; ↑ ↓ suman o restan 1 cm (con Shift, 10). */
+function sizeField(id: string, axis: 'w' | 'h') {
+  const el = $<HTMLInputElement>(id);
+  const run = () => {
+    const v = parseNum(el.value) * 10, g = posterGeo();
+    if (!Number.isFinite(v) || v <= 0) { syncLayoutUI(); return; }
+    const cur = axis === 'w' ? g.W : g.H;
+    if (Math.round(v) === Math.round(cur) && S.size) { syncLayoutUI(); return; }
+    if (axis === 'w') setSize(v, sizeRatio ? v / sizeRatio : g.H);
+    else setSize(sizeRatio ? v * sizeRatio : g.W, v);
+  };
+  el.addEventListener('change', run);
+  el.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); run(); el.select(); return; }
+    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+      const v = parseNum(el.value);
+      if (!Number.isFinite(v)) return;
+      e.preventDefault();
+      el.value = fmt1(Math.max(MIN_SIZE / 10, v + (e.key === 'ArrowUp' ? 1 : -1) * (e.shiftKey ? 10 : 1)));
+      run(); el.select();
+    }
+  });
+}
+
+function syncSizeUI(g: Geo) {
+  for (const [id, v] of [['#sizeW', g.W], ['#sizeH', g.H]] as const) {
+    const el = $<HTMLInputElement>(id);
+    if (document.activeElement !== el) el.value = fmt1(v / 10);
+  }
+  const lock = $('#sizeLock');
+  lock.setAttribute('aria-pressed', String(sizeRatio != null));
+  lock.innerHTML = ICON[sizeRatio != null ? 'ratioOn' : 'ratioOff']; // constante del código
+  for (const b of $$<HTMLButtonElement>('#sizePresets [data-w]')) {
+    const w = +b.dataset.w!, h = +b.dataset.h!;
+    b.setAttribute('aria-pressed', String(!!S.size && ((S.size.w === w && S.size.h === h) || (S.size.w === h && S.size.h === w))));
+  }
+  $<HTMLButtonElement>('#sizeImage').disabled = !refLayer();
+  syncSizeNote(g);
+}
+/** Qué hojas lleva la medida y, si se pueden ahorrar hojas, cómo (cada sugerencia con su botón). */
+function syncSizeNote(g: Geo = posterGeo()) {
+  const n = g.cols * g.rows, plan = sheetPlan(g), skipped = plan.blank.size;
+  const partial = g.GW > g.W + 0.5 || g.GH > g.H + 0.5;
+  let t = `${g.cols} × ${g.rows} ${n === 1 ? 'hoja' : 'hojas'} ${paperName()}`;
+  if (partial) t += g.GW > g.W + 0.5 && g.GH > g.H + 0.5 ? ' · la última columna y la última fila, a medias'
+    : g.GW > g.W + 0.5 ? ' · la última columna, a medias' : ' · la última fila, a medias';
+  if (skipped) t += ` · ${skipped} en blanco, no se ${skipped === 1 ? 'imprime' : 'imprimen'}`;
+  if ($('#sizeNote').textContent !== t + '.') $('#sizeNote').textContent = t + '.';
+  // las sugerencias solo se rehacen si cambian: rehacerlas durante un clic (llega la lectura de las hojas en blanco)
+  // se comería el clic en su botón
+  const list: [string, string, () => void][] = [];
+  const tip = (text: string, label: string, fn: () => void) => { list.push([text, label, fn]); };
+  // la otra orientación del papel, si usa menos hojas
+  if (!S.size) { renderTips([]); return; }
+  const other: Orient = S.orient === 'portrait' ? 'landscape' : 'portrait', alt = sheetCount(S, S.size, other);
+  if (alt.n < n && alt.cols <= MAX_COLS_ROWS && alt.rows <= MAX_COLS_ROWS) {
+    tip(`Con las hojas en ${other === 'portrait' ? 'vertical' : 'horizontal'}: ${alt.n} en vez de ${n}.`, 'Cambiar', () => editLayout('orient', other));
+  }
+  // la última columna o fila lleva muy poco: acortar un poco la medida ahorra una tira de hojas
+  const slack = sizeSlack(g);
+  if (slack) {
+    const saved = slack.axis === 'w' ? g.rows : g.cols, w = slack.axis === 'w' ? Math.floor(g.W - slack.trim) : g.W;
+    const h = slack.axis === 'h' ? Math.floor(g.H - slack.trim) : g.H;
+    if (w >= MIN_SIZE && h >= MIN_SIZE) {
+      tip(`La última ${slack.axis === 'w' ? 'columna' : 'fila'} lleva solo ${cm(slack.trim)} cm. Con ${cm(slack.axis === 'w' ? w : h)} cm de ${slack.axis === 'w' ? 'ancho' : 'alto'} ahorras ${saved} ${saved === 1 ? 'hoja' : 'hojas'}.`,
+        'Ajustar', () => setSize(w, h));
+    }
+  }
+  renderTips(list);
+}
+let tipsKey = '';
+function renderTips(list: [string, string, () => void][]) {
+  const key = list.map(([t, l]) => t + '|' + l).join('\n'), tips = $('#sizeTips');
+  if (key === tipsKey) return;
+  tipsKey = key;
+  tips.textContent = '';
+  for (const [text, label, fn] of list) {
+    const d = document.createElement('div'), p = document.createElement('span'), b = document.createElement('button');
+    d.className = 'tip'; p.textContent = text; b.type = 'button'; b.textContent = label;
+    b.addEventListener('click', fn);
+    d.append(p, b); tips.appendChild(d);
+  }
+}
+
 /** Lado (px) del recuadro en el que cabe el icono de cada distribución (mismo valor que .sheet-box en global.css). */
 const PRESET_BOX = 26;
 /**
@@ -183,7 +304,7 @@ const PRESET_BOX = 26;
  */
 function syncPresetIcons() {
   for (const b of $$('#presets [data-c]')) {
-    const g = geo({ ...S, cols: +b.dataset.c!, rows: +b.dataset.r! }), k = PRESET_BOX / Math.max(g.W, g.H);
+    const g = geo({ ...S, size: null, cols: +b.dataset.c!, rows: +b.dataset.r! }), k = PRESET_BOX / Math.max(g.W, g.H);
     const grid = b.querySelector<HTMLElement>('.sheet-grid')!;
     grid.style.width = `${Math.max(4, Math.round(g.W * k))}px`;
     grid.style.height = `${Math.max(4, Math.round(g.H * k))}px`;
@@ -468,7 +589,7 @@ export function syncNewPoster() {
   b.title = fresh ? 'Ya es un póster nuevo' : newTitle;
 }
 /** Páginas del PDF por hojas (una por hoja y, si se pide, la guía). */
-export const pdfPages = () => S.cols * S.rows + (S.guide ? 1 : 0);
+export const pdfPages = () => sheetPlan().printed + (S.guide ? 1 : 0);
 /** Hay algo que imprimir (las ocultas no se imprimen). */
 export const isPrintable = () => st.layers.some((l) => !l.hidden);
 /**
@@ -476,8 +597,11 @@ export const isPrintable = () => st.layers.some((l) => !l.hidden);
  * También al terminar una descarga.
  */
 export function syncExportButtons() {
-  const n = pdfPages(), printable = isPrintable(), busy = document.body.classList.contains('exporting');
-  const why = st.layers.length ? 'Todas las imágenes están ocultas' : 'Agrega una imagen primero';
+  const n = pdfPages(), busy = document.body.classList.contains('exporting');
+  // también si lo visible queda fuera del póster o es todo blanco: el PDF solo tendría papel vacío
+  const empty = isPrintable() && sheetPlan().empty, printable = isPrintable() && !empty;
+  const why = empty ? 'No hay nada dentro del póster: todas las hojas saldrían en blanco'
+    : st.layers.length ? 'Todas las imágenes están ocultas' : 'Agrega una imagen primero';
   for (const id of ['#quickExport', '#exportTiles', '#printTiles', '#exportSingle']) {
     const b = $<HTMLButtonElement>(id);
     b.disabled = !printable || busy;
@@ -495,7 +619,7 @@ export function syncExportButtons() {
  * calidad, un aviso estándar (icono, título y texto).
  */
 export function updateStats() {
-  const g = posterGeo(), n = S.cols * S.rows;
+  const g = posterGeo(), plan = sheetPlan(g), n = plan.printed, skipped = plan.blank.size;
   // las ocultas no se imprimen: no cuentan
   const rows = st.layers.filter((l) => !l.hidden).map((l) => { const ppp = pppOf(l, HI_AREA); return { l, ppp, q: qualityOf(ppp) }; });
   const bad = rows.filter((r) => r.q === 'bad'), warn = rows.filter((r) => r.q === 'warn');
@@ -506,16 +630,18 @@ export function updateStats() {
   const info = document.createElement('p');
   info.className = 'm-0 text-[.88rem] font-semibold';
   const orient = S.orient === 'portrait' ? (n === 1 ? 'vertical' : 'verticales') : (n === 1 ? 'horizontal' : 'horizontales');
-  info.textContent = `Póster ${cm(g.W)} × ${cm(g.H)} cm · ${n} ${n === 1 ? 'hoja' : 'hojas'} ${S.paper} ${orient}`;
+  info.textContent = `Póster ${cm(g.W)} × ${cm(g.H)} cm · ${n} ${n === 1 ? 'hoja' : 'hojas'} ${S.paper} ${orient}`
+    + (skipped ? ` (${skipped} en blanco no se ${skipped === 1 ? 'imprime' : 'imprimen'})` : '');
   // y el PDF por hojas: cuántas páginas (con la guía) y a qué resolución
   const pages = pdfPages(), sub = document.createElement('p');
   sub.className = 'm-0 text-[.84rem] text-muted';
   sub.textContent = `PDF por hojas: ${pages} ${pages === 1 ? 'página' : 'páginas'}${S.guide ? ' (con la guía)' : ''} · ${S.dpi} ppp`;
   box.append(info, sub);
-  if (!rows.length) {
+  if (!rows.length || plan.empty) {
     const p = document.createElement('p');
     p.className = 'm-0 text-[.86rem] text-muted';
-    p.textContent = st.layers.length ? 'Todas las imágenes están ocultas.' : 'Agrega una imagen para descargar.';
+    p.textContent = plan.empty ? 'No hay nada dentro del póster: todas las hojas saldrían en blanco. Mueve una imagen sobre el papel.'
+      : st.layers.length ? 'Todas las imágenes están ocultas.' : 'Agrega una imagen para descargar.';
     box.appendChild(p);
     return;
   }
@@ -608,15 +734,52 @@ export function initPanel() {
     label.textContent = `${c}×${r}`;
     b.append(box, label);
     b.addEventListener('click', () => {
-      if (S.cols === c && S.rows === r) return;
-      snap(); S.cols = c; S.rows = r; st.sheetsOn = true; layoutChanged();
+      if (!S.size && S.cols === c && S.rows === r) return;
+      snap(); S.cols = c; S.rows = r; S.size = null; st.sheetsOn = true; layoutChanged();
     });
     presets.appendChild(b);
   }
   for (const b of $$('[data-step]')) b.addEventListener('click', () => {
-    const k = b.dataset.step === 'rows' ? 'rows' : 'cols';
-    editLayout(k, Math.min(Math.max(S[k] + Number(b.dataset.d), 1), MAX_COLS_ROWS));
+    const k = b.dataset.step === 'rows' ? 'rows' : 'cols', g = posterGeo();
+    const v = Math.min(Math.max(g[k] + Number(b.dataset.d), 1), MAX_COLS_ROWS);
+    if (!S.size) { editLayout(k, v); return; }
+    // con medida, sumar o quitar hojas vuelve a elegir por hojas, desde las que había
+    snap(); Object.assign(S, { cols: g.cols, rows: g.rows, size: null }, { [k]: v }); st.sheetsOn = true; layoutChanged();
   });
+  // tamaño por medidas
+  sizeField('#sizeW', 'w');
+  sizeField('#sizeH', 'h');
+  $('#sizeLock').addEventListener('click', () => {
+    const g = posterGeo();
+    sizeRatio = sizeRatio == null ? g.W / g.H : null;
+    syncLayoutUI();
+  });
+  const sizeBox = $('#sizePresets');
+  for (const [name, w, h] of SIZE_PRESETS) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'chip chip-size';
+    b.dataset.w = String(w); b.dataset.h = String(h);
+    b.textContent = name;
+    b.title = `${cm(w)} × ${cm(h)} cm`;
+    b.addEventListener('click', () => {
+      // en la orientación del póster de ahora (apaisado si es más ancho que alto)
+      const g = posterGeo(), [W, H] = g.W > g.H ? [h, w] : [w, h];
+      if (sizeRatio != null) sizeRatio = W / H;
+      setSize(W, H);
+    });
+    sizeBox.insertBefore(b, $('#sizeImage'));
+  }
+  $('#sizeImage').addEventListener('click', () => {
+    const l = refLayer();
+    if (!l) return;
+    // la forma con la que se ve en el póster (con su recorte y su giro), al ancho de ahora
+    const b = bboxMM(l), r = (b.x1 - b.x0) / (b.y1 - b.y0), g = posterGeo(), max = sizeMax();
+    let W = g.W, H = W / r;
+    if (H > max.h) { H = max.h; W = H * r; }
+    if (sizeRatio != null) sizeRatio = r;
+    setSize(W, H);
+  });
+  onBlankChange(() => { syncSizeNote(); updateStats(); syncExportButtons(); dirty(); });
   for (const b of $$('[data-paper]')) b.addEventListener('click', () => editLayout('paper', b.dataset.paper as Paper));
   for (const b of $$('[data-orient]')) b.addEventListener('click', () => editLayout('orient', b.dataset.orient as Orient));
   for (const b of $$('[data-relayout]')) {
@@ -712,6 +875,7 @@ export function initPanel() {
   for (const b of $$('[data-dpi]')) b.addEventListener('click', () => { S.dpi = Number(b.dataset.dpi); syncExportUI(); scheduleSave(); });
   $<HTMLInputElement>('#marks').addEventListener('change', (e) => { S.marks = (e.target as HTMLInputElement).checked; syncNewPoster(); scheduleSave(); });
   $<HTMLInputElement>('#guide').addEventListener('change', (e) => { S.guide = (e.target as HTMLInputElement).checked; syncLayoutUI(); syncNewPoster(); scheduleSave(); });
+  $<HTMLInputElement>('#skipBlank').addEventListener('change', (e) => { S.skipBlank = (e.target as HTMLInputElement).checked; syncLayoutUI(); syncNewPoster(); dirty(); scheduleSave(); });
 
 
   prevG = posterGeo();
