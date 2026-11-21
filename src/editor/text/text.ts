@@ -123,6 +123,15 @@ export function recolor(l: TextLayer, color: string) {
   Object.assign(l, { src: { kind: 'text', spec: { ...s, color } }, img, orig: img });
 }
 
+/** Cambia el contorno o las letras huecas: como el color, no hace falta la fuente. */
+export function restroke(l: TextLayer, change: Partial<Pick<TextSpec, 'outline' | 'outlineColor' | 'hollow'>>) {
+  const s = specOf(l), next = { ...s, ...change };
+  if (next.outline === s.outline && next.outlineColor === s.outlineColor && next.hollow === s.hollow) return false;
+  const img = textCanvas(next);
+  Object.assign(l, { src: { kind: 'text', spec: next }, img, orig: img });
+  return true;
+}
+
 /** Alto de letra en mm, desde el centro. */
 export function setCapMM(l: TextLayer, mm: number) {
   scaleLayer(l, Math.max(1, mm) / capMM(l), cropCenter(l));

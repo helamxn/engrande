@@ -11,6 +11,7 @@ Todo ocurre en el navegador: no hay servidor, cuentas ni base de datos, y las im
 - Tamaño real (escala 1:1) para PDF y SVG con medidas: moldes de costura, planos y plantillas. Al cargarlos se ofrece imprimirlos a su medida, con el póster y las hojas calculados solos.
 - Ajustes de color por imagen: brillo, contraste, saturación y blanco y negro (para ahorrar tinta), sin tocar el archivo original; se ven igual en pantalla y en el PDF.
 - Textos para títulos en grande o moldes: se escriben sobre el lienzo, con 20 familias y 55 variantes de Google Fonts, o una fuente del equipo del usuario, que no se guarda. Incluye búsqueda, vista previa y selección de estilo.
+- Contorno del texto (grosor en mm y color) y letras huecas, solo con el contorno, para plantillas de recorte o esténcil. El contorno va por dentro de la letra: la letra mide lo mismo y su borde es la línea de corte.
 - Tamaño de letra en puntos, altura de referencia en cm, color hexadecimal editable y botón para restablecerlo.
 - Ayudas de precisión: imán, rejilla de 1 mm y medidas.
 - Descarga en PDF por hojas, con marcas de corte y guía de armado, o en una sola hoja grande para imprenta. Las hojas que no llevan nada no se imprimen (se puede desactivar).

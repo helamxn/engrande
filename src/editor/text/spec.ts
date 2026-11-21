@@ -3,9 +3,17 @@ import type { TextAlign, TextSpec, TextDraft } from '../types';
 import { normalizeColor } from './values';
 
 const num = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+/** Contorno más grueso que se admite (milésimas del tamaño de la fuente): más, y las letras quedarían rellenas. */
+export const OUTLINE_MAX = 150;
 const str = (v: unknown, max: number): v is string => typeof v === 'string' && v.length <= max;
 /** Solo datos de trazado SVG: letras de comando y números. */
 const PATH_RE = /^[MLHVCSQTAZmlhvcsqtaz0-9eE.,\s+-]*$/;
+
+function readOutline(s: Record<string, unknown>): Pick<TextSpec, 'outline' | 'outlineColor' | 'hollow'> {
+  const outline = num(s.outline) ? Math.min(OUTLINE_MAX, Math.max(0, Math.round(s.outline))) : 0, hollow = s.hollow === true;
+  if (!outline && !hollow) return {};
+  return { outline, outlineColor: typeof s.outlineColor === 'string' ? normalizeColor(s.outlineColor) ?? '#111111' : '#111111', hollow };
+}
 
 export function readSpec(v: unknown): TextSpec | null {
   if (!v || typeof v !== 'object') return null;
@@ -34,6 +42,8 @@ export function readSpec(v: unknown): TextSpec | null {
     fit: lb ? s.fit === true : true,
     track: num(s.track) ? Math.min(1000, Math.max(-500, s.track)) : 0,
     width: num(s.width) && s.width > 0 ? s.width : null,
+    // contorno y letras huecas solo si los tiene (los textos sin ellos quedan como siempre)
+    ...readOutline(s),
     shape: {
       glyphs, cap: sh.cap as number, asc: sh.asc as number, desc: sh.desc as number, upm: sh.upm as number,
       box: { x0: b.x0 as number, y0: b.y0 as number, x1: b.x1 as number, y1: b.y1 as number },

@@ -342,6 +342,15 @@
   .selection-head { @apply -my-1.5 -mr-2 flex flex-none items-center gap-2; &[hidden] { display: none; } }
   .selection-body { @apply flex flex-col gap-4; }
   .selection-close { @apply grid size-8 flex-none cursor-pointer place-items-center rounded-md border-0 bg-transparent text-muted hover:bg-accent-soft hover:text-fg; & svg { @apply size-4; } }
+  /* contorno del texto: grosor y su color, en una fila */
+  .text-outline-row {
+    @apply flex items-center gap-2;
+    & input[type="range"] { @apply min-w-0 flex-1; }
+    & input[type="color"] { @apply size-8 flex-none cursor-pointer appearance-none rounded-md border border-line bg-transparent p-0; }
+    & input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+    & input[type="color"]::-webkit-color-swatch { border: 0; border-radius: 5px; }
+    & input[type="color"]::-moz-color-swatch { border: 0; border-radius: 5px; }
+  }
   .text-color-field {
     @apply items-center gap-2 pl-2;
     & #tColor { @apply size-7 w-7 flex-none cursor-pointer appearance-none rounded-md border border-line p-0; }

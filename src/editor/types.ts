@@ -80,6 +80,14 @@ export interface TextSpec {
    * línea mide lo que ocupa). Opcional para leer los textos guardados antes.
    */
   width?: number | null;
+  /**
+   * Contorno por dentro de las letras, en milésimas del tamaño de la fuente (0 o ausente = sin contorno). Va por dentro
+   * para que la letra mida lo mismo (en una plantilla para recortar, el borde es la línea de corte) y no se salga del marco.
+   */
+  outline?: number;
+  outlineColor?: string;
+  /** Letras huecas: solo el contorno, sin relleno (plantillas para recortar o calcar, menos tinta). */
+  hollow?: boolean;
   shape: TextShape;
 }
 

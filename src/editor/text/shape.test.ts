@@ -129,6 +129,11 @@ describe('readSpec', () => {
     const { lineBox: _, ...shape } = ok.shape;
     expect(readSpec({ ...ok, shape })!.fit).toBe(true);
   });
+  it('contorno y letras huecas: se conservan, se limitan y no aparecen en textos sin ellos', () => {
+    expect(readSpec({ ...ok, outline: 40, outlineColor: '#D81B60', hollow: true })).toMatchObject({ outline: 40, outlineColor: '#d81b60', hollow: true });
+    expect(readSpec({ ...ok, outline: 9999, outlineColor: 'javascript:' })).toMatchObject({ outline: 150, outlineColor: '#111111', hollow: false });
+    expect(readSpec({ ...ok, outline: 0, hollow: 'sí' })).not.toHaveProperty('outline');
+  });
   it('rechaza trazados con algo que no sean comandos y números', () => {
     expect(readSpec({ ...ok, shape: { ...ok.shape, glyphs: [{ ch: 'H', d: 'M0 0 <script>' }] } })).toBeNull();
   });

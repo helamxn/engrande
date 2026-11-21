@@ -10,7 +10,9 @@ import { st } from '../state';
 import type { Snapshot, TextAlign } from '../types';
 import { startTextPlacement, rememberFont, rememberSize, refreshDraftFont, restoreTextDraft, useDraftFont } from './editor';
 import { ensureFont, FontError, fontChoices, getFont, loadFontFile, type FontChoice } from './fonts';
-import { capMM, fontFor, fontSizePT, isText, relayout, setCapMM, setFontSizePT, setFit, setWidthMode, specOf, type TextLayer } from './text';
+import { capMM, fontFor, fontSizePT, isText, relayout, restroke, setCapMM, setFontSizePT, setFit, setWidthMode, specOf, type TextLayer } from './text';
+import { DEFAULT_OUTLINE, HOLLOW_DEFAULT } from './raster';
+import { MM_PER_PT } from './values';
 import { initTextColor, syncTextColor } from './color';
 import { askLocalFonts, initLocalFonts, localState } from './local';
 
@@ -83,6 +85,44 @@ export function syncTextPanel() {
   for (const b of $$<HTMLButtonElement>('#tWidth [data-w]')) b.setAttribute('aria-pressed', String((b.dataset.w === 'fixed') === !!s.width));
   setVal('#tLine', String(s.line)); $('#tLineOut').textContent = fmt2(s.line);
   setVal('#tTrack', String(s.track)); $('#tTrackOut').textContent = String(Math.round(s.track));
+  syncOutline(l);
+}
+
+/* ---------- contorno y letras huecas ---------- */
+/** Grosor del contorno en mm sobre el papel (las milésimas son del tamaño de la fuente). */
+const outlineMM = (l: TextLayer, o: number) => (o / 1000) * fontSizePT(l) * MM_PER_PT;
+function syncOutline(l: TextLayer) {
+  const s = specOf(l), o = s.outline ?? 0, eff = o || (s.hollow ? HOLLOW_DEFAULT : 0);
+  setVal('#tOutline', String(eff));
+  $('#tOutlineOut').textContent = eff ? `${fmt1(outlineMM(l, eff))} mm` : 'sin contorno';
+  setVal('#tOutlineColor', s.outlineColor ?? DEFAULT_OUTLINE);
+  $<HTMLInputElement>('#tHollow').checked = !!s.hollow;
+}
+/** Aplica un cambio de contorno (un arrastre o un color seguido: un paso de deshacer). */
+function outlineChange(change: Parameters<typeof restroke>[1], key: string) {
+  const l = st.sel;
+  if (!isText(l) || l.locked) return;
+  stepOnce(l, key);
+  if (restroke(l, change)) { afterChange(); syncOutline(l); }
+}
+function initOutline() {
+  const range = $<HTMLInputElement>('#tOutline'), color = $<HTMLInputElement>('#tOutlineColor');
+  range.addEventListener('input', () => {
+    const l = st.sel;
+    // unas letras huecas siempre llevan contorno: el mínimo es 1
+    const v = +range.value || (isText(l) && specOf(l).hollow ? 1 : 0);
+    outlineChange({ outline: v }, 'outline');
+  });
+  color.addEventListener('input', () => outlineChange({ outlineColor: color.value }, 'outlineColor'));
+  $<HTMLInputElement>('#tHollow').addEventListener('change', (e) => {
+    const l = st.sel, on = (e.target as HTMLInputElement).checked;
+    if (!isText(l)) return;
+    // al vaciarlas, el contorno toma el color del texto si no tenía uno propio: la letra se sigue viendo igual
+    const s = specOf(l), change: Parameters<typeof restroke>[1] = { hollow: on };
+    if (on && !s.outline) { change.outline = HOLLOW_DEFAULT; change.outlineColor = s.color; }
+    gesture = null;
+    outlineChange(change, 'hollow');
+  });
 }
 
 /** Un arrastre seguido de un deslizador (o del color) es un solo paso de deshacer. */
@@ -218,6 +258,7 @@ export function initTextPanel() {
   for (const b of $$<HTMLButtonElement>('#tWidth [data-w]')) {
     b.addEventListener('click', () => { const l = st.sel; if (isText(l) && !l.locked) void setWidthMode(l, b.dataset.w === 'fixed'); });
   }
+  initOutline();
   const line = $<HTMLInputElement>('#tLine'), track = $<HTMLInputElement>('#tTrack');
   line.addEventListener('input', () => {
     $('#tLineOut').textContent = fmt2(+line.value);

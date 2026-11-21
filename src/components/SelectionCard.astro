@@ -67,6 +67,15 @@ const field = 'flex flex-col gap-2';
         <button id="tColorReset" type="button" title="Restablecer color (#111111)" aria-label="Restablecer color predeterminado"><Icon name="history" /></button>
       </div></div>
       <p id="tColorError" class="note text-danger" hidden role="status">Usa un código como #D81B60 o #FFF.</p>
+      <!-- contorno por dentro de las letras (la letra mide lo mismo) y letras huecas, para plantillas y esténciles -->
+      <div class="flex flex-col gap-2">
+        <label class="lbl" for="tOutline">Contorno <output id="tOutlineOut">sin contorno</output></label>
+        <div class="text-outline-row">
+          <input id="tOutline" type="range" min="0" max="150" step="1" value="0" aria-describedby="tOutlineOut" />
+          <input id="tOutlineColor" type="color" value="#111111" aria-label="Color del contorno" title="Color del contorno" />
+        </div>
+        <label class="check"><input type="checkbox" id="tHollow" /><span>Letras huecas<small>Solo el contorno, sin relleno: para recortar o calcar las letras, y gasta mucha menos tinta.</small></span></label>
+      </div>
       <label class="check"><input type="checkbox" id="tFit" /><span>Ajustar marco al contorno<small>Quita el espacio del renglón para centrar o alinear las letras con precisión.</small></span></label>
       <div class="seg full" role="group" aria-label="Alineación" id="tAlign">
         <button type="button" data-align="left" aria-pressed="false" title="Alinear a la izquierda" aria-label="Alinear a la izquierda"><Icon name="textLeft" /></button>
