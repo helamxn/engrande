@@ -97,6 +97,12 @@ export interface TextDraft {
   flipY: boolean;
 }
 
+/**
+ * Ajustes de color de una imagen, de −100 a 100 (0 = sin cambio), con la misma fórmula que los filtros CSS
+ * brightness, contrast y saturate. No tocan el archivo ni el lienzo de trabajo: se aplican al dibujar (pantalla y PDF).
+ */
+export interface Adjust { bright: number; contrast: number; sat: number; gray: boolean }
+
 export interface Layer extends LayerGeom {
   id: number;
   name: string;
@@ -115,6 +121,8 @@ export interface Layer extends LayerGeom {
   locked: boolean;
   /** Opacidad 0..1 (también en el PDF: se mezcla con el blanco del papel o con lo que haya debajo). */
   opacity: number;
+  /** Brillo, contraste, saturación y blanco y negro; null = sin ajustes. Se trata como inmutable. */
+  adjust: Adjust | null;
   /** Grupos a los que pertenece (Ctrl+G), del más externo al más interno; vacío = suelta. Ver groups.ts. */
   gpath: GroupRef[];
 }
@@ -178,6 +186,7 @@ export interface LayerProps extends Transform {
   name: string;
   locked: boolean;
   opacity: number;
+  adjust: Adjust | null;
   hidden: boolean;
   gpath: GroupRef[];
   /** Cambia solo en los textos (al editarlos); en las imágenes es siempre el mismo. */

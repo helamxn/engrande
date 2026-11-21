@@ -13,7 +13,8 @@ import { DEFAULT_EXPORT, layoutOf, readLayout, S, st } from '../state';
 import { clonePath, nextGroupName, normalizeGroups, type GroupRef, type Groupable } from '../groups';
 import { loadImg } from './load';
 import { openPdf, renderPdfPage } from './pdf';
-import type { Crop, Fit, Layer, LayoutSettings, TextSpec, TextDraft } from '../types';
+import type { Adjust, Crop, Fit, Layer, LayoutSettings, TextSpec, TextDraft } from '../types';
+import { readAdjust } from '../pixels';
 import { readSpec, readDraft } from '../text/spec';
 import { textCanvas } from '../text/raster';
 
@@ -34,6 +35,8 @@ interface SavedLayer {
   /** Opcionales por la misma razón (bloquear y opacidad llegaron después). */
   locked?: boolean;
   opacity?: number;
+  /** Ajustes de color (llegaron después: opcionales). */
+  adjust?: Adjust | null;
   /** Grupos (Ctrl+G), del más externo al más interno; opcional por la misma razón. */
   gpath?: { id: number; name: string }[];
   /** Formato anterior (un solo grupo por imagen): se convierte al leer. */
@@ -170,7 +173,7 @@ async function save() {
     layers.push({
       name: l.name, cx: l.cx, cy: l.cy, w: l.w, h: l.h, rot: l.rot, flipX: l.flipX, flipY: l.flipY,
       crop: { ...l.crop }, page: l.page, pages: l.pages, fit: l.fit && { ...l.fit }, hidden: l.hidden,
-      locked: l.locked, opacity: l.opacity, gpath: clonePath(l.gpath), src, edit,
+      locked: l.locked, opacity: l.opacity, adjust: l.adjust, gpath: clonePath(l.gpath), src, edit,
     });
   }
   const project: SavedProject = {
@@ -228,7 +231,7 @@ export async function projectSnapshot(): Promise<{ project: SavedProject; files:
     layers.push({
       name: l.name, cx: l.cx, cy: l.cy, w: l.w, h: l.h, rot: l.rot, flipX: l.flipX, flipY: l.flipY,
       crop: { ...l.crop }, page: l.page, pages: l.pages, fit: l.fit && { ...l.fit }, hidden: l.hidden,
-      locked: l.locked, opacity: l.opacity, gpath: clonePath(l.gpath), src, edit,
+      locked: l.locked, opacity: l.opacity, adjust: l.adjust, gpath: clonePath(l.gpath), src, edit,
     });
   }
   return {
@@ -370,7 +373,7 @@ async function rebuild(project: SavedProject, getBlob: (key: string) => Promise<
       }
       st.layers.push(newLayer(orig, r.name, {
         ...extra, img, orig, ...readGeom(r, extra.pdf?.numPages ?? 1), hidden: !!r.hidden,
-        locked: !!r.locked, opacity: typeof r.opacity === 'number' ? Math.min(1, Math.max(0, r.opacity)) : 1,
+        locked: !!r.locked, opacity: typeof r.opacity === 'number' ? Math.min(1, Math.max(0, r.opacity)) : 1, adjust: readAdjust(r.adjust),
         gpath: readPath(r),
       }));
       if (draft?.target === index) draftLayer = st.layers.at(-1)!;

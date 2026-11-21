@@ -20,6 +20,7 @@ test('duplicar (Ctrl+D) y quitar (Supr) se guardan', async ({ page }) => {
   await page.keyboard.press('Delete'); // quita la copia, que es la seleccionada
   await expectSavedNames(page, ['foto']);
   await page.reload();
+  await expect(page.locator('#toast')).toContainText('Se recuperó tu póster'); // la lista se llena al terminar de recuperar
   expect(await listNames(page)).toEqual(['foto']);
 });
 

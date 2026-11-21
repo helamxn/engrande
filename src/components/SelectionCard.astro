@@ -133,5 +133,15 @@ const field = 'flex flex-col gap-2';
     </div>
 
   </div>
+  <!-- ajustes de color: solo imágenes (un texto tiene su color). No tocan el archivo: se pueden quitar cuando se quiera -->
+  <!-- plegado por defecto: así la tarjeta no crece y no tapa el lienzo; el resumen dice si la imagen tiene ajustes -->
+  <details class:list={[field, 'needs-sel', 'edit-sel', 'adjust']} id="adjustField">
+    <summary class="lbl">Color <span class="val" id="adjState">sin ajustes</span></summary>
+    <button type="button" class="btn self-start" id="adjReset" title="Quitar los ajustes de color"><Icon name="history" />Restablecer</button>
+    <label class="adj"><span>Brillo</span><input id="adjBright" type="range" min="-100" max="100" step="1" value="0" /><output id="adjBrightOut">0</output></label>
+    <label class="adj"><span>Contraste</span><input id="adjContrast" type="range" min="-100" max="100" step="1" value="0" /><output id="adjContrastOut">0</output></label>
+    <label class="adj"><span>Saturación</span><input id="adjSat" type="range" min="-100" max="100" step="1" value="0" /><output id="adjSatOut">0</output></label>
+    <label class="check"><input type="checkbox" id="adjGray" /><span>Blanco y negro<small>Ahorra tinta de color. La impresora casera suele sacar las fotos algo más oscuras que en pantalla: sube un poco el brillo si hace falta.</small></span></label>
+  </details>
   </div>
 </section>

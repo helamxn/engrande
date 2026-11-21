@@ -4,6 +4,7 @@
  * exportación la confirma a la resolución del PDF.
  */
 import { checkScale, isWhite, printedNumbers, tilePixels, untouched } from './blank';
+import { adjustKey } from './pixels';
 import { freeCanvas } from './dom';
 import { cropPtsMM, tiles } from './geometry';
 import { canvasRevision } from './io/persist';
@@ -24,7 +25,7 @@ function printKey(g: Geo): string {
   const parts: (string | number | boolean)[] = [g.W, g.H, g.cols, g.rows, g.tw, g.th, g.ov];
   for (const l of visibleLayers()) {
     const k = l.crop;
-    parts.push(idOf(l.img), canvasRevision(l.img), l.cx, l.cy, l.w, l.h, l.rot, l.flipX, l.flipY, k.x0, k.y0, k.x1, k.y1, l.opacity);
+    parts.push(idOf(l.img), canvasRevision(l.img), l.cx, l.cy, l.w, l.h, l.rot, l.flipX, l.flipY, k.x0, k.y0, k.x1, k.y1, l.opacity, l.adjust ? adjustKey(l.adjust) : '');
   }
   return parts.join('|');
 }

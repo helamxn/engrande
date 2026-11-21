@@ -215,6 +215,20 @@
     & em { @apply text-[.78rem] not-italic text-muted; }
   }
   .pf { @apply flex min-w-0 flex-col gap-1; & > span { @apply text-[.72rem] font-semibold text-muted; } }
+  /* ajustes de color: nombre, deslizador y valor en una fila */
+  .adj {
+    @apply grid grid-cols-[5.5rem_1fr_2.5rem] items-center gap-2 text-[.84rem] text-muted;
+    & output { @apply text-right font-mono text-[.82rem] text-fg tabular-nums; }
+  }
+  /* sección plegable (Color): la etiqueta hace de botón, con su flecha */
+  details.adjust {
+    & > summary { @apply cursor-pointer list-none select-none; }
+    & > summary::-webkit-details-marker { display: none; }
+    & > summary::after { content: '▸'; @apply ml-auto text-muted; }
+    &[open] > summary::after { content: '▾'; }
+    & > summary:focus-visible { @apply rounded outline-2 outline-offset-2 outline-accent; }
+    &:not([open]) { @apply gap-0; }
+  }
   .lock {
     @apply grid h-[38px] w-[34px] cursor-pointer place-items-center rounded-lg border border-line bg-transparent text-muted;
     &[aria-pressed="true"] { @apply border-accent bg-accent-soft text-accent; }
@@ -502,6 +516,7 @@
     .btn, .tb { @apply min-w-11 justify-center; }
     .tgroup button { @apply h-11 min-w-11; }
     .seg button, .chip { @apply h-11; }
+    details.adjust > summary { @apply min-h-11 items-center; }
     .chip.chip-size { @apply min-w-11; }
     .lock { @apply h-11 w-11; }
     .unit { @apply min-h-11; }

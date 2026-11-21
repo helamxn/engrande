@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { autoBackgroundParams, editMaskData, removeColorData, runPixelJob } from './pixels';
+import { adjustData, autoBackgroundParams, editMaskData, isNeutral, readAdjust, removeColorData, runPixelJob } from './pixels';
+import type { Adjust } from './types';
 
 /** Imagen w×h de un color, con un cuadrado de otro color en (x0..x1, y0..y1). */
 function img(w: number, h: number, bg: [number, number, number], fg?: { c: [number, number, number]; x0: number; y0: number; x1: number; y1: number }) {
@@ -76,5 +77,46 @@ describe('editMaskData: lo retocado a mano, sin la transparencia que la imagen y
   });
   it('donde el original es transparente no hay nada que quitar, y nunca pasa de opaco', () => {
     expect(mask([0, 200], [0, 100])).toEqual([255, 255]);
+  });
+});
+
+describe('ajustes de color', () => {
+  const px = (...v: number[]) => new Uint8ClampedArray(v);
+  const A = (o: Partial<Adjust>): Adjust => ({ bright: 0, contrast: 0, sat: 0, gray: false, ...o });
+  it('sin ajustes no cambia nada', () => {
+    const d = px(10, 120, 250, 255);
+    adjustData(d, A({}));
+    expect([...d]).toEqual([10, 120, 250, 255]);
+    expect(isNeutral(null)).toBe(true); expect(isNeutral(A({}))).toBe(true); expect(isNeutral(A({ gray: true }))).toBe(false);
+  });
+  it('brillo multiplica como brightness() de CSS y recorta en 255', () => {
+    const d = px(100, 200, 0, 255);
+    adjustData(d, A({ bright: 50 }));
+    expect([...d]).toEqual([150, 255, 0, 255]);
+  });
+  it('contraste separa del gris medio', () => {
+    const d = px(64, 128, 192, 255);
+    adjustData(d, A({ contrast: 100 }));
+    expect([...d]).toEqual([0, 128, 255, 255]); // (v − 127,5) × 2 + 127,5; 0,5 y 128,5 se redondean al par
+    const e = px(64, 128, 192, 255);
+    adjustData(e, A({ contrast: -100 }));
+    expect([...e]).toEqual([128, 128, 128, 255]);
+  });
+  it('blanco y negro da un gris con la luminancia de CSS; el alfa se conserva', () => {
+    const d = px(255, 0, 0, 128);
+    adjustData(d, A({ gray: true }));
+    expect(d[0]).toBe(d[1]); expect(d[1]).toBe(d[2]);
+    expect(d[0]).toBe(Math.round(255 * 0.213));
+    expect(d[3]).toBe(128);
+  });
+  it('lo transparente no se toca', () => {
+    const d = px(10, 20, 30, 0);
+    adjustData(d, A({ bright: 100, gray: true }));
+    expect([...d]).toEqual([10, 20, 30, 0]);
+  });
+  it('lo guardado se valida', () => {
+    expect(readAdjust({ bright: 250, contrast: -3.6, sat: 'x', gray: 1 })).toEqual({ bright: 100, contrast: -4, sat: 0, gray: false });
+    expect(readAdjust({ bright: 0 })).toBeNull();
+    expect(readAdjust('hola')).toBeNull();
   });
 });

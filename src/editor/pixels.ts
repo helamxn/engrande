@@ -3,6 +3,8 @@
  * si el worker no está disponible, en la propia página. Trabajan sobre los datos RGBA del lienzo.
  */
 
+import type { Adjust } from './types';
+
 export type RGB = readonly [number, number, number];
 
 /** Tarea que se manda al worker. */
@@ -99,4 +101,43 @@ export function runPixelJob(d: Uint8ClampedArray, w: number, h: number, job: Pix
   const p = autoBackgroundParams(d, w, h, job.tol);
   if ('error' in p) return { removed: 0, error: p.error };
   return { removed: removeColorData(d, w, h, p.seeds, p.ref, job.tol, true) };
+}
+
+/* ---------- ajustes de color ---------- */
+/** ¿No cambia nada? (entonces se dibuja la imagen tal cual). */
+export const isNeutral = (a: Adjust | null | undefined) => !a || (!a.bright && !a.contrast && !a.sat && !a.gray);
+/** Clave de unos ajustes (para la caché de imágenes ajustadas). */
+export const adjustKey = (a: Adjust) => `${a.bright}|${a.contrast}|${a.sat}|${a.gray ? 1 : 0}`;
+
+/**
+ * Aplica brillo, contraste y saturación (en ese orden, como brightness() contrast() saturate() de CSS) a datos RGBA
+ * sin premultiplicar. El alfa no cambia. Brillo y contraste van en una tabla de 256 valores; la saturación es la
+ * matriz de feColorMatrix (luminancia 0,213 · 0,715 · 0,072). Blanco y negro = saturación 0.
+ */
+export function adjustData(d: Uint8ClampedArray, a: Adjust) {
+  const b = 1 + a.bright / 100, c = 1 + a.contrast / 100, s = a.gray ? 0 : 1 + a.sat / 100;
+  const lut = new Float32Array(256);
+  for (let v = 0; v < 256; v++) lut[v] = (v * b - 127.5) * c + 127.5;
+  const satOn = s !== 1;
+  const r0 = 0.213 + 0.787 * s, r1 = 0.715 - 0.715 * s, r2 = 0.072 - 0.072 * s;
+  const g0 = 0.213 - 0.213 * s, g1 = 0.715 + 0.285 * s, g2 = 0.072 - 0.072 * s;
+  const b0 = 0.213 - 0.213 * s, b1 = 0.715 - 0.715 * s, b2 = 0.072 + 0.928 * s;
+  // la tabla se aplica sin recortar: CSS recorta al final de cada filtro, así que se recorta aquí también
+  const cl = (v: number) => (v < 0 ? 0 : v > 255 ? 255 : v);
+  for (let o = 0; o < d.length; o += 4) {
+    if (d[o + 3] === 0) continue;
+    const R = cl(lut[d[o]!]!), G = cl(lut[d[o + 1]!]!), B = cl(lut[d[o + 2]!]!);
+    if (satOn) {
+      d[o] = R * r0 + G * r1 + B * r2; d[o + 1] = R * g0 + G * g1 + B * g2; d[o + 2] = R * b0 + G * b1 + B * b2;
+    } else { d[o] = R; d[o + 1] = G; d[o + 2] = B; }
+  }
+}
+
+/** Ajustes leídos de lo guardado: cada valor entero entre −100 y 100; null si no cambian nada. */
+export function readAdjust(v: unknown): Adjust | null {
+  if (!v || typeof v !== 'object') return null;
+  const r = v as Record<string, unknown>;
+  const n = (x: unknown) => (typeof x === 'number' && Number.isFinite(x) ? Math.round(Math.min(100, Math.max(-100, x))) : 0);
+  const a: Adjust = { bright: n(r.bright), contrast: n(r.contrast), sat: n(r.sat), gray: r.gray === true };
+  return isNeutral(a) ? null : a;
 }

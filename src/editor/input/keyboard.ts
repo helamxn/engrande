@@ -31,6 +31,10 @@ function spaceTarget(t: EventTarget | null) {
 /** Una serie de pulsaciones de flecha seguidas cuenta como un solo paso de deshacer. */
 let nudge: { l: unknown; t: number } = { l: null, t: 0 };
 
+/** Campos donde se escribe texto (no casillas, deslizadores ni botones). */
+const TEXT_ENTRY = 'textarea, [contenteditable=""], [contenteditable="true"], input:not([type]), '
+  + 'input[type=text], input[type=number], input[type=search], input[type=email], input[type=url], input[type=tel], input[type=password]';
+
 export function initKeyboard() {
   document.addEventListener('pointerdown', (e) => { pointerFocused = (e.target as Element).closest?.('button') ?? null; }, true);
   // el foco llegó a otro sitio (Tab, o lo movió el editor): ese ya no se pulsó con el ratón
@@ -51,8 +55,11 @@ export function initKeyboard() {
     if (e.key === 'Escape' && document.querySelector(':popover-open')) return;
     const mod = e.ctrlKey || e.metaKey, k = e.key.toLowerCase(), sel = st.sel;
     const typing = (e.target as Element).matches?.('input,textarea,select') ?? false;
-    if (mod && k === 'z' && !typing) { e.preventDefault(); if (e.shiftKey) redo(); else undo(); return; }
-    if (mod && k === 'y' && !typing) { e.preventDefault(); redo(); return; }
+    // deshacer y rehacer solo se ceden al navegador donde se escribe (que tiene su propio deshacer): tras mover un
+    // deslizador o marcar una casilla, Ctrl+Z deshace en el póster (antes no hacía nada hasta volver al lienzo)
+    const writing = (e.target as Element).matches?.(TEXT_ENTRY) ?? false;
+    if (mod && k === 'z' && !writing) { e.preventDefault(); if (e.shiftKey) redo(); else undo(); return; }
+    if (mod && k === 'y' && !writing) { e.preventDefault(); redo(); return; }
     if (typing) return;
     if (e.key === '?') { e.preventDefault(); openShortcuts(); return; }
     // Ctrl+O: elegir imágenes o PDF (en vez de abrir un archivo en el navegador), como en Excalidraw

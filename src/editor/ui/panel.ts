@@ -2,7 +2,7 @@
 import type { GroupRef } from '../groups';
 import {
   afterChange, centerSel, fitSel, groupMembers, groupName, hideSelected, lockSelected, markManual, renameGroup, renameLayer,
-  reorder, select, selectedGroup, selectMany, setOpacity, toggleGroupFlag, toggleHidden, toggleInSelection,
+  reorder, select, selectedGroup, selectMany, setAdjust, setOpacity, toggleGroupFlag, toggleHidden, toggleInSelection,
   toggleLocked, unstretchSel,
 } from '../actions';
 import { MAX_COLS_ROWS, MIN_SIZE, PRESETS, SIZE_PRESETS } from '../constants';
@@ -17,7 +17,8 @@ import { snap } from '../history';
 import { deskMQ, HI_AREA, isTouch } from '../platform';
 import { rich } from './keys';
 import { C, clampSize, isFreshPoster, posterGeo, S, sheetsVisible, st } from '../state';
-import { dirty } from '../render';
+import { adjustedSource, dirty } from '../render';
+import { adjustKey } from '../pixels';
 import { fitView } from '../view';
 import { renderPdfPage } from '../io/pdf';
 import { canvasRevision, scheduleSave } from '../io/persist';
@@ -129,6 +130,20 @@ export function layoutChanged() {
   prevG = g;
   syncLayoutUI(); syncSel(); renderList(); fitView();
   scheduleSave();
+}
+/** Ajustes de color de la imagen seleccionada (un texto no tiene: se ocultan). */
+function syncAdjustUI(sel: Layer) {
+  const text = sel.src?.kind === 'text';
+  $('#adjustField').hidden = text;
+  if (text) return;
+  const a = sel.adjust;
+  for (const [id, v] of [['#adjBright', a?.bright ?? 0], ['#adjContrast', a?.contrast ?? 0], ['#adjSat', a?.sat ?? 0]] as const) {
+    setField(id, v); $(id + 'Out').textContent = v > 0 ? `+${v}` : String(v);
+  }
+  $<HTMLInputElement>('#adjGray').checked = !!a?.gray;
+  $<HTMLInputElement>('#adjSat').disabled = !!a?.gray; // en blanco y negro la saturación no hace nada
+  $<HTMLButtonElement>('#adjReset').disabled = !a;
+  $('#adjState').textContent = !a ? 'sin ajustes' : a.gray ? 'blanco y negro' : 'ajustada';
 }
 /** Calidad, marcas y guía (se guardan con el póster). */
 export function syncExportUI() {
@@ -345,6 +360,7 @@ export function syncSel() {
     setField('#pName', sel.name);
     const op = Math.round(sel.opacity * 100);
     setField('#pOpacity', op); $('#pOpacityOut').textContent = `${op} %`;
+    syncAdjustUI(sel);
     const b = bboxMM(sel);
     setField('#pW', fmt1(visW(sel) / 10)); setField('#pH', fmt1(visH(sel) / 10));
     setField('#pX', fmt1(b.x0 / 10)); setField('#pY', fmt1(b.y0 / 10)); setField('#pR', Math.round(sel.rot));
@@ -406,7 +422,7 @@ const canvasId = (c: HTMLCanvasElement) => {
 };
 function thumbFor(l: Layer) {
   const k = l.crop;
-  const key = [canvasId(l.img), canvasRevision(l.img), k.x0, k.y0, k.x1, k.y1, l.w, l.h, l.rot, l.flipX, l.flipY, C.chk1, C.chk2].join('|');
+  const key = [canvasId(l.img), canvasRevision(l.img), k.x0, k.y0, k.x1, k.y1, l.w, l.h, l.rot, l.flipX, l.flipY, C.chk1, C.chk2, l.adjust ? adjustKey(l.adjust) : ''].join('|');
   let t = thumbs.get(l);
   if (!t) {
     const c = document.createElement('canvas');
@@ -424,7 +440,7 @@ function thumbFor(l: Layer) {
     x.save();
     x.translate(44, 44); x.rotate(a); x.scale(l.flipX ? -1 : 1, l.flipY ? -1 : 1);
     x.imageSmoothingQuality = 'high';
-    x.drawImage(l.img, k.x0 * l.img.width, k.y0 * l.img.height, sw, sh, (-dw * s) / 2, (-dh * s) / 2, dw * s, dh * s);
+    x.drawImage(l.adjust ? adjustedSource(l.img, l.adjust) : l.img, k.x0 * l.img.width, k.y0 * l.img.height, sw, sh, (-dw * s) / 2, (-dh * s) / 2, dw * s, dh * s);
     x.restore();
     t.key = key;
   }
@@ -822,6 +838,24 @@ export function initPanel() {
     $('#pOpacityOut').textContent = `${opacity.value} %`;
   });
   opacity.addEventListener('change', () => renderList());
+  // ajustes de color
+  for (const [id, k] of [['#adjBright', 'bright'], ['#adjContrast', 'contrast'], ['#adjSat', 'sat']] as const) {
+    const el = $<HTMLInputElement>(id);
+    el.addEventListener('input', () => {
+      if (!st.sel) return;
+      setAdjust(st.sel, { [k]: +el.value }, k);
+      syncAdjustUI(st.sel);
+    });
+    el.addEventListener('change', () => renderList());
+    // doble clic en el deslizador: vuelve a 0, como en los editores de fotos
+    el.addEventListener('dblclick', () => { if (st.sel) { setAdjust(st.sel, { [k]: 0 }); syncAdjustUI(st.sel); renderList(); } });
+  }
+  $<HTMLInputElement>('#adjGray').addEventListener('change', (e) => {
+    if (!st.sel) return;
+    setAdjust(st.sel, { gray: (e.target as HTMLInputElement).checked });
+    syncAdjustUI(st.sel); renderList();
+  });
+  $('#adjReset').addEventListener('click', () => { if (st.sel) { setAdjust(st.sel, null); syncAdjustUI(st.sel); renderList(); } });
   // nombre del grupo: se aplica al confirmar (Enter o al salir); Esc deshace lo escrito
   const gName = $<HTMLInputElement>('#gName');
   const gNow = () => { const g = selectedGroup(); return g == null ? '' : groupName(g); };

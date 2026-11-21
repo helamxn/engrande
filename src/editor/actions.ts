@@ -20,7 +20,8 @@ import { s2mm } from './view';
 import { rich } from './ui/keys';
 import { renderBar } from './ui/contextbar';
 import { layoutChanged, layoutRestored, renderList, syncExportUI, syncSel } from './ui/panel';
-import type { FitMode, Layer, LayerProps, Mode, Pt, Snapshot, Source } from './types';
+import type { Adjust, FitMode, Layer, LayerProps, Mode, Pt, Snapshot, Source } from './types';
+import { isNeutral } from './pixels';
 
 /* ---------- lienzos ---------- */
 export function cloneCanvas(src: HTMLCanvasElement) {
@@ -46,7 +47,7 @@ export function newLayer(img: HTMLCanvasElement, name: string, extra: Partial<La
   return {
     id: st.nextId++, name, img, orig: img, cx: g.W / 2, cy: g.H / 2, w: g.W, h: (g.W * img.height) / img.width,
     rot: 0, flipX: false, flipY: false, crop: { x0: 0, y0: 0, x1: 1, y1: 1 },
-    pdf: null, page: 1, pages: 1, src: null as Source | null, fit: null, hidden: false, locked: false, opacity: 1, gpath: [], ...extra,
+    pdf: null, page: 1, pages: 1, src: null as Source | null, fit: null, hidden: false, locked: false, opacity: 1, adjust: null, gpath: [], ...extra,
   };
 }
 /** Coloca una imagen nueva ajustada al póster. Si va desplazada (varias a la vez), queda como colocada a mano. */
@@ -110,6 +111,23 @@ export function setOpacity(l: Layer | Layer[], v: number) {
   if (!(opacityEdit.key === ls[0] && now - opacityEdit.t < 1000)) snap();
   opacityEdit = { key: ls[0]!, t: now };
   for (const x of ls) x.opacity = Math.min(1, Math.max(0.05, v));
+  dirty(); scheduleSave();
+}
+/**
+ * Ajustes de color de una imagen. Un arrastre continuo del mismo deslizador cuenta como un solo paso de deshacer.
+ * Los textos no tienen: su color se elige en su panel.
+ */
+let adjustEdit = { key: null as Layer | null, what: '', t: 0 };
+export function setAdjust(l: Layer, change: Partial<Adjust> | null, what = '') {
+  if (l.locked) { toast(LOCKED_MSG); return; }
+  if (isTextLayer(l)) return;
+  const next = change ? { ...(l.adjust ?? { bright: 0, contrast: 0, sat: 0, gray: false }), ...change } : null;
+  const norm = next && !isNeutral(next) ? next : null;
+  if (JSON.stringify(norm) === JSON.stringify(l.adjust)) return;
+  const now = performance.now();
+  if (!(what && adjustEdit.key === l && adjustEdit.what === what && now - adjustEdit.t < 1000)) snap();
+  adjustEdit = { key: l, what, t: now };
+  l.adjust = norm;
   dirty(); scheduleSave();
 }
 /** Oculta todas las seleccionadas (un paso de deshacer). */

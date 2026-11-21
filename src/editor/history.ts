@@ -33,7 +33,7 @@ export function takeSnap(): Snapshot {
     props: st.layers.map((l) => ({
       l, cx: l.cx, cy: l.cy, w: l.w, h: l.h, rot: l.rot, flipX: l.flipX, flipY: l.flipY,
       crop: { ...l.crop }, img: l.img, orig: l.orig, page: l.page, fit: l.fit && { ...l.fit }, hidden: l.hidden,
-      name: l.name, locked: l.locked, opacity: l.opacity, gpath: clonePath(l.gpath), src: l.src,
+      name: l.name, locked: l.locked, opacity: l.opacity, adjust: l.adjust, gpath: clonePath(l.gpath), src: l.src,
     })),
     // la distribución de hojas también se deshace (cambiarla mueve y reajusta las imágenes)
     layout: layoutOf(S),
@@ -48,7 +48,7 @@ export function restoreSnap(s: Snapshot) {
     Object.assign(p.l, {
       cx: p.cx, cy: p.cy, w: p.w, h: p.h, rot: p.rot, flipX: p.flipX, flipY: p.flipY,
       crop: { ...p.crop }, img: p.img, orig: p.orig, page: p.page, fit: p.fit && { ...p.fit }, hidden: p.hidden,
-      name: p.name, locked: p.locked, opacity: p.opacity, gpath: clonePath(p.gpath), src: p.src,
+      name: p.name, locked: p.locked, opacity: p.opacity, adjust: p.adjust, gpath: clonePath(p.gpath), src: p.src,
     });
   }
   Object.assign(S, layoutOf({ ...s.layout, size: s.layout.size ?? null }), s.exp);

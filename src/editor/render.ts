@@ -6,7 +6,9 @@ import {
   gridLevels, HANDLES, bboxMM, cropCenter, cropPtsMM, displaySide, handleLocal, localToMM, pppOf, qualityOf, rad,
   unionBox, visH, visW, type Quality,
 } from './geometry';
-import { canvasRevision } from './io/persist';
+import { canvasRevision, markCanvasChanged } from './io/persist';
+import { adjustData, adjustKey, isNeutral } from './pixels';
+import { freeCanvas } from './dom';
 import { C, posterGeo, S, sheetsVisible, st, V, view } from './state';
 import { mm2s } from './view';
 import { positionBar } from './ui/contextbar';
@@ -16,7 +18,7 @@ import { renderList } from './ui/panel';
 import { drawScaleRef, syncScaleRefButton } from './scaleref';
 import { sheetPlan } from './sheets';
 import { HI_AREA, isTouch } from './platform';
-import type { HandleId, Layer, Pt } from './types';
+import type { Adjust, HandleId, Layer, Pt } from './types';
 
 let cv: HTMLCanvasElement;
 let ctx: CanvasRenderingContext2D;
@@ -97,6 +99,9 @@ function drawGrid() {
 /* ---------- dibujo de una imagen (lo usa también la exportación) ---------- */
 export function drawLayer(c: CanvasRenderingContext2D, l: Layer, clipIt = true, img: CanvasImageSource = l.img) {
   const w = l.w, h = l.h, k = l.crop;
+  // ajustes de color: sobre la versión que se dibuja (copia de pantalla, lienzo de trabajo o alta resolución). Con el
+  // borrador la imagen cambia en cada movimiento: mientras se borra se ve sin ajustes
+  if (l.adjust && !(S.mode === 'erase' && l === st.sel)) img = adjustedSource(img, l.adjust);
   c.save();
   if (l.opacity < 1) c.globalAlpha *= l.opacity;
   c.translate(l.cx, l.cy); c.rotate(rad(l.rot)); c.scale(l.flipX ? -1 : 1, l.flipY ? -1 : 1);
@@ -108,6 +113,33 @@ export function drawLayer(c: CanvasRenderingContext2D, l: Layer, clipIt = true, 
 /** pick: qué versión de cada imagen se dibuja (copia reducida en pantalla, alta resolución al exportar). */
 export const drawAll = (c: CanvasRenderingContext2D, pick: (l: Layer) => CanvasImageSource = (l) => l.img) =>
   st.layers.forEach((l) => { if (!l.hidden && l !== st.editingText) drawLayer(c, l, true, pick(l)); });
+
+/* ---------- ajustes de color ---------- */
+/**
+ * Imagen con los ajustes aplicados, en caché por lienzo de origen: se rehace solo si cambian los ajustes, el tamaño o
+ * el contenido (revisión del lienzo). Un mismo lienzo puede tener varias versiones (duplicados con otros ajustes).
+ */
+const adjustedCache = new WeakMap<object, Map<string, HTMLCanvasElement>>();
+export function adjustedSource(src: CanvasImageSource, a: Adjust): CanvasImageSource {
+  if (isNeutral(a) || !(src instanceof HTMLCanvasElement) || !src.width || !src.height) return src;
+  const key = `${adjustKey(a)}|${src.width}x${src.height}|${canvasRevision(src)}`;
+  let m = adjustedCache.get(src);
+  const hit = m?.get(key);
+  if (hit) return hit;
+  if (!m) { m = new Map(); adjustedCache.set(src, m); }
+  // solo la última versión de cada ajuste: las de revisiones anteriores ya no sirven
+  for (const k of m.keys()) if (k.startsWith(adjustKey(a) + '|')) { freeCanvas(m.get(k)!); m.delete(k); }
+  if (m.size > 3) { const [k0, c0] = m.entries().next().value!; freeCanvas(c0); m.delete(k0); }
+  const out = document.createElement('canvas');
+  out.width = src.width; out.height = src.height;
+  const x = out.getContext('2d', { willReadFrequently: true })!;
+  x.drawImage(src, 0, 0);
+  const data = x.getImageData(0, 0, out.width, out.height);
+  adjustData(data.data, a);
+  x.putImageData(data, 0, 0);
+  m.set(key, out);
+  return out;
+}
 
 /* ---------- copias reducidas para la pantalla ---------- */
 /**
@@ -135,6 +167,7 @@ export function displaySource(l: Layer): CanvasImageSource {
     const x = c.getContext('2d')!;
     x.imageSmoothingEnabled = true; x.imageSmoothingQuality = 'high';
     x.drawImage(img, 0, 0, c.width, c.height);
+    markCanvasChanged(c); // la copia cambió en el mismo lienzo: las versiones con ajustes se rehacen
     d = { c, rev, side };
     copies.set(img, d);
   }

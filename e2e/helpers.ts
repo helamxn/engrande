@@ -210,10 +210,11 @@ export async function addFile(page: Page, name: string, mimeType: string, buffer
 }
 
 /** Color (r, g, b) de la miniatura de la fila i de la lista (lo que se ve de la imagen, a 88 px), bajo el centro. */
-export function thumbColor(page: Page, i = 0) {
-  // por debajo del centro: en los PDF de makePdf el centro cae sobre el texto blanco, y su antialias cambia con el sistema
-  return page.locator('#layers li.layer canvas').nth(i).evaluate((c: HTMLCanvasElement) =>
-    [...c.getContext('2d')!.getImageData(44, 66, 1, 1).data].slice(0, 3));
+export function thumbColor(page: Page, i = 0, y = 66) {
+  // por defecto, por debajo del centro: en los PDF de makePdf el centro cae sobre el texto blanco, y su antialias
+  // cambia con el sistema (y = 44: el centro, donde addImage pinta su rectángulo de color)
+  return page.locator('#layers li.layer canvas').nth(i).evaluate((c: HTMLCanvasElement, y) =>
+    [...c.getContext('2d')!.getImageData(44, y, 1, 1).data].slice(0, 3), y);
 }
 
 /* ---------- toques de verdad ---------- */
