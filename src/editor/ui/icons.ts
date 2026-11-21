@@ -13,6 +13,8 @@ import alignVCenter from 'lucide-static/icons/align-center-horizontal.svg?raw';
 import distributeH from 'lucide-static/icons/align-horizontal-distribute-center.svg?raw';
 import distributeV from 'lucide-static/icons/align-vertical-distribute-center.svg?raw';
 import scissors from 'lucide-static/icons/scissors.svg?raw';
+import save from 'lucide-static/icons/save.svg?raw';
+import folderOpen from 'lucide-static/icons/folder-open.svg?raw';
 import selectBox from 'lucide-static/icons/square-dashed-mouse-pointer.svg?raw';
 import arrowDown from 'lucide-static/icons/arrow-down.svg?raw';
 import arrowUp from 'lucide-static/icons/arrow-up.svg?raw';
@@ -84,7 +86,7 @@ const RAW = {
   // lista de imágenes
   up: arrowUp, down: arrowDown, dup: copyPlus, eye, eyeOff,
   // cabecera y herramientas
-  newPoster: filePlus, addImage: imagePlus, download, undo, redo, lock, lockOpen, printer,
+  newPoster: filePlus, addImage: imagePlus, download, undo, redo, lock, lockOpen, printer, save, folderOpen,
   plus, minus, keyboard, person: personStanding, panelClose: panelRightClose, panelOpen: panelRightOpen, layoutGrid,
   // menú contextual (flechas de submenú e iconos de las opciones principales)
   chevronRight, chevronLeft, copy, cut: scissors, paste: clipboardPaste, layers, scaling, history, fitAll: maximize,

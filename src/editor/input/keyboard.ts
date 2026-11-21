@@ -4,6 +4,7 @@ import {
   removeSelected, reorder, rotate90, selectAll, selected, setMode, shiftSelected, ungroupSelected,
 } from '../actions';
 import { redo, snap, undo } from '../history';
+import { saveProjectFile } from '../io/projectio';
 import { S, st } from '../state';
 import { fitView, zoomCenter } from '../view';
 import { isMenuOpen } from '../ui/menu';
@@ -55,6 +56,7 @@ export function initKeyboard() {
     if (typing) return;
     if (e.key === '?') { e.preventDefault(); openShortcuts(); return; }
     // Ctrl+O: elegir imágenes o PDF (en vez de abrir un archivo en el navegador), como en Excalidraw
+    if (mod && k === 's') { e.preventDefault(); void saveProjectFile(); return; }
     if (mod && k === 'o') { e.preventDefault(); document.querySelector<HTMLInputElement>('#file')?.click(); return; }
     if (mod && k === '0') { e.preventDefault(); fitView(); return; }
     // Ctrl+\ como en Figma (en teclado español, la tecla ç ocupa esa posición)

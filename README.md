@@ -12,6 +12,7 @@ Todo ocurre en el navegador: no hay servidor, cuentas ni base de datos, y las im
 - Tamaño de letra en puntos, altura de referencia en cm, color hexadecimal editable y botón para restablecerlo.
 - Ayudas de precisión: imán, rejilla de 1 mm y medidas.
 - Descarga en PDF por hojas, con marcas de corte y guía de armado, o en una sola hoja grande para imprenta. Las hojas que no llevan nada no se imprimen (se puede desactivar).
+- Guardar el proyecto en un archivo `.engrande` (Ctrl+S) y abrirlo en otro equipo o navegador (Ctrl+O, el botón o arrastrándolo).
 - Funciona con ratón, teclado, pantalla táctil y móvil. La tecla `?` muestra todos los atajos y gestos.
 
 ## Stack
@@ -75,6 +76,7 @@ vercel.json                       cabeceras de seguridad y caché
 - **Tamaño:** sin medida, el póster mide lo que cubren sus columnas y filas. Con medida (`size` en los ajustes), cambiar el papel, el margen o el solape la conserva y recalcula las hojas (`geo()` y `tiles()` en `geometry.ts`); la última columna y fila pueden ir a medias, y lo que sobra se recorta por sus marcas de corte. Hasta 12 × 12 hojas.
 - **Hojas en blanco** (`blank.ts` y `sheets.ts`): primero por geometría (ninguna imagen visible toca la hoja), al instante; después por píxeles (lo que la toca es todo blanco o transparente), a baja resolución con el póster quieto. Al exportar se confirma a la resolución del PDF y, ante la duda, la hoja se imprime. Un píxel cuenta como blanco con sus tres canales ≥ 248.
 - **Hojas:** se numeran 1, 2, 3… en el mismo orden que las páginas del PDF; las que no se imprimen no cuentan, y el mapa de la guía las muestra rayadas. El nombre de cada hoja y la regla van en franjas de solape que tapará una vecina impresa.
+- **Archivo de proyecto** (`io/projectfile.ts`): «ENGRANDE», versión, longitud de la cabecera, cabecera JSON (el mismo proyecto que se guarda en IndexedDB y la lista de archivos) y los archivos tal cual, sin base64 ni ZIP. Al abrirlo se comprueban tamaños, claves y tipos, y cada valor del proyecto se valida como lo guardado en el navegador; abrirlo sustituye al póster y se puede deshacer.
 - **Lo guardado se valida al leerlo:** una distribución, una resolución o una opción fuera de lo que admite el panel vuelve a su valor de siempre (`readLayout` en `state.ts`).
 - **Color:** todo se trabaja en sRGB. Los PDF en CMYK se convierten con perfil, y el PDF descargado va en RGB sin perfil ICC.
 

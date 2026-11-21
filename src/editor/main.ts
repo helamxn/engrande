@@ -6,6 +6,7 @@ import { clearHistory, hasUnexported, redo, setHistoryHooks, undo } from './hist
 import { exportMarginTest, exportSingle, exportTiles, printTiles } from './io/export';
 import { handlePaste, initLoad } from './io/load';
 import { flushSave, initPersistence, isOtherTabOpen, isWorkSafe, restoreProject, scheduleSave } from './io/persist';
+import { saveProjectFile } from './io/projectio';
 import { initKeyboard } from './input/keyboard';
 import { initPointer } from './input/pointer';
 import { dockMQ, isMac, MOD } from './platform';
@@ -56,6 +57,8 @@ function initPdfCard() {
   run('#exportSingle', exportSingle);
   run('#marginTest', exportMarginTest);
   run('#newPosterAlt', newPoster);
+  run('#saveProject', saveProjectFile);
+  run('#openProject', () => {}); // cierra la tarjeta; el selector lo abre data-addfile
 }
 
 export function startEditor() {

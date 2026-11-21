@@ -23,7 +23,7 @@ const icon = 'size-[17px]';
       <Icon name="newPoster" />
       <span class="hidden min-[1100px]:inline">Nuevo</span>
     </button>
-    <input id="file" class="sr-only" type="file" accept="image/*,application/pdf" multiple tabindex="-1" aria-hidden="true" />
+    <input id="file" class="sr-only" type="file" accept="image/*,application/pdf,.engrande" multiple tabindex="-1" aria-hidden="true" />
     <!-- la descarga de siempre (PDF por hojas) en un clic; la flecha abre la tarjeta del PDF -->
     <div class="btn-split">
       <button class="btn btn-primary" type="button" id="quickExport">
@@ -101,6 +101,8 @@ const icon = 'size-[17px]';
   <div class="flex flex-col">
     <button type="button" class="pdf-link" id="exportSingle"><Icon name="fitAll" />PDF en una sola hoja grande (imprenta)</button>
     <button type="button" class="pdf-link" id="marginTest"><Icon name="printer" />Hoja de prueba de márgenes</button>
+    <button type="button" class="pdf-link" id="saveProject" title="Ctrl+S"><Icon name="save" />Guardar proyecto (para seguir en otro equipo)</button>
+    <button type="button" class="pdf-link" id="openProject" data-addfile title="Ctrl+O"><Icon name="folderOpen" />Abrir proyecto o imagen</button>
     <button type="button" class="pdf-link sm:!hidden" id="newPosterAlt"><Icon name="newPoster" />Nuevo póster</button>
   </div>
   </div>

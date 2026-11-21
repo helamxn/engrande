@@ -18,7 +18,8 @@ const ARROWS = '← ↑ → ↓';
 const GROUPS: Group[] = [
   { title: 'General', rows: [
     ['Ver esta ayuda', ['?']],
-    ['Agregar imagen o PDF', [C, 'O']],
+    ['Agregar imagen o PDF, o abrir un proyecto', [C, 'O']],
+    ['Guardar el proyecto en un archivo', [C, 'S']],
     ['Agregar texto', ['T']],
     ['Deshacer', [C, 'Z']],
     ['Rehacer', [C, 'Y'], [C, S, 'Z']],

@@ -9,6 +9,8 @@ import { openPdf, renderPdfPage } from './pdf';
 import type { Layer } from '../types';
 import { isFontFile } from '../text/fonts';
 import { loadFonts } from '../text/textpanel';
+import { isProjectName } from './projectfile';
+import { openProjectFile } from './projectio';
 
 /**
  * Se espera al evento load y no a img.decode(): decode() no se resuelve mientras la pestaña está en segundo plano.
@@ -64,6 +66,13 @@ async function fileToLayer(f: File): Promise<Layer | null> {
 export async function loadFiles(list: Iterable<File | null> | ArrayLike<File | null>) {
   const all = [...(list as Iterable<File | null>)].filter((f): f is File => !!f);
   // las fuentes (TTF, OTF, WOFF) no son imágenes: quedan para los textos
+  // un proyecto (.engrande) sustituye al póster: se abre solo el primero y nada más
+  const project = all.find((f) => isProjectName(f.name));
+  if (project) {
+    if (all.length > 1) toast('Un proyecto se abre solo: los demás archivos no se agregaron.', 6000);
+    await openProjectFile(project);
+    return;
+  }
   const fonts = all.filter(isFontFile), files = all.filter((f) => !isFontFile(f));
   if (fonts.length) await loadFonts(fonts);
   if (!files.length) return;

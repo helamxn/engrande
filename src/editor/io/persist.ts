@@ -205,6 +205,57 @@ async function save() {
   askPersistence();
 }
 
+/**
+ * El póster entero para un archivo de proyecto (ver projectfile.ts): lo mismo que se guarda en IndexedDB, con todos
+ * sus archivos (los originales una vez cada uno y los lienzos editados en PNG).
+ */
+export async function projectSnapshot(): Promise<{ project: SavedProject; files: Map<string, Blob> }> {
+  const files = new Map<string, Blob>(), editKeys = new Map<HTMLCanvasElement, string>(), layers: SavedLayer[] = [];
+  for (const l of st.layers) {
+    let src: SavedSource;
+    if (l.src?.kind === 'text') src = { kind: 'text', spec: l.src.spec };
+    else if (l.src) {
+      let key = blobKeys.get(l.src.blob);
+      if (!key) { key = 'src-' + uid(); blobKeys.set(l.src.blob, key); }
+      files.set(key, l.src.blob);
+      src = { kind: l.src.kind, key };
+    } else continue;
+    let edit: string | null = null;
+    if (l.img !== l.orig) {
+      edit = editKeys.get(l.img) ?? null;
+      if (!edit) { edit = 'px-' + uid(); editKeys.set(l.img, edit); files.set(edit, await toPng(l.img)); }
+    }
+    layers.push({
+      name: l.name, cx: l.cx, cy: l.cy, w: l.w, h: l.h, rot: l.rot, flipX: l.flipX, flipY: l.flipY,
+      crop: { ...l.crop }, page: l.page, pages: l.pages, fit: l.fit && { ...l.fit }, hidden: l.hidden,
+      locked: l.locked, opacity: l.opacity, gpath: clonePath(l.gpath), src, edit,
+    });
+  }
+  return {
+    project: {
+      draft: null, schema: SCHEMA, savedAt: Date.now(), layout: layoutOf(S),
+      dpi: S.dpi, marks: S.marks, guide: S.guide, skipBlank: S.skipBlank, layers,
+    },
+    files,
+  };
+}
+
+/**
+ * Abre un proyecto leído de un archivo en lugar del póster de ahora (st.layers debe estar vacío). Devuelve los nombres
+ * de lo que no se pudo recuperar. El próximo guardado lo deja en este navegador.
+ */
+export async function openProjectData(project: unknown, files: Map<string, Blob>) {
+  const p = project as SavedProject;
+  if (p.schema !== SCHEMA) throw new Error('Esquema desconocido');
+  const getBlob = async (key: string) => {
+    const b = files.get(key);
+    if (!b) throw new Error('Falta ' + key);
+    return b;
+  };
+  st.textDraft = null;
+  return rebuild(p, getBlob, false);
+}
+
 /** Borra el trabajo guardado. */
 export async function clearSaved() {
   const d = await db();
@@ -250,6 +301,15 @@ async function readProject(): Promise<{ failed: string[] } | null> {
     if (!b) throw new Error('Falta ' + key);
     return b;
   };
+  return rebuild(project, getBlob, true);
+}
+
+/**
+ * Reconstruye un póster (de IndexedDB o de un archivo de proyecto) sobre st.layers, que debe estar vacío.
+ * fromDb: los archivos ya están en la base de datos (si vienen de un archivo, el próximo guardado los escribe).
+ */
+async function rebuild(project: SavedProject, getBlob: (key: string) => Promise<Blob>, fromDb: boolean) {
+  if (!Array.isArray(project.layers)) project.layers = [];
   const decode = async (b: Blob) => {
     const url = URL.createObjectURL(b);
     try { return await loadImg(url); } finally { URL.revokeObjectURL(url); }
@@ -266,7 +326,9 @@ async function readProject(): Promise<{ failed: string[] } | null> {
   for (const [index, r] of project.layers.entries()) {
     try {
       let orig: HTMLCanvasElement, extra: Partial<Layer> = {};
-      if (!r.src) continue; // imagen de ejemplo de versiones anteriores
+      if (!r || typeof r !== 'object' || !r.src) continue; // imagen de ejemplo de versiones anteriores
+      if (typeof r.name !== 'string') r.name = 'imagen';
+      r.name = r.name.slice(0, 200);
       if (r.src.kind === 'text') {
         const spec = readSpec(r.src.spec);
         if (!spec) throw new Error('Texto no válido');
@@ -275,7 +337,7 @@ async function readProject(): Promise<{ failed: string[] } | null> {
       } else if (r.src.kind === 'pdf') {
         let p = pdfs.get(r.src.key);
         if (!p) { const blob = await getBlob(r.src.key); p = { doc: await openPdf(await blob.arrayBuffer()), blob }; pdfs.set(r.src.key, p); }
-        orig = await renderPdfPage(p.doc, r.page);
+        orig = await renderPdfPage(p.doc, readGeom(r, p.doc.numPages).page);
         blobKeys.set(p.blob, r.src.key);
         extra = { pdf: p.doc, src: { kind: 'pdf', blob: p.blob } };
       } else {
@@ -307,8 +369,7 @@ async function readProject(): Promise<{ failed: string[] } | null> {
         used.add(r.edit);
       }
       st.layers.push(newLayer(orig, r.name, {
-        ...extra, img, orig, cx: r.cx, cy: r.cy, w: r.w, h: r.h, rot: r.rot, flipX: r.flipX, flipY: r.flipY,
-        crop: { ...r.crop }, page: r.page, pages: r.pages, fit: r.fit && { ...r.fit }, hidden: !!r.hidden,
+        ...extra, img, orig, ...readGeom(r, extra.pdf?.numPages ?? 1), hidden: !!r.hidden,
         locked: !!r.locked, opacity: typeof r.opacity === 'number' ? Math.min(1, Math.max(0, r.opacity)) : 1,
         gpath: readPath(r),
       }));
@@ -330,11 +391,31 @@ async function readProject(): Promise<{ failed: string[] } | null> {
     guide: typeof project.guide === 'boolean' ? project.guide : DEFAULT_EXPORT.guide,
     skipBlank: typeof project.skipBlank === 'boolean' ? project.skipBlank : DEFAULT_EXPORT.skipBlank,
   });
-  stored = used;
-  // si algo falló, el próximo guardado limpia lo que ya no se usa
-  if (failedNames.length) scheduleSave();
+  if (fromDb) stored = used;
+  // si algo falló, el próximo guardado limpia lo que ya no se usa (y lo que llega de un archivo se guarda)
+  if (failedNames.length || !fromDb) scheduleSave();
   showInfo();
   return { failed: failedNames };
+}
+
+/**
+ * Colocación de una imagen guardada, con cada valor comprobado: lo guardado puede venir de un archivo de proyecto
+ * ajeno o dañado, y un NaN o un tamaño negativo romperían la geometría del póster entero.
+ */
+export function readGeom(r: Partial<Record<keyof SavedLayer, unknown>>, pages: number) {
+  const num = (v: unknown, def: number) => (typeof v === 'number' && Number.isFinite(v) && Math.abs(v) < 1e6 ? v : def);
+  const pos = (v: unknown, def: number) => Math.max(0.1, num(v, def));
+  const c = (r.crop && typeof r.crop === 'object' ? r.crop : {}) as Partial<Crop>;
+  const u = (v: unknown, def: number) => Math.min(1, Math.max(0, num(v, def)));
+  let crop = { x0: u(c.x0, 0), y0: u(c.y0, 0), x1: u(c.x1, 1), y1: u(c.y1, 1) };
+  if (crop.x1 - crop.x0 < 1e-4 || crop.y1 - crop.y0 < 1e-4) crop = { x0: 0, y0: 0, x1: 1, y1: 1 };
+  const f = r.fit as Fit | undefined;
+  const fit: Fit = f && typeof f === 'object' && (f.mode === 'contain' || f.mode === 'cover') ? { mode: f.mode, scale: Math.min(10, pos(f.scale, 1)) } : null;
+  const page = Number.isInteger(r.page) ? Math.min(Math.max(r.page as number, 1), pages) : 1;
+  return {
+    cx: num(r.cx, 0), cy: num(r.cy, 0), w: pos(r.w, 100), h: pos(r.h, 100), rot: num(r.rot, 0) % 360,
+    flipX: r.flipX === true, flipY: r.flipY === true, crop, page, pages, fit,
+  };
 }
 
 /* ---------- grupos guardados ---------- */
