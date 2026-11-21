@@ -117,7 +117,9 @@ const tabs = [
       <div class="seg full" role="group" aria-labelledby="lblPaper">
         <button type="button" data-paper="A4" aria-pressed="true">A4</button>
         <button type="button" data-paper="A3" aria-pressed="false">A3</button>
-        <button type="button" data-paper="Carta" aria-pressed="false">Carta</button>
+        <button type="button" data-paper="Carta" aria-pressed="false" title="Carta: 21,6 × 27,9 cm">Carta</button>
+        <button type="button" data-paper="Legal" aria-pressed="false" title="Legal (Oficio en muchos países): 21,6 × 35,6 cm. Comprueba que tu papel mida eso">Legal</button>
+        <button type="button" data-paper="Tabloide" aria-pressed="false" title="Tabloide: 27,9 × 43,2 cm (11 × 17 in)">Tabloide</button>
       </div>
     </div>
     <div class={field}>
@@ -126,6 +128,16 @@ const tabs = [
         <button type="button" data-orient="portrait" aria-pressed="true">Vertical</button>
         <button type="button" data-orient="landscape" aria-pressed="false">Horizontal</button>
       </div>
+    </div>
+    <!-- fondo del póster: de color o el blanco del papel -->
+    <div class={field}>
+      <div class="lbl" id="lblBg">Fondo del póster <span class="val" id="bgOut">blanco del papel</span></div>
+      <div class="bg-row" role="group" aria-labelledby="lblBg">
+        <input id="bgColor" type="color" value="#ffffff" aria-label="Color de fondo del póster" />
+        <div id="bgSwatches"></div>
+        <button type="button" class="btn" id="bgClear" title="Sin fondo: el blanco del papel">Quitar</button>
+      </div>
+      <p class="note">Un fondo de color se imprime en todas las hojas y gasta mucha tinta.</p>
     </div>
     <!-- qué pasa con las imágenes colocadas a mano al cambiar hojas, papel, orientación, margen o solape -->
     <div class={field}>

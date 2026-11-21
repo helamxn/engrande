@@ -1,12 +1,13 @@
 # engrande
 
-Convierte una imagen o un PDF en un póster grande impreso en varias hojas (A4, A3 o Carta), con marcas de corte, franjas de solape para pegar y una página de guía de armado.
+Convierte una imagen o un PDF en un póster grande impreso en varias hojas (A4, A3, Carta, Legal o Tabloide), con marcas de corte, franjas de solape para pegar y una página de guía de armado.
 
 Todo ocurre en el navegador: no hay servidor, cuentas ni base de datos, y las imágenes nunca salen del equipo del usuario. El póster se guarda automáticamente en el propio navegador (IndexedDB) y se restaura al volver; el botón «Nuevo» lo borra.
 
 ## Qué se puede hacer
 
-- Póster por medidas (ancho × alto en cm, tamaños habituales o «Como la imagen») o por número de hojas A4, A3 o Carta, con margen de impresora y solape ajustables. Sugiere la orientación que usa menos hojas y avisa cuando la última columna o fila apenas se aprovecha.
+- Póster por medidas (ancho × alto en cm, tamaños habituales o «Como la imagen») o por número de hojas A4, A3, Carta, Legal o Tabloide, con margen de impresora y solape ajustables. Sugiere la orientación que usa menos hojas y avisa cuando la última columna o fila apenas se aprovecha.
+- Color de fondo del póster (selector o colores rápidos): se imprime en todas las hojas, solo dentro del póster.
 - Varias imágenes o páginas de PDF que se colocan, recortan, agrupan y retocan (quitar el fondo, borrador con dureza ajustable, varita).
 - Tamaño real (escala 1:1) para PDF y SVG con medidas: moldes de costura, planos y plantillas. Al cargarlos se ofrece imprimirlos a su medida, con el póster y las hojas calculados solos.
 - Ajustes de color por imagen: brillo, contraste, saturación y blanco y negro (para ahorrar tinta), sin tocar el archivo original; se ven igual en pantalla y en el PDF.

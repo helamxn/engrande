@@ -36,7 +36,7 @@ describe('isFreshPoster («Nuevo póster» no tiene nada que hacer)', () => {
 describe('readLayout (distribución leída de lo guardado)', () => {
   it('un póster de antes, sin medida, se abre igual', () => {
     expect(readLayout({ paper: 'A3', orient: 'landscape', cols: 3, rows: 2, margin: 5, overlap: 12 }))
-      .toEqual({ paper: 'A3', orient: 'landscape', cols: 3, rows: 2, size: null, margin: 5, overlap: 12 });
+      .toEqual({ paper: 'A3', orient: 'landscape', cols: 3, rows: 2, size: null, bg: null, margin: 5, overlap: 12 });
   });
   it('conserva la medida, en mm enteros y dentro de lo que caben 12 × 12 hojas', () => {
     const l = readLayout({ paper: 'A4', orient: 'portrait', cols: 2, rows: 1, margin: 6, overlap: 10, size: { w: 1000.4, h: 99999 } });
@@ -47,6 +47,11 @@ describe('readLayout (distribución leída de lo guardado)', () => {
     expect(l).toEqual({ ...DEFAULT_LAYOUT });
     expect(readLayout(null)).toEqual({ ...DEFAULT_LAYOUT });
     expect(readLayout({ paper: 'constructor' }).paper).toBe('A4'); // nombres del prototipo, no papeles
+    expect(readLayout({ paper: 'Tabloide' }).paper).toBe('Tabloide');
+    // fondo: un color válido, en minúsculas; el blanco o lo que no es un color, sin fondo
+    expect(readLayout({ bg: '#D62828' }).bg).toBe('#d62828');
+    expect(readLayout({ bg: '#fff' }).bg).toBeNull();
+    expect(readLayout({ bg: 'url(javascript:alert(1))' }).bg).toBeNull();
     expect(readLayout({ size: { w: 10, h: 10 } }).size).toEqual({ w: MIN_SIZE, h: MIN_SIZE });
   });
   it('un póster con otra medida o sin omitir hojas en blanco ya no es nuevo', () => {

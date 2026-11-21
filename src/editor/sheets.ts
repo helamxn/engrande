@@ -103,7 +103,8 @@ function plan(ts: Tile[], blank: Set<number>, empty = false): SheetPlan {
  */
 export function sheetPlan(g: Geo = posterGeo()): SheetPlan {
   const ts = tiles(g);
-  if (!visibleLayers().length) return plan(ts, new Set());
+  // con fondo de color, todas llevan algo
+  if (!visibleLayers().length || S.bg) return plan(ts, new Set());
   const key = printKey(g), hit = touched(ts), blank = new Set<number>();
   ts.forEach((_, i) => { if (!hit.has(i) || (key === pixelKey && pixelWhite.has(i))) blank.add(i); });
   if (key !== pixelKey) scheduleCheck(key);
@@ -120,7 +121,7 @@ export function sheetPlan(g: Geo = posterGeo()): SheetPlan {
  */
 export async function confirmPlan(render: (t: Tile) => HTMLCanvasElement, yieldTo: () => Promise<void>): Promise<SheetPlan> {
   const g = posterGeo(), ts = tiles(g);
-  if (!S.skipBlank || !visibleLayers().length) return plan(ts, new Set());
+  if (!S.skipBlank || !visibleLayers().length || S.bg) return plan(ts, new Set());
   const hit = touched(ts), blank = new Set(ts.map((_, i) => i).filter((i) => !hit.has(i)));
   const maybe = whiteAmong(g, ts, hit, checkScale(g.W, g.H));
   for (const i of maybe) {

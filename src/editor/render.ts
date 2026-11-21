@@ -356,7 +356,7 @@ export function render() {
       ctx.globalAlpha = 1;
     }
     ctx.save(); ctx.beginPath(); ctx.rect(0, 0, g.W, g.H); ctx.clip();
-    if (!editing) { ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, g.W, g.H); }
+    if (!editing) { ctx.fillStyle = S.bg ?? '#ffffff'; ctx.fillRect(0, 0, g.W, g.H); }
     for (const l of st.layers) {
       if (l.hidden || l === st.editingText) continue;
       const src = displaySource(l);

@@ -184,6 +184,7 @@ export function syncLayoutUI() {
   // una distribución solo está elegida si el tamaño sale de las hojas (con medida, las hojas son una consecuencia)
   for (const b of $$('#presets [data-c]')) b.setAttribute('aria-pressed', String(!S.size && +b.dataset.c! === S.cols && +b.dataset.r! === S.rows));
   syncSizeUI(g);
+  syncBgUI();
   syncPresetIcons();  for (const b of $$('[data-paper]')) b.setAttribute('aria-pressed', String(b.dataset.paper === S.paper));
   for (const b of $$('[data-orient]')) b.setAttribute('aria-pressed', String(b.dataset.orient === S.orient));
   $('#marginOut').textContent = S.margin + ' mm';
@@ -197,6 +198,35 @@ export function syncLayoutUI() {
   updateStats(); // el resumen bajo la pestaña Póster y en el panel plegado
   syncWelcome();
 }
+/* ---------- fondo del póster ---------- */
+/** Colores rápidos: negro, crema, kraft, pastel, rojo, azul y amarillo de cartel. */
+const BG_SWATCHES = ['#111111', '#f6efe1', '#c9a27a', '#fde2e4', '#d62828', '#1d4e89', '#ffd400'];
+function syncBgUI() {
+  setField('#bgColor', S.bg ?? '#ffffff');
+  $('#bgOut').textContent = S.bg ?? 'blanco del papel';
+  $<HTMLButtonElement>('#bgClear').disabled = !S.bg;
+  for (const b of $$<HTMLButtonElement>('#bgSwatches .swatch')) b.setAttribute('aria-pressed', String(b.dataset.c === S.bg));
+}
+/** Pone el fondo (null = el blanco del papel); un arrastre del selector es un solo paso de deshacer. */
+function setBg(c: string | null, coalesce = false) {
+  const v = c && c.toLowerCase() !== '#ffffff' ? c.toLowerCase() : null;
+  editLayout('bg', v, coalesce);
+  syncLayoutUI(); dirty();
+}
+function initBg() {
+  const box = $('#bgSwatches');
+  for (const c of BG_SWATCHES) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'swatch'; b.dataset.c = c; b.style.background = c;
+    b.title = b.ariaLabel = `Fondo ${c}`;
+    b.addEventListener('click', () => setBg(c));
+    box.appendChild(b);
+  }
+  const input = $<HTMLInputElement>('#bgColor');
+  input.addEventListener('input', () => setBg(input.value, true));
+  $('#bgClear').addEventListener('click', () => setBg(null));
+}
+
 /* ---------- tamaño por medidas ---------- */
 const sameSize = (a: Size | null, b: Size | null) => a === b || (!!a && !!b && a.w === b.w && a.h === b.h);
 /** Proporción (ancho / alto) que se mantiene con el eslabón; null = suelto. */
@@ -811,6 +841,7 @@ export function initPanel() {
     // con medida, sumar o quitar hojas vuelve a elegir por hojas, desde las que había
     snap(); Object.assign(S, { cols: g.cols, rows: g.rows, size: null }, { [k]: v }); st.sheetsOn = true; layoutChanged();
   });
+  initBg();
   // tamaño por medidas
   sizeField('#sizeW', 'w');
   sizeField('#sizeH', 'h');

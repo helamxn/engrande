@@ -1,12 +1,13 @@
 /** Estado compartido del editor. Un único objeto mutable: lo leen el render, la interfaz y la entrada. */
 import { savedMargin } from './prefs';
 import { MAX_COLS_ROWS, MIN_SIZE, PAPERS } from './constants';
+import { normalizeColor } from './text/values';
 import { geo, maxSize, type Box, type Dash, type Gap, type GuideSeg } from './geometry';
 import type { GroupRef } from './groups';
 import type { Layer, LayoutSettings, Pt, Settings, TextDraft } from './types';
 
 /** Ajustes de un póster nuevo (los que se guardan y se restablecen con "Nuevo póster"). */
-export const DEFAULT_LAYOUT: LayoutSettings = { paper: 'A4', orient: 'portrait', cols: 2, rows: 1, size: null, margin: 6, overlap: 10 };
+export const DEFAULT_LAYOUT: LayoutSettings = { paper: 'A4', orient: 'portrait', cols: 2, rows: 1, size: null, bg: null, margin: 6, overlap: 10 };
 export const DEFAULT_EXPORT: Pick<Settings, 'dpi' | 'marks' | 'guide' | 'skipBlank'> = { dpi: 150, marks: true, guide: true, skipBlank: true };
 
 /** Distribución de un póster nuevo: la de siempre, con el margen de la impresora si ya se eligió uno. */
@@ -14,7 +15,7 @@ export const freshLayout = (): LayoutSettings => ({ ...DEFAULT_LAYOUT, margin: s
 
 /** Copia de la distribución (para el historial y el guardado). */
 export const layoutOf = (s: LayoutSettings): LayoutSettings => ({
-  paper: s.paper, orient: s.orient, cols: s.cols, rows: s.rows, size: s.size && { ...s.size }, margin: s.margin, overlap: s.overlap,
+  paper: s.paper, orient: s.orient, cols: s.cols, rows: s.rows, size: s.size && { ...s.size }, bg: s.bg ?? null, margin: s.margin, overlap: s.overlap,
 });
 
 /**
@@ -30,6 +31,8 @@ export function readLayout(raw: unknown): LayoutSettings {
     paper, orient,
     cols: int(r.cols, 1, MAX_COLS_ROWS, d.cols), rows: int(r.rows, 1, MAX_COLS_ROWS, d.rows),
     size: null,
+    // un fondo blanco es como no tener: el papel ya es blanco
+    bg: typeof r.bg === 'string' && normalizeColor(r.bg) !== '#ffffff' ? normalizeColor(r.bg) : null,
     margin: int(r.margin, 0, 15, d.margin), overlap: int(r.overlap, 0, 30, d.overlap),
   };
   const z = r.size as { w?: unknown; h?: unknown } | null | undefined;

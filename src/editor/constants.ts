@@ -5,6 +5,10 @@ export const PAPERS: Record<Paper, readonly [number, number]> = {
   A4: [210, 297],
   A3: [297, 420],
   Carta: [215.9, 279.4],
+  /** 8,5 × 14 in. En muchos países lo llaman «Oficio», aunque el Oficio de cada país puede medir otra cosa. */
+  Legal: [215.9, 355.6],
+  /** 11 × 17 in (Ledger en horizontal): el formato grande de muchas impresoras de oficina. */
+  Tabloide: [279.4, 431.8],
 };
 
 export const PRESETS: ReadonlyArray<readonly [number, number]> = [

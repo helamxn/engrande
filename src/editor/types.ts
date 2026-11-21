@@ -1,7 +1,7 @@
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import type { GroupRef } from './groups';
 
-export type Paper = 'A4' | 'A3' | 'Carta';
+export type Paper = 'A4' | 'A3' | 'Carta' | 'Legal' | 'Tabloide';
 export type Orient = 'portrait' | 'landscape';
 export type Mode = 'move' | 'crop' | 'erase' | 'wand';
 export type BrushMode = 'erase' | 'restore';
@@ -150,6 +150,8 @@ export interface Settings {
    * pueden ir a medias (lo que sobra se recorta).
    */
   size: Size | null;
+  /** Color de fondo del póster (#rrggbb); null = el blanco del papel (no se imprime nada). */
+  bg: string | null;
   /** Margen sin imprimir, en mm. */
   margin: number;
   /** Solape para pegar, en mm. */
@@ -204,7 +206,7 @@ export interface LayerProps extends Transform {
 }
 
 /** Ajustes que definen la geometría del póster (se guardan en el historial). */
-export type LayoutSettings = Pick<Settings, 'paper' | 'orient' | 'cols' | 'rows' | 'size' | 'margin' | 'overlap'>;
+export type LayoutSettings = Pick<Settings, 'paper' | 'orient' | 'cols' | 'rows' | 'size' | 'bg' | 'margin' | 'overlap'>;
 
 export interface Snapshot {
   layers: Layer[];

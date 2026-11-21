@@ -52,6 +52,7 @@ function renderRegion(x0: number, y0: number, wmm: number, hmm: number, dpi: num
   x.setTransform(s, 0, 0, s, -x0 * s, -y0 * s);
   // solo lo que cae dentro del póster: con medida, las hojas del borde sobresalen y lo de fuera no se imprime
   x.beginPath(); x.rect(0, 0, g.W, g.H); x.clip();
+  if (S.bg) { x.fillStyle = S.bg; x.fillRect(0, 0, g.W, g.H); } // fondo del póster, solo dentro de él
   drawAll(x, (l) => hi?.get(l.img) ?? l.img);
   return c;
 }

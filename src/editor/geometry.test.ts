@@ -721,3 +721,15 @@ describe('persona de referencia', () => {
     expect(contentBox({ W: 1000, H: 2400, m: 6 }, true).y0).toBe(-6);
   });
 });
+
+describe('papeles Legal y Tabloide', () => {
+  it('Legal y Tabloide tienen su medida (y en horizontal se giran)', () => {
+    const l = geo(settings({ paper: 'Legal', cols: 1, rows: 1 }));
+    expect([l.pw, l.ph]).toEqual([215.9, 355.6]);
+    const t = geo(settings({ paper: 'Tabloide', orient: 'landscape', cols: 1, rows: 1 }));
+    expect([t.pw, t.ph]).toEqual([431.8, 279.4]);
+  });
+  it('100 × 70 cm en Tabloide horizontal usa menos hojas que en A4', () => {
+    expect(sheetCount(settings({ paper: 'Tabloide' }), { w: 1000, h: 700 }, 'landscape').n).toBeLessThan(16);
+  });
+});
