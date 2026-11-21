@@ -1,6 +1,5 @@
 /** Vista del lienzo: conversión pantalla ↔ mm, zoom, encuadre y tamaño. */
 import { clamp, contentBox } from './geometry';
-import { dockMQ } from './platform';
 import { posterGeo, sheetsVisible, st, V, view } from './state';
 import { dirty } from './render';
 import type { Pt } from './types';

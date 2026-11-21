@@ -382,7 +382,7 @@ export function render() {
     if (!isTouch() && ly > view.ins.t + 12 && ctx.measureText(txt).width <= paperW + 40) { ctx.fillStyle = C.muted!; ctx.fillText(txt, pt.x, ly); }
     // sobre la franja: qué es
     if (st.hoverBand && st.hover) {
-      const t = `Margen sin imprimir · ${Math.round(g.m)} mm · se recorta`;
+      const t = st.hoverBand === 'trim' ? 'Papel de más · se recorta por las marcas' : `Margen sin imprimir · ${Math.round(g.m)} mm · se recorta`;
       ctx.font = '500 11px "IBM Plex Mono", ui-monospace, monospace';
       const w = ctx.measureText(t).width + 14, x = Math.min(st.hover.x + 14, view.CW - w - 6), yy = st.hover.y + 20;
       ctx.fillStyle = C.panel!; ctx.beginPath(); ctx.roundRect(x, yy, w, 22, 6); ctx.fill();

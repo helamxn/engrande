@@ -24,7 +24,7 @@ export const layoutOf = (s: LayoutSettings): LayoutSettings => ({
 export function readLayout(raw: unknown): LayoutSettings {
   const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>, d = DEFAULT_LAYOUT;
   const int = (v: unknown, lo: number, hi: number, def: number) => (Number.isInteger(v) && (v as number) >= lo && (v as number) <= hi ? v as number : def);
-  const paper = typeof r.paper === 'string' && r.paper in PAPERS ? r.paper as LayoutSettings['paper'] : d.paper;
+  const paper = typeof r.paper === 'string' && Object.hasOwn(PAPERS, r.paper) ? r.paper as LayoutSettings['paper'] : d.paper;
   const orient = r.orient === 'landscape' ? 'landscape' : 'portrait';
   const out: LayoutSettings = {
     paper, orient,
@@ -70,8 +70,8 @@ export const st = {
   measure: null as { gaps: Gap[]; dashes: Dash[]; target: Box } | null,
   /** Alt pulsado (para medir al pasar el ratón). */
   altDown: false,
-  /** El ratón está sobre el margen sin imprimir (la franja alrededor del póster): se explica qué es. */
-  hoverBand: false,
+  /** El ratón está sobre el papel fuera del póster: el margen sin imprimir o, con medida, el papel de más. Se explica qué es. */
+  hoverBand: null as 'margin' | 'trim' | null,
   /** Persona de 1,70 m junto al póster, para ver su tamaño real (ver scaleref.ts). */
   scaleRef: false,
   /** Se está ajustando el margen o el solape: se dibuja el papel entero de cada hoja. */

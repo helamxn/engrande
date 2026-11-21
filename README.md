@@ -6,12 +6,12 @@ Todo ocurre en el navegador: no hay servidor, cuentas ni base de datos, y las im
 
 ## Qué se puede hacer
 
-- Póster de varias hojas A4, A3 o Carta, con margen de impresora y solape ajustables.
+- Póster por medidas (ancho × alto en cm, tamaños habituales o «Como la imagen») o por número de hojas A4, A3 o Carta, con margen de impresora y solape ajustables. Sugiere la orientación que usa menos hojas y avisa cuando la última columna o fila apenas se aprovecha.
 - Varias imágenes o páginas de PDF que se colocan, recortan, agrupan y retocan (quitar el fondo, borrador, varita).
 - Textos para títulos en grande o moldes: se escriben sobre el lienzo, con 20 familias y 55 variantes de Google Fonts, o una fuente del equipo del usuario, que no se guarda. Incluye búsqueda, vista previa y selección de estilo.
 - Tamaño de letra en puntos, altura de referencia en cm, color hexadecimal editable y botón para restablecerlo.
 - Ayudas de precisión: imán, rejilla de 1 mm y medidas.
-- Descarga en PDF por hojas, con marcas de corte y guía de armado, o en una sola hoja grande para imprenta.
+- Descarga en PDF por hojas, con marcas de corte y guía de armado, o en una sola hoja grande para imprenta. Las hojas que no llevan nada no se imprimen (se puede desactivar).
 - Funciona con ratón, teclado, pantalla táctil y móvil. La tecla `?` muestra todos los atajos y gestos.
 
 ## Stack
@@ -40,7 +40,7 @@ La CSP solo se aplica en el build: pruébala con `pnpm build && pnpm preview`, n
 ## Pruebas
 
 - **Unitarias** (`src/editor/*.test.ts`): la lógica pura, como la geometría, los grupos, el historial y los píxeles.
-- **De punta a punta** (`e2e/`): la app compilada, en el Edge instalado en el equipo (`PW_CHANNEL=chrome` para Chrome). Cubren el guardado, los gestos del lienzo, la edición, el PDF de entrada, la pantalla táctil y el móvil.
+- **De punta a punta** (`e2e/`): la app compilada, en el Edge instalado en el equipo (`PW_CHANNEL=chrome` para Chrome, o `PW_EXECUTABLE=/ruta/a/chromium` para un navegador ya instalado, como en CI o un contenedor). Cubren el guardado, los gestos del lienzo, la edición, las medidas y las hojas en blanco, el PDF de entrada, la pantalla táctil y el móvil.
 
 ## Estructura
 
@@ -51,7 +51,8 @@ src/
   editor/
     main.ts                       arranque: conecta módulos y eventos
     state.ts                      estado compartido
-    geometry.ts                   geometría pura del póster y las imágenes
+    geometry.ts                   geometría pura del póster, sus hojas y las imágenes
+    blank.ts, sheets.ts           hojas en blanco: lógica pura y qué se imprime
     input/                        ratón, táctil y teclado
     io/                           carga de archivos, PDF, guardado y exportación
     text/                         textos: fuentes, contornos, escritura sobre el lienzo y su panel
@@ -71,11 +72,15 @@ vercel.json                       cabeceras de seguridad y caché
 - **Tipografías:** el catálogo inicial de Google Fonts está en `src/editor/text/catalog.ts`, con archivos WOFF de Fontsource servidos desde el mismo dominio. Cada variante se descarga al elegirla, sin llamadas del navegador a Google. Sus licencias están en `public/fonts/licenses/`. Añadir otro proveedor no requiere cambiar el formato de los textos guardados.
 - **Medidas del texto:** el tamaño en puntos mide el cuerpo tipográfico (1 pt = 25,4/72 mm). La altura de una H es una referencia aproximada de impresión; el marco puede incluir el espacio del renglón. Cambiar de familia conserva los puntos.
 - **Color del texto:** acepta códigos hexadecimales de tres o seis dígitos, con o sin `#`. Al arrastrar el selector se reutiliza una vista previa a resolución de pantalla; al confirmar se regenera el texto y se guarda un solo paso de deshacer. El color predeterminado es `#111111`.
-- **Hojas:** se numeran 1, 2, 3… en el mismo orden que las páginas del PDF.
+- **Tamaño:** sin medida, el póster mide lo que cubren sus columnas y filas. Con medida (`size` en los ajustes), cambiar el papel, el margen o el solape la conserva y recalcula las hojas (`geo()` y `tiles()` en `geometry.ts`); la última columna y fila pueden ir a medias, y lo que sobra se recorta por sus marcas de corte. Hasta 12 × 12 hojas.
+- **Hojas en blanco** (`blank.ts` y `sheets.ts`): primero por geometría (ninguna imagen visible toca la hoja), al instante; después por píxeles (lo que la toca es todo blanco o transparente), a baja resolución con el póster quieto. Al exportar se confirma a la resolución del PDF y, ante la duda, la hoja se imprime. Un píxel cuenta como blanco con sus tres canales ≥ 248.
+- **Hojas:** se numeran 1, 2, 3… en el mismo orden que las páginas del PDF; las que no se imprimen no cuentan, y el mapa de la guía las muestra rayadas. El nombre de cada hoja y la regla van en franjas de solape que tapará una vecina impresa.
+- **Lo guardado se valida al leerlo:** una distribución, una resolución o una opción fuera de lo que admite el panel vuelve a su valor de siempre (`readLayout` en `state.ts`).
 - **Color:** todo se trabaja en sRGB. Los PDF en CMYK se convierten con perfil, y el PDF descargado va en RGB sin perfil ICC.
 
 ## Seguridad
 
+- **Astro ≥ 7.4.7**: corrige GHSA-r3h5-4585-7x3w (no afecta a un sitio estático, pero `pnpm audit` queda limpio). Ojo: con Astro 7.4.13 las dependencias se resuelven con dos versiones incompatibles de `@emnapi/runtime` y `astro check` falla.
 - **pdf.js ≥ 4.2.67**: corrige CVE-2024-4367, la ejecución de código mediante un PDF malicioso. **jsPDF ≥ 3.0.2**: corrige CVE-2025-29907 y CVE-2025-57810.
 - **Sin CDN:** todas las dependencias, fuentes y recursos de pdf.js se sirven desde el propio dominio.
 - **Content-Security-Policy por `<meta>`**, generada por Astro con hashes (`security.csp` en `astro.config.mjs`): solo se permiten scripts y estilos propios, sin `object`, `base` ni formularios.

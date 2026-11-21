@@ -128,6 +128,8 @@ export function startEditor() {
       clearHistory();
       syncExportUI();
       layoutRestored();
+      // lo que se encuadra cambió aunque el tamaño sea el de siempre: ahora se ven las hojas (y la persona, si estaba)
+      if (V.fitted) fitView();
       select(null);
       renderList();
       if (restored.failed.length) toast(`No se pudo recuperar: ${restored.failed.join(', ')}.`, 8000);

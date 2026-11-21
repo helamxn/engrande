@@ -72,11 +72,16 @@ export const setSpaceDown = (v: boolean) => { spaceDown = v; };
 export const isGesturing = () => !!gest || !!(drag && !['none', 'tap', 'pan'].includes(drag.t));
 
 /** El punto (mm) cae en el margen sin imprimir: fuera del póster pero dentro del papel de las hojas de fuera. */
-function inBand(m: Pt) {
+/**
+ * Qué hay bajo el punto fuera del póster pero sobre el papel: el margen sin imprimir de las hojas de fuera o, con
+ * medida, el papel de más de la última columna o fila (se recorta). null fuera del papel o dentro del póster.
+ */
+function inBand(m: Pt): 'margin' | 'trim' | null {
   const g = posterGeo();
-  if (!sheetsVisible() || g.m <= 0) return false;
+  if (!sheetsVisible()) return null;
   const out = m.x < 0 || m.y < 0 || m.x > g.W || m.y > g.H;
-  return out && m.x >= -g.m && m.y >= -g.m && m.x <= g.W + g.m && m.y <= g.H + g.m;
+  if (!out || m.x < -g.m || m.y < -g.m || m.x > g.GW + g.m || m.y > g.GH + g.m) return null;
+  return m.x >= 0 && m.y >= 0 && m.x <= g.GW && m.y <= g.GH ? 'trim' : g.m > 0 ? 'margin' : null;
 }
 /** Se puede tocar en el lienzo: ni oculta ni bloqueada. */
 const touchable = (l: Layer) => !l.hidden && !l.locked;
@@ -273,7 +278,7 @@ export function initPointer(cv: HTMLCanvasElement) {
     cv.setPointerCapture(e.pointerId);
     const p = pos(e);
     ptrs.set(e.pointerId, p);
-    if (st.hoverBand) { st.hoverBand = false; dirty(); } // al pulsar, el aviso del margen estorba
+    if (st.hoverBand) { st.hoverBand = null; dirty(); } // al pulsar, el aviso del margen estorba
     if (e.pointerType === 'mouse') st.hover = p;
     const R = e.pointerType === 'mouse' ? 11 : 22;
     clearLP();
@@ -403,7 +408,7 @@ export function initPointer(cv: HTMLCanvasElement) {
           st.hoverL = h ? null : hitLayer(p, false);
           setCursor(h && sel ? handleCursor(sel, h.id) : st.hoverL ? (e.altKey ? 'copy' : 'move') : 'default');
           // sobre el margen sin imprimir (la franja alrededor del póster), sin imagen encima: se explica qué es
-          const band = !h && !st.hoverL && inBand(s2mm(p));
+          const band = !h && !st.hoverL ? inBand(s2mm(p)) : null;
           if (band !== st.hoverBand) { st.hoverBand = band; dirty(); }
           else if (band) dirty(); // el aviso sigue al ratón
         } else if (S.mode === 'crop' && sel) {
@@ -644,7 +649,7 @@ export function initPointer(cv: HTMLCanvasElement) {
   cv.addEventListener('pointerleave', (e) => {
     if (e.pointerType !== 'mouse' || ptrs.size) return;
     const had = !!st.hoverL || S.mode === 'erase' || st.hoverBand;
-    st.hover = null; st.hoverL = null; st.hoverBand = false;
+    st.hover = null; st.hoverL = null; st.hoverBand = null;
     if (had) dirty();
   });
 

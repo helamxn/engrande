@@ -28,7 +28,8 @@ export default defineConfig({
     trace: 'retain-on-failure',
   },
   webServer: {
-    command: `node node_modules/astro/bin/astro.mjs preview --port ${PORT}`,
+    // --ignore-lock: arranca aunque haya otro `astro preview` abierto (Astro guarda un bloqueo y si no, sale enseguida)
+    command: `node node_modules/astro/bin/astro.mjs preview --port ${PORT} --ignore-lock`,
     url: `http://localhost:${PORT}`,
     reuseExistingServer: false,
     timeout: 60_000,
