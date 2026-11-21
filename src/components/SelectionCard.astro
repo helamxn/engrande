@@ -125,6 +125,8 @@ const field = 'flex flex-col gap-2';
         <button type="button" class="btn" id="fitContain" title="Ajustar: la imagen entera cabe en el póster"><Icon name="fitContain" />Ajustar</button>
         <button type="button" class="btn" id="fitCover" title="Llenar: cubre todo el póster (lo que sobra queda fuera)"><Icon name="fitCover" />Llenar</button>
         <button type="button" class="btn" id="center" title="Centrar en el póster"><Icon name="center" />Centrar</button>
+        <!-- solo PDF y SVG que dicen cuánto miden: moldes, planos, plantillas -->
+        <button type="button" class="btn" id="realSize" hidden><Icon name="ruler" />Tamaño real</button>
       </div>
     </div>
     <div class:list={[field, 'needs-sel', 'edit-sel']}>

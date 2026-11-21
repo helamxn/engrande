@@ -8,6 +8,7 @@ Todo ocurre en el navegador: no hay servidor, cuentas ni base de datos, y las im
 
 - Póster por medidas (ancho × alto en cm, tamaños habituales o «Como la imagen») o por número de hojas A4, A3 o Carta, con margen de impresora y solape ajustables. Sugiere la orientación que usa menos hojas y avisa cuando la última columna o fila apenas se aprovecha.
 - Varias imágenes o páginas de PDF que se colocan, recortan, agrupan y retocan (quitar el fondo, borrador, varita).
+- Tamaño real (escala 1:1) para PDF y SVG con medidas: moldes de costura, planos y plantillas. Al cargarlos se ofrece imprimirlos a su medida, con el póster y las hojas calculados solos.
 - Ajustes de color por imagen: brillo, contraste, saturación y blanco y negro (para ahorrar tinta), sin tocar el archivo original; se ven igual en pantalla y en el PDF.
 - Textos para títulos en grande o moldes: se escriben sobre el lienzo, con 20 familias y 55 variantes de Google Fonts, o una fuente del equipo del usuario, que no se guarda. Incluye búsqueda, vista previa y selección de estilo.
 - Tamaño de letra en puntos, altura de referencia en cm, color hexadecimal editable y botón para restablecerlo.
@@ -79,6 +80,7 @@ vercel.json                       cabeceras de seguridad y caché
 - **Hojas:** se numeran 1, 2, 3… en el mismo orden que las páginas del PDF; las que no se imprimen no cuentan, y el mapa de la guía las muestra rayadas. El nombre de cada hoja y la regla van en franjas de solape que tapará una vecina impresa.
 - **Archivo de proyecto** (`io/projectfile.ts`): «ENGRANDE», versión, longitud de la cabecera, cabecera JSON (el mismo proyecto que se guarda en IndexedDB y la lista de archivos) y los archivos tal cual, sin base64 ni ZIP. Al abrirlo se comprueban tamaños, claves y tipos, y cada valor del proyecto se valida como lo guardado en el navegador; abrirlo sustituye al póster y se puede deshacer.
 - **Lo guardado se valida al leerlo:** una distribución, una resolución o una opción fuera de lo que admite el panel vuelve a su valor de siempre (`readLayout` en `state.ts`).
+- **Tamaño real** (`realsize.ts`): de un PDF, la página en puntos (1/72 de pulgada) con su giro y su UserUnit; de un SVG, el ancho y el alto de la etiqueta raíz solo en mm, cm, in, pt o pc (en px o sin unidad no se adivina: Illustrator cuenta 72 por pulgada y el navegador 96). Las fotos no tienen tamaño real: sus ppp casi nunca son de fiar. Si la imagen es la única, el póster toma su medida (redondeada hacia arriba al mm) y la imagen va a su esquina, en un solo paso de deshacer.
 - **Ajustes de color** (`adjustData` en `pixels.ts`): la fórmula de brightness(), contrast() y saturate() de CSS, aplicada a los píxeles (no con `ctx.filter`, que no está en todos los navegadores), sobre la versión que se dibuja: copia de pantalla, lienzo de trabajo o alta resolución al exportar. Las versiones ajustadas se guardan en caché por lienzo y revisión.
 - **Color:** todo se trabaja en sRGB. Los PDF en CMYK se convierten con perfil, y el PDF descargado va en RGB sin perfil ICC.
 

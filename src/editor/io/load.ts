@@ -11,6 +11,7 @@ import { isFontFile } from '../text/fonts';
 import { loadFonts } from '../text/textpanel';
 import { isProjectName } from './projectfile';
 import { openProjectFile } from './projectio';
+import { offerRealSize } from '../ui/panel';
 
 /**
  * Se espera al evento load y no a img.decode(): decode() no se resuelve mientras la pestaña está en segundo plano.
@@ -78,7 +79,7 @@ export async function loadFiles(list: Iterable<File | null> | ArrayLike<File | n
   if (!files.length) return;
   if (S.mode === 'crop') applyCrop();
   toast(files.length > 1 ? `Cargando ${files.length} archivos…` : 'Cargando…', 0);
-  let added = 0;
+  let added = 0, last: Layer | null = null;
   const failed: string[] = [];
   for (const f of files) {
     try {
@@ -86,7 +87,7 @@ export async function loadFiles(list: Iterable<File | null> | ArrayLike<File | n
       if (!l) continue;
       snap();
       addLayer(l, st.layers.length === 0 ? {} : { factor: 0.5, offset: added * 12 });
-      added++;
+      added++; last = l;
     } catch (err) {
       console.error(err);
       failed.push(err instanceof LoadError ? err.message : `No se pudo abrir «${f.name || 'el archivo'}». Prueba con JPG, PNG o PDF.`);
@@ -94,7 +95,11 @@ export async function loadFiles(list: Iterable<File | null> | ArrayLike<File | n
   }
   // los errores se muestran al final para que una carga correcta posterior no los tape
   if (failed.length) toast(failed.length === 1 ? failed[0]! : `${failed.length} archivos no se pudieron abrir. ${failed[0]}`, 6000);
-  else if (added) hideToast();
+  else if (added) {
+    hideToast();
+    // un molde o un plano en PDF o SVG: se ofrece imprimirlo a su medida
+    if (added === 1 && last && (last.src?.kind === 'pdf' || last.src?.kind === 'svg')) offerRealSize(last);
+  }
 }
 
 export function initLoad() {

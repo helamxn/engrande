@@ -13,6 +13,7 @@ import {
   rotateLayer, scaleLayer, sheetCount, sizeSlack, visH, visW,
 } from '../geometry';
 import { onBlankChange, sheetPlan } from '../sheets';
+import { knownRealSize, learnRealSize, realSize } from '../realsize';
 import { snap } from '../history';
 import { deskMQ, HI_AREA, isTouch } from '../platform';
 import { rich } from './keys';
@@ -224,6 +225,53 @@ function fitSizeToMax() {
   S.size = { w: clampSize(S.size.w, max.w), h: clampSize(S.size.h, max.h) };
   toast(`El póster se redujo a ${cm(S.size.w)} × ${cm(S.size.h)} cm: con ${paperName()} no caben más de ${MAX_COLS_ROWS} × ${MAX_COLS_ROWS} hojas.`, 7000);
 }
+/* ---------- tamaño real (1:1) ---------- */
+/**
+ * Pone la imagen a su tamaño real (página del PDF o SVG al 100 %). Si es la única del póster, el póster toma su medida
+ * y la imagen va a su esquina: las hojas salen solas, como para un molde o un plano. Un solo paso de deshacer.
+ */
+export async function printAtRealSize(l: Layer) {
+  const real = await realSize(l);
+  if (!real) { toast('Esta imagen no dice cuánto mide: solo los PDF y los SVG con medidas en mm, cm o pulgadas.', 6000); return; }
+  if (l.locked) { toast('La imagen está bloqueada. Desbloquéala para cambiar su tamaño.', 5000); return; }
+  if (!st.layers.includes(l)) return;
+  snap();
+  const apply = () => keepCenter(l, (x) => { x.w = real.w; x.h = real.h; });
+  apply(); markManual(l);
+  const b0 = bboxMM(l), bw = b0.x1 - b0.x0, bh = b0.y1 - b0.y0, max = sizeMax();
+  const alone = st.layers.filter((x) => !x.hidden).length === 1;
+  let msg = `Al 100 %: ${cm(visW(l))} × ${cm(visH(l))} cm.`;
+  if (alone && bw <= max.w && bh <= max.h) {
+    // el póster a su medida (hacia arriba, para no recortar ni una décima) y luego la imagen, que el reajuste del
+    // póster habría escalado con el diseño
+    S.size = { w: Math.max(MIN_SIZE, Math.ceil(bw - 0.01)), h: Math.max(MIN_SIZE, Math.ceil(bh - 0.01)) };
+    st.sheetsOn = true;
+    layoutChanged();
+    apply(); markManual(l);
+    const b = bboxMM(l);
+    l.cx -= b.x0; l.cy -= b.y0;
+    const g = posterGeo();
+    msg += ` El póster se ajustó a su medida: ${g.cols} × ${g.rows} hojas ${S.paper}.`;
+  } else if (alone) {
+    msg += ` No cabe en ${MAX_COLS_ROWS} × ${MAX_COLS_ROWS} hojas ${S.paper}: elige A3 o reparte el molde en varios pósters.`;
+  }
+  afterChange(); syncLayoutUI();
+  toast(msg + ' Imprime a escala 100 % y comprueba la regla de 10 cm.', 9000);
+}
+/** Tras cargar un PDF o un SVG que dice cuánto mide: se ofrece imprimirlo a tamaño real. */
+export function offerRealSize(l: Layer) {
+  void realSize(l).then((real) => {
+    if (!real || !st.layers.includes(l)) return;
+    toast(`«${l.name}» mide ${cm(real.w)} × ${cm(real.h)} cm.`, 10000, { label: 'Usar tamaño real', fn: () => void printAtRealSize(l) });
+  });
+}
+function syncRealSize(sel: Layer) {
+  const b = $<HTMLButtonElement>('#realSize'), k = knownRealSize(sel);
+  b.hidden = !k;
+  if (k) b.title = `Tamaño real: ${cm(k.w)} × ${cm(k.h)} cm, como se imprimiría al 100 %`;
+  if (k === undefined) learnRealSize(sel, () => { if (st.sel === sel) syncRealSize(sel); });
+}
+
 /** Imagen de referencia para «Como la imagen»: la seleccionada o, si no, la primera visible. */
 const refLayer = () => (st.sel && !st.sel.hidden ? st.sel : st.layers.find((l) => !l.hidden) ?? null);
 
@@ -361,6 +409,7 @@ export function syncSel() {
     const op = Math.round(sel.opacity * 100);
     setField('#pOpacity', op); $('#pOpacityOut').textContent = `${op} %`;
     syncAdjustUI(sel);
+    syncRealSize(sel);
     const b = bboxMM(sel);
     setField('#pW', fmt1(visW(sel) / 10)); setField('#pH', fmt1(visH(sel) / 10));
     setField('#pX', fmt1(b.x0 / 10)); setField('#pY', fmt1(b.y0 / 10)); setField('#pR', Math.round(sel.rot));
@@ -889,6 +938,7 @@ export function initPanel() {
   $('#fitContain').addEventListener('click', fitSel('contain'));
   $('#fitCover').addEventListener('click', fitSel('cover'));
   $('#center').addEventListener('click', centerSel);
+  $('#realSize').addEventListener('click', () => { if (st.sel) void printAtRealSize(st.sel); });
   $<HTMLInputElement>('#pdfPage').addEventListener('change', async (e) => {
     const l = st.sel, input = e.target as HTMLInputElement;
     if (!l?.pdf) return;
