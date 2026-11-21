@@ -7,7 +7,7 @@ Todo ocurre en el navegador: no hay servidor, cuentas ni base de datos, y las im
 ## Qué se puede hacer
 
 - Póster por medidas (ancho × alto en cm, tamaños habituales o «Como la imagen») o por número de hojas A4, A3 o Carta, con margen de impresora y solape ajustables. Sugiere la orientación que usa menos hojas y avisa cuando la última columna o fila apenas se aprovecha.
-- Varias imágenes o páginas de PDF que se colocan, recortan, agrupan y retocan (quitar el fondo, borrador, varita).
+- Varias imágenes o páginas de PDF que se colocan, recortan, agrupan y retocan (quitar el fondo, borrador con dureza ajustable, varita).
 - Tamaño real (escala 1:1) para PDF y SVG con medidas: moldes de costura, planos y plantillas. Al cargarlos se ofrece imprimirlos a su medida, con el póster y las hojas calculados solos.
 - Ajustes de color por imagen: brillo, contraste, saturación y blanco y negro (para ahorrar tinta), sin tocar el archivo original; se ven igual en pantalla y en el PDF.
 - Textos para títulos en grande o moldes: se escriben sobre el lienzo, con 20 familias y 55 variantes de Google Fonts, o una fuente del equipo del usuario, que no se guarda. Incluye búsqueda, vista previa y selección de estilo.

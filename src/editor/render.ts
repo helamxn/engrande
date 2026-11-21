@@ -493,6 +493,11 @@ export function render() {
     const h = st.hover;
     ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(0,0,0,.55)'; ctx.beginPath(); ctx.arc(h.x, h.y, S.brush, 0, Math.PI * 2); ctx.stroke();
     ctx.lineWidth = 1; ctx.strokeStyle = '#fff'; ctx.beginPath(); ctx.arc(h.x, h.y, S.brush, 0, Math.PI * 2); ctx.stroke();
+    // pincel suave: el núcleo, donde borra del todo (fuera de él se desvanece)
+    if (S.hard < 100 && S.brush * S.hard / 100 >= 2) {
+      ctx.setLineDash([3, 3]); ctx.strokeStyle = 'rgba(255,255,255,.85)';
+      ctx.beginPath(); ctx.arc(h.x, h.y, S.brush * S.hard / 100, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+    }
   }
   positionBar();
   positionTextEditor();

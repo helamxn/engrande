@@ -162,6 +162,8 @@ export interface Settings {
   mode: Mode;
   /** Radio del pincel en px de pantalla. */
   brush: number;
+  /** Dureza del pincel, 0..100 (%): 100 = borde nítido; menos, borde que se desvanece (fotos, pelo, sombras). */
+  hard: number;
   brushMode: BrushMode;
   tol: number;
   contig: boolean;

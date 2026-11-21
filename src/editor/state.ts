@@ -44,7 +44,7 @@ export const clampSize = (v: number, max: number) => Math.round(Math.min(Math.ma
 
 export const S: Settings = {
   ...freshLayout(), ...DEFAULT_EXPORT,
-  mode: 'move', brush: 24, brushMode: 'erase', tol: 40, contig: true, cropRatio: null, cropRatioKey: 'null', lock: true,
+  mode: 'move', brush: 24, hard: 100, brushMode: 'erase', tol: 40, contig: true, cropRatio: null, cropRatioKey: 'null', lock: true,
 };
 
 export const st = {

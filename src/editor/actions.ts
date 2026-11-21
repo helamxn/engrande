@@ -569,15 +569,36 @@ export function beginPixelEdit(l: Layer) { snap(); l.img = cloneCanvas(l.img); }
 export function paint(l: Layer, a: Pt, b: Pt) {
   const r = S.brush / (V.k * Math.sqrt((l.w / l.img.width) * (l.h / l.img.height)));
   const pa = mmToPx(l, s2mm(a)), pb = mmToPx(l, s2mm(b)), c = l.img.getContext('2d')!;
-  if (S.brushMode === 'erase') {
+  if (S.brushMode === 'erase' && S.hard >= 100) {
     c.save(); c.globalCompositeOperation = 'destination-out'; c.lineCap = 'round'; c.lineWidth = 2 * r; c.strokeStyle = '#000'; c.fillStyle = '#000';
     c.beginPath(); c.moveTo(pa.x, pa.y); c.lineTo(pb.x, pb.y); c.stroke();
     c.beginPath(); c.arc(pb.x, pb.y, r, 0, Math.PI * 2); c.fill(); c.restore();
+  } else if (S.brushMode === 'erase') {
+    c.save(); c.globalCompositeOperation = 'destination-out';
+    softStamps(c, pa, pb, r, 0, 0);
+    c.restore();
   } else {
     restoreStroke(l, c, pa, pb, r);
   }
   markCanvasChanged(l.img);
   dirty();
+}
+
+/**
+ * Pincel suave: sellos de degradado radial a lo largo del trazo, opacos hasta el núcleo (dureza × radio) y
+ * desvaneciéndose hasta el borde. Juntos a un tercio del radio para que el trazo salga continuo; repasar insiste, como
+ * en los editores de fotos. (ox, oy): desplazamiento del lienzo de destino (la máscara de «Restaurar» es un recorte).
+ */
+function softStamps(c: CanvasRenderingContext2D, pa: Pt, pb: Pt, r: number, ox: number, oy: number) {
+  const core = Math.min(0.98, S.hard / 100) * r, d = Math.hypot(pb.x - pa.x, pb.y - pa.y);
+  const n = Math.max(1, Math.ceil(d / Math.max(0.5, r / 3)));
+  for (let i = d ? 1 : 0; i <= n; i++) {
+    const x = pa.x + ((pb.x - pa.x) * i) / n - ox, y = pa.y + ((pb.y - pa.y) * i) / n - oy;
+    const g = c.createRadialGradient(x, y, core, x, y, r);
+    g.addColorStop(0, 'rgba(0,0,0,1)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+    c.fillStyle = g;
+    c.beginPath(); c.arc(x, y, r, 0, Math.PI * 2); c.fill();
+  }
 }
 
 /** Lienzos auxiliares reutilizados por «Restaurar» (crecen según haga falta). */
@@ -608,14 +629,16 @@ function restoreStroke(l: Layer, c: CanvasRenderingContext2D, pa: Pt, pb: Pt, r:
   const m = maskCanvas.getContext('2d')!;
   m.globalCompositeOperation = 'source-over';
   m.clearRect(0, 0, bw, bh);
-  m.fillStyle = '#000';
-  m.beginPath();
-  const d = Math.hypot(pb.x - pa.x, pb.y - pa.y), n = Math.max(1, Math.ceil(d / (r * 0.4)));
-  for (let i = 0; i <= n; i++) {
-    const x = pa.x + ((pb.x - pa.x) * i) / n - x0, y = pa.y + ((pb.y - pa.y) * i) / n - y0;
-    m.moveTo(x + r, y); m.arc(x, y, r, 0, Math.PI * 2);
-  }
-  m.fill();
+  if (S.hard >= 100) {
+    m.fillStyle = '#000';
+    m.beginPath();
+    const d = Math.hypot(pb.x - pa.x, pb.y - pa.y), n = Math.max(1, Math.ceil(d / (r * 0.4)));
+    for (let i = 0; i <= n; i++) {
+      const x = pa.x + ((pb.x - pa.x) * i) / n - x0, y = pa.y + ((pb.y - pa.y) * i) / n - y0;
+      m.moveTo(x + r, y); m.arc(x, y, r, 0, Math.PI * 2);
+    }
+    m.fill();
+  } else softStamps(m, pa, pb, r, x0, y0);
   // original × cobertura
   origCanvas = scratchCanvas(origCanvas, bw, bh);
   const o = origCanvas.getContext('2d')!;

@@ -14,6 +14,7 @@ import { $ } from '../dom';
 import { DELK, deskMQ, dockMQ, isTouch, MOD, SHIFT } from '../platform';
 import { dirty } from '../render';
 import { S, st, view } from '../state';
+import { getPref, setPref } from '../prefs';
 import { ICON, type IconName } from './icons';
 import { addMenu, groupMenu, layerMenu, openMenu, ratioMenu } from './menu';
 import { updateHint } from './panel';
@@ -75,6 +76,7 @@ function dockBar(): string {
       return `<button type="button" class="tb" data-act="bm" data-m="erase" aria-pressed="${S.brushMode === 'erase'}">${ICON.erase}<span>Borrar</span></button>`
         + `<button type="button" class="tb" data-act="bm" data-m="restore" aria-pressed="${S.brushMode === 'restore'}">${ICON.restore}<span>Restaurar</span></button>`
         + `${SEP}<label class="mini"><input type="range" id="bBrush" aria-label="Tamaño del pincel" min="4" max="90" value="${S.brush}"><output id="bBrushOut">${S.brush} px</output></label>`
+        + `<label class="mini"><input type="range" id="bHard" aria-label="Dureza del pincel" min="0" max="100" step="5" value="${S.hard}"><output id="bHardOut">${S.hard} %</output></label>`
         + SEP + tb('check', 'Listo', 'done', 'Listo', 'primary');
     case 'wand':
       return `<label class="mini"><input type="range" id="bTol" aria-label="Tolerancia" min="5" max="140" value="${S.tol}"><output id="bTolOut">${S.tol}</output></label>`
@@ -104,6 +106,7 @@ function deskBar(): string {
       return `<button type="button" class="tb" data-act="bm" data-m="erase" aria-pressed="${S.brushMode === 'erase'}">${ICON.erase}<span>Borrar</span></button>`
         + `<button type="button" class="tb" data-act="bm" data-m="restore" aria-pressed="${S.brushMode === 'restore'}">${ICON.restore}<span>Restaurar</span></button>`
         + `${SEP}<label class="mini">Pincel <input type="range" id="bBrush" min="4" max="90" value="${S.brush}"><output id="bBrushOut">${S.brush} px</output></label>`
+        + `<label class="mini">Dureza <input type="range" id="bHard" min="0" max="100" step="5" value="${S.hard}"><output id="bHardOut">${S.hard} %</output></label>`
         + SEP + tb('check', 'Listo', 'done', 'Listo (Esc)', 'primary');
     case 'wand':
       return `<label class="mini">Tolerancia <input type="range" id="bTol" min="5" max="140" value="${S.tol}"><output id="bTolOut">${S.tol}</output></label>`
@@ -122,6 +125,13 @@ export function renderBar() {
   bar.querySelector<HTMLInputElement>('#bBrush')?.addEventListener('input', (e) => {
     S.brush = +(e.target as HTMLInputElement).value;
     $('#bBrushOut').textContent = S.brush + ' px';
+    st.hover = { x: view.CW / 2, y: view.CH / 2 };
+    dirty();
+  });
+  bar.querySelector<HTMLInputElement>('#bHard')?.addEventListener('input', (e) => {
+    S.hard = +(e.target as HTMLInputElement).value;
+    $('#bHardOut').textContent = S.hard + ' %';
+    setPref('hard', String(S.hard));
     st.hover = { x: view.CW / 2, y: view.CH / 2 };
     dirty();
   });
@@ -164,6 +174,9 @@ export function fitBar() {
 const EDGE = 12;
 
 export function initContextBar() {
+  // la dureza del pincel se recuerda en este navegador (como el margen de la impresora)
+  const h = Number(getPref('hard'));
+  if (getPref('hard') !== null && Number.isInteger(h) && h >= 0 && h <= 100) S.hard = h;
   bar = $('#ctxbar');
   bar.addEventListener('pointerdown', (e) => e.stopPropagation());
   bar.addEventListener('contextmenu', (e) => e.preventDefault());
