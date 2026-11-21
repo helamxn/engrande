@@ -442,6 +442,8 @@
       & svg { @apply size-4 flex-none; }
     }
     & input[type="range"] { @apply h-6 w-[104px]; }
+    /* la dureza: pocas posiciones (de 5 en 5), basta un deslizador corto */
+    & #bHard { @apply w-[64px]; }
     & input[type="checkbox"] { @apply size-4; accent-color: var(--accent); }
     /* táctil o estrecha: deslizadores más cortos y, en un teléfono muy estrecho, la Varita va a «Más» */
     &.dock {
