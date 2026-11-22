@@ -5,12 +5,12 @@
 import { afterChange } from '../actions';
 import { $, $$, toast } from '../dom';
 import { fmt1, parseNum } from '../format';
-import { pushUndo, snap, takeSnap } from '../history';
+import { pushUndo, snap, snapSeries, takeSnap } from '../history';
 import { st } from '../state';
 import type { Snapshot, TextAlign } from '../types';
 import { startTextPlacement, rememberFont, rememberSize, refreshDraftFont, restoreTextDraft, useDraftFont } from './editor';
 import { ensureFont, FontError, fontChoices, getFont, loadFontFile, type FontChoice } from './fonts';
-import { capMM, fontFor, fontSizePT, isText, relayout, setCapMM, setFontSizePT, setFit, setWidthMode, specOf, type TextLayer } from './text';
+import { capMM, fontFor, fontSizePT, isText, relayout, setCapMM, setFontSizePT, setFit, setWidthMode, specOf } from './text';
 import { initTextColor, syncTextColor } from './color';
 import { askLocalFonts, initLocalFonts, localState } from './local';
 
@@ -85,13 +85,6 @@ export function syncTextPanel() {
   setVal('#tTrack', String(s.track)); $('#tTrackOut').textContent = String(Math.round(s.track));
 }
 
-/** Un arrastre seguido de un deslizador (o del color) es un solo paso de deshacer. */
-let gesture: { l: TextLayer; key: string; t: number } | null = null;
-function stepOnce(l: TextLayer, key: string) {
-  const now = performance.now();
-  if (!(gesture && gesture.l === l && gesture.key === key && now - gesture.t < 1200)) snap();
-  gesture = { l, key, t: now };
-}
 
 /** Rehace el texto con la fuente y el cambio dados; un paso de deshacer (o el del arrastre, si step lo dio). */
 async function restyle(change: Parameters<typeof relayout>[2], what: string, opts: { font?: string; anchor?: 'origin' | 'center'; key?: string } = {}) {
@@ -110,7 +103,7 @@ async function restyle(change: Parameters<typeof relayout>[2], what: string, opt
     return;
   }
   let before: Snapshot | null = null;
-  if (opts.key) stepOnce(l, opts.key); else before = takeSnap();
+  if (opts.key) snapSeries('text-' + l.id + '-' + opts.key, 1200); else before = takeSnap();
   try {
     if (relayout(l, f, change, opts.anchor) && before) pushUndo(before);
     afterChange();

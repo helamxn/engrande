@@ -13,9 +13,11 @@ import { S, st } from '../state';
 import { clonePath, nextGroupName, normalizeGroups, type GroupRef, type Groupable } from '../groups';
 import { loadImg } from './load';
 import { openPdf, renderPdfPage } from './pdf';
-import type { Crop, Fit, Layer, LayoutSettings, TextSpec, TextDraft } from '../types';
+import type { Crop, Fit, Layer, LayoutGuide, LayoutSettings, TextSpec, TextDraft } from '../types';
 import { readSpec, readDraft } from '../text/spec';
 import { textCanvas } from '../text/raster';
+import { figureCanvas, validFigure } from '../figures';
+import type { ShapeSpec } from '../types';
 
 // Identificador histórico: cambiarlo dejaría de recuperar los pósters de versiones anteriores.
 const DB_NAME = 'pliego';
@@ -25,7 +27,7 @@ const SAVE_DELAY = 1200;
 interface SavedFile { kind: 'img' | 'svg' | 'pdf'; key: string }
 /** Un texto se guarda con sus contornos (la fuente no: ver text/fonts.ts). */
 interface SavedText { kind: 'text'; spec: TextSpec }
-type SavedSource = SavedFile | SavedText;
+type SavedSource = SavedFile | SavedText | { kind: 'shape'; spec: ShapeSpec };
 interface SavedLayer {
   name: string; cx: number; cy: number; w: number; h: number; rot: number; flipX: boolean; flipY: boolean;
   crop: Crop; page: number; pages: number; fit: Fit;
@@ -45,9 +47,10 @@ interface SavedLayer {
   edit: string | null;
 }
 interface SavedProject {
+  layoutGuides?: LayoutGuide[];
   draft?: TextDraft | null;
   schema: number; savedAt: number;
-  layout: LayoutSettings; dpi: number; marks: boolean; guide: boolean;
+  layout: LayoutSettings; dpi: number; marks: boolean; guide: boolean; skipBlank?: boolean;
   layers: SavedLayer[];
 }
 
@@ -131,7 +134,7 @@ export async function flushSave() {
 async function save() {
   const d = await db();
   // póster vacío: no se guarda nada y al volver aparece la pantalla de inicio
-  if (!st.layers.length && !st.textDraft?.text) { await clearSaved(); return; }
+  if (!st.layers.length && !st.layoutGuides.length && !st.textDraft?.text && !S.posterSize) { await clearSaved(); return; }
 
   // 0. lo que hay de verdad en la base de datos: otra pestaña con Pliego abierta pudo borrar archivos que esta daba
   //    por guardados (cada una borra lo que su póster no usa), y entonces hay que volver a escribirlos
@@ -139,13 +142,14 @@ async function save() {
 
   // 1. preparar lo que hay que escribir (fuera de la transacción: codificar PNG es asíncrono)
   const writes = new Map<string, Blob>();
+  const edits = new Map<string, { canvas: HTMLCanvasElement; rev: number }>();
   const used = new Set<string>();
   /** Archivos originales en memoria, por clave: si alguno desaparece entre el paso 0 y la escritura, se repone. */
   const sources = new Map<string, Blob>();
   const layers: SavedLayer[] = [];
   for (const l of st.layers) {
     let src: SavedSource | null = null;
-    if (l.src?.kind === 'text') src = { kind: 'text', spec: l.src.spec };
+    if (l.src?.kind === 'text' || l.src?.kind === 'shape') src = l.src;
     else if (l.src) {
       let key = blobKeys.get(l.src.blob);
       if (!key) { key = 'src-' + uid(); blobKeys.set(l.src.blob, key); }
@@ -157,9 +161,9 @@ async function save() {
     let edit: string | null = null;
     if (l.img !== l.orig) {
       const info = savedCanvas.get(l.img), rev = canvasRev.get(l.img) ?? 0;
-      const key = info?.key ?? 'px-' + uid();
+      const key = info?.rev === rev ? info.key : 'px-' + uid();
       if (!info || info.rev !== rev || !stored.has(key)) {
-        if (!writes.has(key)) writes.set(key, await toPng(l.img));
+        edits.set(key, { canvas: l.img, rev });
         savedCanvas.set(l.img, { key, rev });
       }
       used.add(key);
@@ -172,11 +176,18 @@ async function save() {
     });
   }
   const project: SavedProject = {
+    layoutGuides: st.layoutGuides.slice(),
     draft: st.textDraft,
     schema: SCHEMA, savedAt: Date.now(),
-    layout: { paper: S.paper, orient: S.orient, cols: S.cols, rows: S.rows, margin: S.margin, overlap: S.overlap },
-    dpi: S.dpi, marks: S.marks, guide: S.guide, layers,
+    layout: { paper: S.paper, orient: S.orient, cols: S.cols, rows: S.rows, margin: S.margin, overlap: S.overlap, posterSize: S.posterSize },
+    dpi: S.dpi, marks: S.marks, guide: S.guide, skipBlank: S.skipBlank, layers,
   };
+  // La geometría, los orígenes y el orden pertenecen al mismo instante. Durante la codificación el usuario
+  // puede duplicar, recolorear, deshacer o quitar capas. Una pincelada nueva se guarda en la siguiente pasada.
+  for (const [key, { canvas, rev }] of edits) {
+    writes.set(key, await toPng(canvas));
+    if (canvasRevision(canvas) !== rev) scheduleSave();
+  }
 
   // 2. escribir todo en una transacción y borrar los archivos que ya no usa ninguna imagen
   const t = d.transaction(['project', 'blobs'], 'readwrite');
@@ -192,12 +203,15 @@ async function save() {
     for (const k of used) {
       if (have.has(k)) continue;
       const b = sources.get(k);
-      if (b) blobs.put(b, k); else lost = true;
+      if (b) blobs.put(b, k); else { lost = true; t.abort(); return; }
     }
   };
-  await done(t);
+  try { await done(t); } catch (error) {
+    if (!lost) throw error;
+    scheduleSave();
+    return;
+  }
   stored = used;
-  if (lost) scheduleSave(); // el siguiente guardado ve que falta (paso 0) y lo vuelve a codificar
 
   showInfo();
   askPersistence();
@@ -270,6 +284,10 @@ async function readProject(): Promise<{ failed: string[] } | null> {
         if (!spec) throw new Error('Texto no válido');
         orig = textCanvas(spec);
         extra = { src: { kind: 'text', spec } };
+      } else if (r.src.kind === 'shape') {
+        if (!validFigure(r.src.spec)) throw new Error('Forma no válida');
+        orig = figureCanvas(r.src.spec);
+        extra = { src: r.src };
       } else if (r.src.kind === 'pdf') {
         let p = pdfs.get(r.src.key);
         if (!p) { const blob = await getBlob(r.src.key); p = { doc: await openPdf(await blob.arrayBuffer()), blob }; pdfs.set(r.src.key, p); }
@@ -288,7 +306,7 @@ async function readProject(): Promise<{ failed: string[] } | null> {
         blobKeys.set(b.blob, r.src.key);
         extra = { src: r.src.kind === 'svg' ? { kind: 'svg', blob: b.blob } : { kind: 'img', blob: b.blob, w: b.w, h: b.h } };
       }
-      if (r.src.kind !== 'text') used.add(r.src.key);
+      if ('key' in r.src) used.add(r.src.key);
 
       let img = orig;
       if (r.edit) {
@@ -321,7 +339,11 @@ async function readProject(): Promise<{ failed: string[] } | null> {
   nameUnnamedGroups(st.layers);
   // Una capa irrecuperable no debe hacer que el borrador se aplique a otra capa.
   if (!st.textDraft && draft) st.textDraft = { ...draft, target: draftLayer ? st.layers.indexOf(draftLayer) : null };
-  Object.assign(S, project.layout, { dpi: project.dpi, marks: project.marks, guide: project.guide });
+  Object.assign(S, project.layout, { posterSize: project.layout.posterSize ?? null, dpi: project.dpi, marks: project.marks, guide: project.guide, skipBlank: project.skipBlank === true });
+  st.layoutGuides = Array.isArray(project.layoutGuides) ? project.layoutGuides.filter(
+    (g) => g && (g.axis === 'x' || g.axis === 'y') && Number.isFinite(g.at),
+  ) : [];
+  if (st.layoutGuides.length || S.posterSize) st.sheetsOn = true;
   stored = used;
   // si algo falló, el próximo guardado limpia lo que ya no se usa
   if (failedNames.length) scheduleSave();

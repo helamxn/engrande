@@ -6,6 +6,7 @@ test.beforeEach(async ({ page }) => { await openApp(page); });
 
 test('con el póster recién abierto, «Nuevo» está desactivado (también en el menú)', async ({ page }) => {
   await expect(page.locator('#newPoster')).toBeDisabled();
+  await expect(page.locator('#presets [aria-pressed=true]')).toHaveText('1×1');
   await expect(page.locator('#newPoster')).toHaveAttribute('title', 'Ya es un póster nuevo');
   await page.locator('#cv').click({ button: 'right', position: { x: 300, y: 300 } });
   await expect(page.getByRole('menuitem', { name: /Nuevo póster/ })).toBeDisabled();
@@ -17,10 +18,23 @@ test('sin imágenes, restablece las hojas y deshacer las devuelve', async ({ pag
   await expect(page.locator('#newPoster')).toBeEnabled();
   await page.locator('#newPoster').click();
   await expect(page.locator('#toast')).toContainText('Hojas y ajustes restablecidos');
-  await expect(page.locator('#presets [aria-pressed=true]')).toHaveText('2×1');
+  await expect(page.locator('#presets [aria-pressed=true]')).toHaveText('1×1');
   await expect(page.locator('#newPoster')).toBeDisabled();
   await page.locator('#undo').click();
   await expect(page.locator('#presets [aria-pressed=true]')).toHaveText('3×2');
+});
+
+test('puede abrir la hoja inicial y recuperar después un proyecto de varias hojas', async ({ page }) => {
+  const active = page.locator('#presets [aria-pressed=true]');
+  await openTab(page, 'sheets');
+  await page.locator('#presets [data-c="1"][data-r="1"]').click();
+  await expect(page.locator('#empty')).toBeHidden();
+  await page.locator('#presets [data-c="2"][data-r="1"]').click();
+  await addImage(page);
+  await expectSavedNames(page, ['foto']);
+  await page.reload();
+  await openTab(page, 'sheets');
+  await expect(active).toHaveText('2×1');
 });
 
 test('con imágenes, avisa del borrado; una segunda pulsación no hace nada y un solo deshacer lo recupera', async ({ page }) => {
@@ -45,4 +59,18 @@ test('deshacer «Nuevo» devuelve la resolución, las marcas y la guía', async 
   await page.locator('#undo').click();
   await expect(page.locator('[data-dpi="300"]')).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('#marks')).not.toBeChecked();
+});
+
+test('los ajustes de descarga no son pasos de deshacer y deshacer otra cosa no los cambia', async ({ page }) => {
+  await addImage(page);
+  await expect(page.locator('#undo')).toBeEnabled();
+  await openPdfCard(page);
+  await page.locator('#skipBlank').check();
+  await page.locator('[data-dpi="300"]').click();
+  // deshacer: quita la imagen (lo último que se editó); antes volvía también a 150 ppp y desmarcaba «omitir»
+  await page.locator('#undo').click();
+  await expect.poll(() => listNames(page)).toEqual([]);
+  await openPdfCard(page);
+  await expect(page.locator('[data-dpi="300"]')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#skipBlank')).toBeChecked();
 });

@@ -9,6 +9,8 @@ export type FitMode = 'contain' | 'cover';
 export type HandleId = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
 
 export interface Pt { x: number; y: number }
+/** Referencia medida desde el origen imprimible, en mm. */
+export interface LayoutGuide { axis: 'x' | 'y'; at: number }
 export interface UV { u: number; v: number }
 
 /** Ventana visible de la imagen, en fracciones 0..1 de su tamaño completo. */
@@ -30,15 +32,17 @@ export interface LayerGeom extends Transform {
  * (scale: fracción del ajuste, p. ej. 0.94). null = colocada a mano: conserva su tamaño en cm.
  */
 export type Fit = { mode: FitMode; scale: number } | null;
+export interface ShapeSpec { figure: 'rectangle' | 'ellipse' | 'triangle'; fill: string }
 
 /** Origen de la imagen, para exportar a la resolución del archivo original y no a la del lienzo de trabajo. */
 export type Source =
   | { kind: 'img'; blob: Blob; w: number; h: number }
   | { kind: 'svg'; blob: Blob }
   | { kind: 'pdf'; blob: Blob }
+  | { kind: 'shape'; spec: ShapeSpec }
   | { kind: 'text'; spec: TextSpec };
 /** Origen que es un archivo (todos menos el texto, que se guarda como contornos). */
-export type FileSource = Exclude<Source, { kind: 'text' }>;
+export type FileSource = Extract<Source, { blob: Blob }>;
 
 export type TextAlign = 'left' | 'center' | 'right';
 /**
@@ -128,6 +132,8 @@ export interface Settings {
   margin: number;
   /** Solape para pegar, en mm. */
   overlap: number;
+  posterSize?: { w: number; h: number } | null;
+  skipBlank?: boolean;
   marks: boolean;
   guide: boolean;
   dpi: number;
@@ -144,6 +150,7 @@ export interface Settings {
 
 /** Geometría del póster en mm. */
 export interface Geo {
+  cols: number; rows: number;
   /** Papel. */ pw: number; ph: number;
   /** Margen efectivo. */ m: number;
   /** Zona imprimible de cada hoja. */ tw: number; th: number;
@@ -168,19 +175,26 @@ export interface LayerProps extends Transform {
 }
 
 /** Ajustes que definen la geometría del póster (se guardan en el historial). */
-export type LayoutSettings = Pick<Settings, 'paper' | 'orient' | 'cols' | 'rows' | 'margin' | 'overlap'>;
+export type LayoutSettings = Pick<Settings, 'paper' | 'orient' | 'cols' | 'rows' | 'margin' | 'overlap' | 'posterSize'>;
 
 export interface Snapshot {
+  layoutGuides?: LayoutGuide[];
   layers: Layer[];
   sel: Layer | null;
   group: Layer[];
   props: LayerProps[];
   layout: LayoutSettings;
   /** Ajustes de descarga (opcional: los pasos de antes no los tenían). */
-  exp?: Pick<Settings, 'dpi' | 'marks' | 'guide'>;
+  exp?: Pick<Settings, 'dpi' | 'marks' | 'guide' | 'skipBlank'>;
+  /**
+   * Deshacer o rehacer este paso devuelve también los ajustes de descarga. Solo «Nuevo póster», que los restablece: los
+   * ajustes de descarga no son ediciones del póster y deshacer otra cosa no debe cambiarlos.
+   */
+  restoreExport?: boolean;
   /** Se veían las hojas (en un póster sin imágenes, solo si se eligió la distribución). */
   sheetsOn?: boolean;
 }
 
 export interface ScaleDrag { t: 'scale'; id: HandleId; L0: Transform; k0: Crop }
-export interface CropDrag { t: 'crop'; id: HandleId; k0: Crop; ratio0: number }
+/** quick: Ctrl/⌘ + tirador fuera del modo de recorte (como en Figma): recorta ese lado sin entrar en el modo. */
+export interface CropDrag { t: 'crop'; id: HandleId; k0: Crop; ratio0: number; quick?: boolean }

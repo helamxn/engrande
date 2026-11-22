@@ -4,7 +4,7 @@
  * abrir el panel inferior tampoco mueve el lienzo.
  */
 import { expect, test, type Page } from '@playwright/test';
-import { addImage, openApp } from './helpers';
+import { addImage, closeCards, openApp, openTab } from './helpers';
 
 const FIXED = ['header', '#ctxbar', '#panelOpeners', '#tools'];
 const boxes = (page: Page) => page.evaluate((ids) => ids.map((id) => {
@@ -36,6 +36,32 @@ test('escritorio: seleccionar y deseleccionar no mueve el lienzo ni las islas fi
   await page.keyboard.press('Escape');
   await expect(page.locator('#panel')).toBeHidden();
   expect(await page.locator('#zoomPct').textContent()).toBe(zoom0);
+});
+
+test('el tamaño del póster está abajo a la izquierda, antes de la línea de estado, no se mueve y abre Póster', async ({ page }) => {
+  await openApp(page);
+  await expect(page.locator('#posterSize')).toBeHidden(); // póster nuevo: sin hojas a la vista
+  await openTab(page, 'sheets');
+  await page.locator('#presets [data-c="1"][data-r="1"]').click();
+  await closeCards(page);
+  const size = page.locator('#posterSize');
+  await expect(size).toHaveText('19,8 × 28,5 cm · 1 hoja A4');
+  await expect(size).toHaveAttribute('title', /margen 6 mm/);
+  const at = (await size.boundingBox())!;
+  // a la izquierda, en la fila de la isla de vista, y la línea de estado empieza a su derecha
+  const tools = (await page.locator('#tools').boundingBox())!;
+  expect(at.x).toBeLessThan(40);
+  expect(Math.abs(at.y + at.height / 2 - (tools.y + tools.height / 2))).toBeLessThan(2);
+  const hint = (await page.locator('#hint').boundingBox())!;
+  expect(hint.x).toBeGreaterThanOrEqual(at.x + at.width);
+  // mover la vista no lo mueve
+  await page.mouse.move(800, 470);
+  await page.mouse.down({ button: 'middle' });
+  await page.mouse.move(700, 380, { steps: 5 });
+  await page.mouse.up({ button: 'middle' });
+  expect(await size.boundingBox()).toEqual(at);
+  await size.click();
+  await expect(page.locator('#posterCard')).toBeVisible();
 });
 
 test.describe('móvil', () => {

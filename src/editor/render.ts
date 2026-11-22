@@ -3,12 +3,12 @@ import { findGroup, groupOf } from './groups';
 import { cm, cmGap, TOUCH_MM } from './format';
 import { isGesturing } from './input/pointer';
 import {
-  gridLevels, HANDLES, bboxMM, cropCenter, cropPtsMM, displaySide, handleLocal, localToMM, pppOf, qualityOf, rad,
+  canStretch, gridLevels, HANDLES, bboxMM, cropCenter, cropPtsMM, displaySide, handleLocal, localToMM, pppOf, qualityOf, rad,
   unionBox, visH, visW, type Quality,
 } from './geometry';
 import { canvasRevision } from './io/persist';
 import { C, posterGeo, S, sheetsVisible, st, V, view } from './state';
-import { mm2s } from './view';
+import { mm2s, posterFrame, rulerFrame, RULER_WIDTH } from './view';
 import { positionBar } from './ui/contextbar';
 import { positionTextEditor } from './text/editor';
 import { isText } from './text/text';
@@ -116,8 +116,14 @@ export const drawAll = (c: CanvasRenderingContext2D, pick: (l: Layer) => CanvasI
  * Por eso la pantalla usa una copia a la resolución que realmente se ve, en pasos fijos para no rehacerla
  * con cada zoom. Se rehace al editar la imagen o al acercar más de lo que cubre. La exportación no la usa.
  */
-interface DisplayCopy { c: HTMLCanvasElement; rev: number; side: number }
+interface DisplayCopy {
+  c: HTMLCanvasElement; rev: number; side: number;
+  /** Lado mayor pedido en el fotograma actual y en el anterior (los duplicados comparten copia y se ven a otro tamaño). */
+  frame: number; want: number; wantPrev: number;
+}
 const copies = new WeakMap<HTMLCanvasElement, DisplayCopy>(); // por lienzo: los duplicados la comparten
+/** Fotograma actual (lo cuenta render): para saber qué tamaño pidieron todas las capas que comparten una copia. */
+let frameNo = 0;
 export function displaySource(l: Layer): CanvasImageSource {
   if (st.textColorPreview?.layer === l) return st.textColorPreview.canvas;
   const img = l.img, long = Math.max(img.width, img.height);
@@ -127,14 +133,22 @@ export function displaySource(l: Layer): CanvasImageSource {
   if (!side) return img;
   const rev = canvasRevision(img);
   let d = copies.get(img);
-  if (!d || d.rev !== rev || d.side < side) {
-    const c = d?.c ?? document.createElement('canvas'), s = side / long;
+  if (d && d.frame !== frameNo) { d.wantPrev = d.want; d.want = 0; d.frame = frameNo; }
+  if (d) d.want = Math.max(d.want, side);
+  // Al alejar, una copia que quedó grande (tras acercar mucho) se reduce: reducir cada fotograma una de 1536 px a unos
+  // cientos, con suavizado de calidad, bajaba a 12-15 fotogramas por segundo. Solo si sobra el doble también para lo
+  // que pidió en el fotograma anterior cualquier duplicado que la comparte, para no rehacerla una y otra vez.
+  const shrink = !!d && d.side >= 2 * Math.max(side, d.wantPrev);
+  if (!d || d.rev !== rev || d.side < side || shrink) {
+    // el lado que pidió la más grande de las que la comparten en este fotograma
+    const size = Math.max(side, d && d.rev === rev ? d.want : 0);
+    const c = d?.c ?? document.createElement('canvas'), s = size / long;
     c.width = Math.max(1, Math.round(img.width * s));
     c.height = Math.max(1, Math.round(img.height * s));
     const x = c.getContext('2d')!;
     x.imageSmoothingEnabled = true; x.imageSmoothingQuality = 'high';
     x.drawImage(img, 0, 0, c.width, c.height);
-    d = { c, rev, side };
+    d = { c, rev, side: size, frame: frameNo, want: size, wantPrev: d?.wantPrev ?? 0 };
     copies.set(img, d);
   }
   return d.c;
@@ -163,17 +177,32 @@ export function groupFrameMM(): Pt[] {
   const u = unionBox(st.group.map((l) => bboxMM(l)));
   return [{ x: u.x0, y: u.y0 }, { x: u.x1, y: u.y0 }, { x: u.x1, y: u.y1 }, { x: u.x0, y: u.y1 }];
 }
-/** Tiradores del grupo: cuatro esquinas (escalar sin deformar) y el de girar, sobre el lado de arriba. */
+/**
+ * Lados del marco que se pueden arrastrar para estirar el conjunto en un eje: con el marco derecho (no mientras se
+ * gira), si todas se pueden estirar (ver canStretch) y si el marco no es tan pequeño que se amontonen.
+ */
+export function groupSides(): boolean {
+  if (st.groupFrame || !canStretch(st.group)) return false;
+  const f = groupFrameMM();
+  return (f[1]!.x - f[0]!.x) * V.k >= 60 && (f[3]!.y - f[0]!.y) * V.k >= 60;
+}
+const GROUP_SIDES = [['n', 0, 1], ['e', 1, 2], ['s', 2, 3], ['w', 3, 0]] as const;
+/**
+ * Tiradores del grupo: cuatro esquinas (escalar sin deformar), los lados (estirar en un eje, ver groupSides) y el de
+ * girar, sobre el lado de arriba. El de girar va siempre el último.
+ */
 export function groupHandles(): Handle[] {
   const f = groupFrameMM().map(mm2s);
   const hs: Handle[] = f.map((p, i) => ({ id: GROUP_CORNERS[i]!, x: p.x, y: p.y }));
+  if (groupSides()) for (const [id, a, b] of GROUP_SIDES) hs.push({ id, ...mid(f[a]!, f[b]!) });
   const tm = { x: (f[0]!.x + f[1]!.x) / 2, y: (f[0]!.y + f[1]!.y) / 2 }, c = { x: (f[0]!.x + f[2]!.x) / 2, y: (f[0]!.y + f[2]!.y) / 2 };
   const dx = tm.x - c.x, dy = tm.y - c.y, d = Math.hypot(dx, dy) || 1;
   hs.push({ id: 'rot', x: tm.x + (dx / d) * 28, y: tm.y + (dy / d) * 28, base: tm });
   return hs;
 }
 export const groupCorner = (id: Handle['id']) => GROUP_CORNERS.indexOf(id as (typeof GROUP_CORNERS)[number]);
-export const groupCursor = (id: Handle['id']) => (id === 'rot' ? 'grab' : id === 'nw' || id === 'se' ? 'nwse-resize' : 'nesw-resize');
+export const groupCursor = (id: Handle['id']) => (id === 'rot' ? 'grab' : id === 'n' || id === 's' ? 'ns-resize'
+  : id === 'e' || id === 'w' ? 'ew-resize' : id === 'nw' || id === 'se' ? 'nwse-resize' : 'nesw-resize');
 
 export function nearest(hs: Handle[], p: Pt, r: number) {
   let best: Handle | null = null, bd = r;
@@ -280,7 +309,72 @@ function drawHelpers() {
   ctx.restore();
 }
 
+/** Referencias de pantalla. El PDF usa drawAll y conserva sus coordenadas físicas. */
+function drawReferences() {
+  if (!sheetsVisible()) return;
+  ctx.save();
+  ctx.strokeStyle = C.accent!;
+  ctx.lineWidth = 1;
+  ctx.setLineDash([6, 4]);
+  ctx.beginPath();
+  const frame = posterFrame(), right = frame.x + frame.w, bottom = frame.y + frame.h;
+  const guides = st.showGuides ? st.layoutGuides : [];
+  const draft = st.guideDraft;
+  for (const g of draft ? [...guides.filter(line => line !== draft.original), draft] : guides) {
+    if (g.axis === 'x') {
+      const x = V.ox + g.at * V.k;
+      if (x < frame.x || x > right) continue;
+      ctx.moveTo(x, frame.y); ctx.lineTo(x, bottom);
+    } else {
+      const y = V.oy + g.at * V.k;
+      if (y < frame.y || y > bottom) continue;
+      ctx.moveTo(frame.x, y); ctx.lineTo(right, y);
+    }
+  }
+  ctx.stroke();
+  if (st.rulers) {
+    const strip = RULER_WIDTH, outer = rulerFrame(), { l, t } = outer;
+    const w = outer.right - l, h = outer.bottom - t;
+    ctx.beginPath(); ctx.rect(l, t, w, h); ctx.clip();
+    const min = 60 / V.k, power = 10 ** Math.floor(Math.log10(min));
+    const major = ([1, 2, 5, 10].find((n) => n * power >= min) ?? 10) * power;
+    const step = major / 5;
+    ctx.setLineDash([]);
+    ctx.fillStyle = C.panel!;
+    ctx.fillRect(l, t, w, strip); ctx.fillRect(l, t, strip, h);
+    ctx.fillStyle = C.muted!; ctx.strokeStyle = C.line!;
+    ctx.font = '10px "IBM Plex Mono", monospace'; ctx.textBaseline = 'top'; ctx.textAlign = 'left';
+    ctx.beginPath();
+    for (const axis of ['x', 'y'] as const) {
+      const start = Math.max(0, axis === 'x' ? frame.x : frame.y);
+      const end = Math.min(axis === 'x' ? view.CW : view.CH, axis === 'x' ? right : bottom);
+      const origin = axis === 'x' ? V.ox : V.oy;
+      const first = Math.ceil((start - origin) / (step * V.k));
+      const count = Math.max(0, Math.ceil((end - start) / (step * V.k)));
+      for (let n = 0; n < count; n++) {
+        const i = first + n, p = origin + i * step * V.k;
+        if (p >= end) break;
+        const labeled = i % 5 === 0, tick = labeled ? 7 : 3;
+        if (axis === 'x') {
+          ctx.moveTo(p, t + strip); ctx.lineTo(p, t + strip - tick);
+          if (labeled) ctx.fillText(String(Number((i * step).toFixed(3))), p + 2, t + 2);
+        } else {
+          ctx.moveTo(l + strip, p); ctx.lineTo(l + strip - tick, p);
+          if (labeled) {
+            ctx.save(); ctx.translate(l + 2, p - 2); ctx.rotate(-Math.PI / 2);
+            ctx.fillText(String(Number((i * step).toFixed(3))), 0, 0); ctx.restore();
+          }
+        }
+      }
+    }
+    ctx.stroke();
+    ctx.fillText('mm', l + 2, t + 3);
+  }
+  ctx.restore();
+}
+
 export function render() {
+  frameNo++;
   dirtyFlag = false;
   sizeRect = null;
   const g = posterGeo(), { dpr } = view, sel = st.sel;
@@ -328,13 +422,13 @@ export function render() {
     // franjas de solape y líneas discontinuas
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.fillStyle = C.mark!; ctx.globalAlpha = 0.13;
-    for (let c = 1; c < S.cols; c++) { const a = mm2s({ x: c * (g.tw - g.ov), y: 0 }); ctx.fillRect(a.x, a.y, g.ov * V.k, phS); }
-    for (let r = 1; r < S.rows; r++) { const a = mm2s({ x: 0, y: r * (g.th - g.ov) }); ctx.fillRect(a.x, a.y, pwS, g.ov * V.k); }
+    for (let c = 1; c < g.cols; c++) { const a = mm2s({ x: c * (g.tw - g.ov), y: 0 }); ctx.fillRect(a.x, a.y, g.ov * V.k, phS); }
+    for (let r = 1; r < g.rows; r++) { const a = mm2s({ x: 0, y: r * (g.th - g.ov) }); ctx.fillRect(a.x, a.y, pwS, g.ov * V.k); }
     ctx.globalAlpha = 1; ctx.strokeStyle = C.mark!; ctx.lineWidth = 1; ctx.setLineDash([5, 4]); ctx.beginPath();
-    for (let c = 1; c < S.cols; c++) for (const x of [c * (g.tw - g.ov), c * (g.tw - g.ov) + g.ov]) {
+    for (let c = 1; c < g.cols; c++) for (const x of [c * (g.tw - g.ov), c * (g.tw - g.ov) + g.ov]) {
       const X = Math.round(mm2s({ x, y: 0 }).x) + 0.5; ctx.moveTo(X, tl.y); ctx.lineTo(X, tl.y + phS);
     }
-    for (let r = 1; r < S.rows; r++) for (const y of [r * (g.th - g.ov), r * (g.th - g.ov) + g.ov]) {
+    for (let r = 1; r < g.rows; r++) for (const y of [r * (g.th - g.ov), r * (g.th - g.ov) + g.ov]) {
       const Y = Math.round(mm2s({ x: 0, y }).y) + 0.5; ctx.moveTo(tl.x, Y); ctx.lineTo(tl.x + pwS, Y);
     }
     ctx.stroke(); ctx.setLineDash([]);
@@ -345,33 +439,18 @@ export function render() {
     // haría un rayado de líneas pegadas a los bordes de la franja
     if (st.showPaper && g.m * V.k >= 3) {
       ctx.strokeStyle = C.muted!; ctx.lineWidth = 1; ctx.globalAlpha = 0.55; ctx.setLineDash([2, 3]);
-      for (let r = 0; r < S.rows; r++) for (let c = 0; c < S.cols; c++) {
+      for (let r = 0; r < g.rows; r++) for (let c = 0; c < g.cols; c++) {
         const a = mm2s({ x: c * (g.tw - g.ov) - g.m, y: r * (g.th - g.ov) - g.m });
         ctx.strokeRect(Math.round(a.x) + 0.5, Math.round(a.y) + 0.5, Math.round(g.pw * V.k), Math.round(g.ph * V.k));
       }
       ctx.setLineDash([]); ctx.globalAlpha = 1;
     }
 
-    // tamaño del póster y hojas, encima de su esquina (como el nombre de un marco en Figma); si no cabe, solo el tamaño.
-    // En táctil no: chocaba con el tirador de giro y lo mismo se lee en la pestaña Póster
-    const n = S.cols * S.rows, size = `${cm(g.W)} × ${cm(g.H)} cm`;
-    const full = `Póster ${size} · ${n} ${n === 1 ? 'hoja' : 'hojas'} ${S.paper}` + (g.m > 0 ? ` · margen ${Math.round(g.m)} mm` : '');
-    ctx.font = '500 11.5px "IBM Plex Mono", ui-monospace, monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-    const paperW = pwS + 2 * mS, txt = ctx.measureText(full).width <= paperW ? full : size, ly = pt.y - 8;
-    if (!isTouch() && ly > view.ins.t + 12 && ctx.measureText(txt).width <= paperW + 40) { ctx.fillStyle = C.muted!; ctx.fillText(txt, pt.x, ly); }
-    // sobre la franja: qué es
-    if (st.hoverBand && st.hover) {
-      const t = `Margen sin imprimir · ${Math.round(g.m)} mm · se recorta`;
-      ctx.font = '500 11px "IBM Plex Mono", ui-monospace, monospace';
-      const w = ctx.measureText(t).width + 14, x = Math.min(st.hover.x + 14, view.CW - w - 6), yy = st.hover.y + 20;
-      ctx.fillStyle = C.panel!; ctx.beginPath(); ctx.roundRect(x, yy, w, 22, 6); ctx.fill();
-      ctx.strokeStyle = C.line!; ctx.lineWidth = 1; ctx.stroke();
-      ctx.fillStyle = C.fg!; ctx.textBaseline = 'middle'; ctx.fillText(t, x + 7, yy + 11.5);
-    }
   }
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
   // selección y tiradores
+  drawReferences();
   if (S.mode === 'move') {
     if (st.hoverL && st.hoverL !== sel && !st.group.includes(st.hoverL)) {
       ctx.strokeStyle = C.accent!; ctx.globalAlpha = 0.55; ctx.lineWidth = 1; poly(cropPts(st.hoverL)); ctx.stroke(); ctx.globalAlpha = 1;
@@ -393,7 +472,7 @@ export function render() {
         ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(rot.x, rot.y, 6, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
       }
       // un texto son contornos: se imprime nítido a cualquier tamaño, no tiene calidad que avisar
-      sizeLabel(sel, dims(sel), sel.src?.kind === 'text' ? undefined : pppAt(sel));
+      sizeLabel(sel, dims(sel), sel.src?.kind === 'text' || sel.src?.kind === 'shape' ? undefined : pppAt(sel));
     } else if (st.group.length > 1) {
       // varias: el contorno de cada una, el marco común y sus tiradores (esquinas para escalar, círculo para girar)
       ctx.strokeStyle = C.accent!; ctx.lineWidth = 1.5;
@@ -440,6 +519,30 @@ export function render() {
     ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(0,0,0,.55)'; ctx.beginPath(); ctx.arc(h.x, h.y, S.brush, 0, Math.PI * 2); ctx.stroke();
     ctx.lineWidth = 1; ctx.strokeStyle = '#fff'; ctx.beginPath(); ctx.arc(h.x, h.y, S.brush, 0, Math.PI * 2); ctx.stroke();
   }
+  drawBandTip();
   positionBar();
   positionTextEditor();
+}
+
+/**
+ * Aviso al pasar por la franja del margen sin imprimir: lo último que se dibuja (encima de reglas, selección y medidas)
+ * y con su propio estilo de texto, sin heredar el que dejó otro dibujo (la etiqueta de la selección lo centra). Si no
+ * cabe debajo del puntero, va encima; nunca queda bajo el panel ni las islas.
+ */
+function drawBandTip() {
+  if (!st.hoverBand || !st.hover || !sheetsVisible()) return;
+  const t = `Margen sin imprimir · ${Math.round(posterGeo().m)} mm · se recorta`;
+  ctx.save();
+  ctx.setTransform(view.dpr, 0, 0, view.dpr, 0, 0);
+  ctx.font = '500 11px "IBM Plex Mono", ui-monospace, monospace';
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.globalAlpha = 1; ctx.setLineDash([]);
+  const w = ctx.measureText(t).width + 14, h = 22;
+  // dentro de lo que se ve: sin meterse bajo el panel, la cabecera ni la isla de vista
+  const { ins } = view, right = view.CW - ins.r - 6, bottom = view.CH - ins.b - 6;
+  const x = Math.max(ins.l + 6, Math.min(st.hover.x + 14, right - w));
+  const below = st.hover.y + 20, y = below + h <= bottom ? below : Math.max(ins.t + 6, st.hover.y - 12 - h);
+  ctx.fillStyle = C.panel!; ctx.beginPath(); ctx.roundRect(x, y, w, h, 6); ctx.fill();
+  ctx.strokeStyle = C.line!; ctx.lineWidth = 1; ctx.stroke();
+  ctx.fillStyle = C.fg!; ctx.fillText(t, x + 7, y + h / 2 + 0.5);
+  ctx.restore();
 }

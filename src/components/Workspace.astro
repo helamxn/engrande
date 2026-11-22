@@ -16,6 +16,7 @@ import { BRAND } from '../brand';
   >
     <canvas
       id="cv"
+      tabindex="0"
       role="img"
       aria-label="Vista previa del póster"
       class="absolute inset-0 block size-full touch-none select-none [-webkit-touch-callout:none]"
@@ -47,6 +48,18 @@ import { BRAND } from '../brand';
       </div>
     </div>
     <div id="ctxbar" class="ctxbar" role="toolbar" aria-label="Barra de acciones" hidden></div>
+    <!--
+      tamaño del póster y sus hojas, abajo a la izquierda, como el tamaño del documento en la barra de estado de
+      Photoshop o Photopea: fuera del papel no tapa nada ni se mueve con la vista. Al pulsarlo se abre Póster. Sin
+      hojas a la vista (póster nuevo) no se muestra; en el teléfono no cabe (está en la pestaña Póster). La línea de
+      estado va a su derecha (layout.ts)
+    -->
+    <button
+      type="button"
+      id="posterSize"
+      class="absolute bottom-3 left-3 h-[30px] cursor-pointer whitespace-nowrap rounded-xl border border-line bg-panel/90 px-3 text-[.78rem] font-medium leading-5 text-fg tabular-nums hover:bg-panel max-md:!hidden"
+      hidden
+    ></button>
     <!--
       línea de estado (escritorio, con ratón): qué hacer en el estado actual, abajo a la izquierda, en la fila de la
       isla de vista (a la derecha). Una caja de una línea; su ancho y su altura en la fila los pone layout.ts.

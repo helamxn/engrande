@@ -1,26 +1,27 @@
 /** Acciones del editor: selección, capas, modos de herramienta, recorte y edición de píxeles. */
 import { MAX_SIDE } from './constants';
+import { figureCanvas, figures } from './figures';
 import { discardTextDraft } from './text/editor';
 import { $, hideToast, toast } from './dom';
 import {
   alignShifts, applyFit, bboxMM, conformCrop, cropCenter, distributeShifts, flipOnScreen, keepCenter, mmToLocal,
-  natRatio, rotateLayer, unstretch, visH, visW, type AlignEdge,
+  canStretch, natRatio, normDeg, rotateLayer, scaleLayer, stretchLayer, unionBox, unstretch, visH, visW, type AlignEdge,
 } from './geometry';
 import {
-  childOf, clonePath, commonPath, findGroup, freshGroups, GROUP_BASE, groupOf, inGroup, membersOf, nextGid,
-  nextGroupName, normalizeGroups, pathExists, scopeOf, splitPaths, unitAt,
+  childOf, clonePath, commonPath, copyMembers, findGroup, freshGroups, GROUP_BASE, groupOf, inGroup, membersOf, nextGid,
+  nextGroupName, normalizeGroups, pathExists, scopeOf, splitPaths, stackPeers, unitAt, unitsInScope,
 } from './groups';
-import { pushUndo, snap, takeSnap, restoreSnap, undo } from './history';
+import { pushUndo, snap, snapSeries, snapWithExport, takeSnap, undo } from './history';
 import { canvasRevision, markCanvasChanged, scheduleSave } from './io/persist';
 import { runJob } from './pixeljobs';
 import type { PixelJob, PixelResult } from './pixels';
 import { dirty } from './render';
 import { DEFAULT_EXPORT, freshLayout, isFreshPoster, posterGeo, S, st, V } from './state';
-import { s2mm } from './view';
+import { freeArea, s2mm } from './view';
 import { rich } from './ui/keys';
 import { renderBar } from './ui/contextbar';
 import { layoutChanged, layoutRestored, renderList, syncExportUI, syncSel } from './ui/panel';
-import type { FitMode, Layer, LayerProps, Mode, Pt, Snapshot, Source } from './types';
+import type { FitMode, Layer, Mode, Pt, ShapeSpec, Source } from './types';
 
 /* ---------- lienzos ---------- */
 export function cloneCanvas(src: HTMLCanvasElement) {
@@ -63,6 +64,42 @@ export const cloneLayer = (l: Layer, extra: Partial<Layer> = {}): Layer =>
 /** La imagen se movió o cambió de tamaño a mano: ya no se reajusta al cambiar la hoja. */
 export const markManual = (l: Layer) => { l.fit = null; };
 
+export function addFigure(figure: ShapeSpec['figure']) {
+  applyCrop();
+  setMode('move');
+  const spec = { figure, fill: '#2458a6' };
+  const l = newLayer(figureCanvas(spec), figures[figure], { src: { kind: 'shape', spec } });
+  const g = posterGeo();
+  l.h = Math.min(g.W, g.H) / 4;
+  l.w = l.h * (figure === 'rectangle' ? 1.5 : 1);
+  snap();
+  st.layers.push(l);
+  st.sheetsOn = true;
+  select(l);
+}
+
+/**
+ * Relleno de una forma (la seleccionada si no se dice otra). undo = false: el paso de deshacer ya lo lleva quien llama
+ * (el selector de color, que aplica en vivo mientras se arrastra y guarda un solo paso; ver selectioncard.ts).
+ */
+export function setFigureFill(fill: string, l: Layer | null = st.sel, undo = true) {
+  if (!l || l.locked || l.src?.kind !== 'shape' || l.src.spec.fill === fill || !/^#[0-9a-f]{6}$/i.test(fill)) return;
+  if (!st.layers.includes(l)) return;
+  if (st.sel === l) applyCrop();
+  const spec = { ...l.src.spec, fill };
+  const orig = figureCanvas(spec, l.orig.width, l.orig.height);
+  let img = orig;
+  if (l.img !== l.orig) {
+    img = cloneCanvas(l.img);
+    const ctx = img.getContext('2d')!;
+    ctx.save(); ctx.globalCompositeOperation = 'source-in'; ctx.fillStyle = fill;
+    ctx.fillRect(0, 0, img.width, img.height); ctx.restore();
+  }
+  if (undo) snap();
+  Object.assign(l, { orig, img, src: { kind: 'shape', spec } });
+  afterChange();
+}
+
 /**
  * Oculta o muestra una imagen: oculta no se dibuja, no se exporta y no se puede tocar en el lienzo.
  * Al ocultar la seleccionada se deselecciona, porque en el lienzo ya no habría nada que tocar.
@@ -101,15 +138,14 @@ export function renameLayer(l: Layer, name: string) {
   return true;
 }
 /** Opacidad desde el deslizador (una imagen o todas las seleccionadas): un arrastre seguido es un solo paso de deshacer. */
-let opacityEdit: { key: Layer | null; t: number } = { key: null, t: 0 };
 export function setOpacity(l: Layer | Layer[], v: number) {
   const ls = Array.isArray(l) ? l : [l];
   if (!ls.length) return;
   if (ls.some((x) => x.locked)) { toast(LOCKED_MSG); return; }
-  const now = performance.now();
-  if (!(opacityEdit.key === ls[0] && now - opacityEdit.t < 1000)) snap();
-  opacityEdit = { key: ls[0]!, t: now };
-  for (const x of ls) x.opacity = Math.min(1, Math.max(0.05, v));
+  const opacity = Math.min(1, Math.max(0.05, v));
+  if (ls.every((x) => x.opacity === opacity)) return;
+  snapSeries('opacity-' + ls.map((x) => x.id).join(','));
+  for (const x of ls) x.opacity = opacity;
   dirty(); scheduleSave();
 }
 /** Oculta todas las seleccionadas (un paso de deshacer). */
@@ -132,11 +168,12 @@ export function lockSelected() {
 }
 
 export function select(l: Layer | null) {
+  if (st.sel !== l || st.group.length) duplicateRun = null;
   if (S.mode === 'crop' && l !== st.sel) applyCrop();
   st.sel = l;
   st.group = [];
   st.hoverL = null;
-  if (!l && S.mode !== 'move') setMode('move');
+  if (S.mode !== 'move' && (!l || l.locked || l.hidden || isTextLayer(l))) setMode('move');
   renderList(); syncSel(); renderBar(); dirty();
 }
 export function afterChange() { renderList(); syncSel(); dirty(); scheduleSave(); }
@@ -155,6 +192,7 @@ export function selectMany(ls: Layer[]) {
   const set = new Set(ls);
   const g = st.layers.filter((l) => set.has(l) && !l.hidden && !l.locked);
   if (g.length < 2) { select(g[0] ?? null); return; }
+  if (g.length !== st.group.length || g.some((l, i) => l !== st.group[i])) duplicateRun = null;
   if (S.mode === 'crop') applyCrop();
   if (S.mode !== 'move') setMode('move');
   st.sel = null;
@@ -164,7 +202,7 @@ export function selectMany(ls: Layer[]) {
 }
 /** Shift o Ctrl + clic: añade a la selección o quita el elemento de la imagen en el nivel actual (su grupo o ella). */
 export function toggleInSelection(l: Layer) {
-  const unit = unitOf(l), cur = selected();
+  const unit = unitOf(l).filter(pickable), cur = selected();
   selectMany(unit.every((x) => cur.includes(x)) ? cur.filter((x) => !unit.includes(x)) : [...cur, ...unit]);
 }
 
@@ -220,7 +258,7 @@ export function groupSelected() {
   const ls = selected(), scope = currentScope();
   const units = new Set(ls.map((l) => childOf(l, scope) ?? l));
   if (units.size < 2) { if (selectedGroup() == null) toast('Selecciona al menos 2 imágenes para agruparlas'); return; }
-  const members = st.layers.filter((l) => ls.some((x) => unitAt(st.layers, x, scope).includes(l)));
+  const members = st.layers.filter((l) => units.has(childOf(l, scope) ?? l));
   const depth = scope == null ? 0 : members[0]!.gpath.findIndex((g) => g.id === scope) + 1;
   snap();
   const id = nextGid(st.layers), name = nextGroupName(st.layers);
@@ -261,7 +299,7 @@ export function toggleGroupFlag(gid: number, flag: 'hidden' | 'locked') {
   snap();
   const on = !ls.every((l) => l[flag]);
   for (const l of ls) l[flag] = on;
-  if (on) select(null); // ocultas o bloqueadas no se pueden tener seleccionadas en el lienzo
+  if (on && selected().some((l) => ls.includes(l))) selectMany(selected().filter((l) => !ls.includes(l)));
   afterChange();
   toast(flag === 'hidden' ? (on ? 'Grupo oculto: no se imprimirá' : 'Grupo visible de nuevo') : (on ? 'Grupo bloqueado' : 'Grupo desbloqueado'));
 }
@@ -304,36 +342,45 @@ function toClip(ls: Layer[]) {
   // en otra app, Ctrl+V la preferiría a lo que se acaba de copiar aquí. Sin permiso, se queda como estaba.
   void navigator.clipboard?.writeText?.(ls.map((l) => l.name).join('\n')).catch(() => {});
 }
-export function duplicateSelected() {
-  const ls = selected();
-  if (ls.length < 2) { if (ls[0]) duplicateLayer(ls[0]); return; }
-  snap();
-  const copies = ls.map((l) => {
-    const d = cloneLayer(l, { name: l.name + ' (copia)', fit: null });
-    d.cx += 10; d.cy += 10;
-    st.layers.splice(st.layers.indexOf(l) + 1, 0, d);
-    return d;
-  });
-  copyGroups(ls, copies);
-  tidyGroups();
-  selectMany(copies);
-  scheduleSave();
+export const copySelection = () => copyMembers(st.layers, selected(), pickable);
+
+// El paso de la serie es la distancia final entre el original y la copia activa, en mm.
+let duplicateRun: { ids: Set<number>; anchorId: number; origin: Pt } | null = null;
+function duplicateOffset(ls: Layer[]): Pt {
+  const run = duplicateRun;
+  if (run && run.ids.size === ls.length && ls.every(l => run.ids.has(l.id))) {
+    const anchor = ls.find(l => l.id === run.anchorId)!;
+    return { x: anchor.cx - run.origin.x, y: anchor.cy - run.origin.y };
+  }
+  return { x: 10, y: 10 };
 }
-/** Duplica en el mismo sitio (Alt + arrastrar) y devuelve las copias, ya seleccionadas. */
-export function cloneSelectedInPlace(): Layer[] {
-  const ls = selected();
+
+function cloneLayers(ls: Layer[], offset: Pt) {
   const copies = ls.map((l) => {
     const d = cloneLayer(l, { name: l.name + ' (copia)', fit: null });
+    d.cx += offset.x; d.cy += offset.y;
     st.layers.splice(st.layers.indexOf(l) + 1, 0, d);
     return d;
   });
-  copyGroups(ls, copies);
-  tidyGroups();
-  selectMany(copies);
+  if (copies.length === 1) select(copies[0]!);
+  else {
+    copyGroups(ls, copies);
+    tidyGroups();
+    selectMany(copies);
+  }
+  const index = Math.max(0, ls.findIndex(pickable)), source = ls[index]!;
+  duplicateRun = { ids: new Set(copies.map(l => l.id)), anchorId: copies[index]!.id, origin: { x: source.cx, y: source.cy } };
   return copies;
 }
-export function copySelected() {
-  const ls = selected();
+export function duplicateSelected(ls = copySelection()) {
+  if (!ls.length) return;
+  snap();
+  cloneLayers(ls, duplicateOffset(ls));
+  scheduleSave();
+}
+export const cloneSelectedInPlace = () => cloneLayers(copySelection(), { x: 0, y: 0 });
+
+export function copySelected(ls = copySelection()) {
   if (!ls.length) return;
   toClip(ls);
   st.clipN = 0;
@@ -344,9 +391,9 @@ export function copySelected() {
  * El primer pegado vuelve al mismo sitio (ya no hay original que tapar); los siguientes se desplazan como siempre.
  */
 export function cutSelected() {
-  const ls = selected();
+  const ls = copySelection();
   if (!ls.length) return;
-  if (ls.some((l) => l.locked)) { toast(LOCKED_MSG); return; }
+  if (ls.some((l) => l.locked)) { toast(ls.length > 1 ? 'Desbloquea las capas del grupo para cortarlo.' : LOCKED_MSG); return; }
   if (S.mode === 'crop') applyCrop();
   toClip(ls);
   st.clipN = -1;
@@ -358,24 +405,69 @@ export function cutSelected() {
   toast(ls.length > 1 ? `${ls.length} imágenes cortadas` : `«${ls[0]!.name}» cortada`, 6000, { label: 'Deshacer', fn: undo });
 }
 
-/** Alinea las seleccionadas entre sí (con su caja común). */
-export function alignSelected(edge: AlignEdge) {
-  const ls = selected();
-  if (ls.length < 2) return;
-  const ds = alignShifts(ls.map((l) => bboxMM(l)), edge);
-  if (ds.every((d) => Math.abs(d.x) < 1e-6 && Math.abs(d.y) < 1e-6)) { toast('Ya están alineadas'); return; }
+export const compositionUnits = () => unitsInScope(selected(), currentScope());
+
+function placeUnits(units: Layer[][], shifts: Pt[]) {
+  if (!shifts.some((d) => Math.abs(d.x) > 1e-6 || Math.abs(d.y) > 1e-6)) return false;
   snap();
-  ls.forEach((l, i) => { l.cx += ds[i]!.x; l.cy += ds[i]!.y; markManual(l); });
+  units.forEach((unit, i) => {
+    const d = shifts[i]!;
+    if (Math.abs(d.x) <= 1e-6 && Math.abs(d.y) <= 1e-6) return;
+    for (const l of unit) { l.cx += d.x; l.cy += d.y; markManual(l); }
+  });
   afterChange();
+  return true;
+}
+
+/* ---------- marco común de varias (panel y tiradores de lado) ---------- */
+export { canStretch };
+/** Giro común de las seleccionadas, o null si no todas tienen el mismo. */
+export function commonRotation(ls: Layer[]): number | null {
+  const r = ls.map((l) => normDeg(l.rot));
+  return r.length && r.every((x) => Math.abs(x - r[0]!) < 1e-6) ? r[0]! : null;
+}
+/**
+ * Cambia el marco común de las seleccionadas (ya con su paso de deshacer tomado), en mm: ancho, alto (desde el centro
+ * del marco; si no se pueden estirar o con la proporción fija, las dos medidas a la vez), posición o giro.
+ */
+export function setGroupFrame(ls: Layer[], change: { w?: number; h?: number; x?: number; y?: number; rot?: number }) {
+  if (!ls.length) return;
+  const b = unionBox(ls.map((l) => bboxMM(l))), c = { x: (b.x0 + b.x1) / 2, y: (b.y0 + b.y1) / 2 };
+  const W = b.x1 - b.x0, H = b.y1 - b.y0;
+  const keep = S.lock || !canStretch(ls);
+  if (change.w != null || change.h != null) {
+    const fx = change.w != null ? Math.max(3, change.w) / W : null, fy = change.h != null ? Math.max(3, change.h) / H : null;
+    for (const l of ls) {
+      if (keep) scaleLayer(l, (fx ?? fy)!, c);
+      else stretchLayer(l, fx ?? 1, fy ?? 1, c);
+      markManual(l);
+    }
+  }
+  if (change.x != null || change.y != null) {
+    const dx = change.x != null ? change.x - b.x0 : 0, dy = change.y != null ? change.y - b.y0 : 0;
+    for (const l of ls) { l.cx += dx; l.cy += dy; markManual(l); }
+  }
+  if (change.rot != null) {
+    const d = normDeg(change.rot - (commonRotation(ls) ?? 0));
+    for (const l of ls) { rotateLayer(l, d, c); markManual(l); }
+  }
+}
+
+/** Un grupo entero se alinea con el póster. Varias unidades se alinean entre sí. */
+export function alignSelected(edge: AlignEdge) {
+  const units = compositionUnits();
+  if (!units.length || st.sel?.locked) return;
+  const boxes = units.map((ls) => unionBox(ls.map(bboxMM)));
+  const g = posterGeo();
+  const target = units.length === 1 ? { x0: 0, y0: 0, x1: g.W, y1: g.H } : undefined;
+  if (!placeUnits(units, alignShifts(boxes, edge, target))) toast('La selección ya está alineada');
 }
 /** Reparte las seleccionadas (3 o más) con el mismo espacio entre ellas. */
 export function distributeSelected(axis: 'x' | 'y') {
-  const ls = selected();
-  if (ls.length < 3) { toast('Para repartir hacen falta al menos 3 imágenes'); return; }
-  const ds = distributeShifts(ls.map((l) => bboxMM(l)), axis);
-  snap();
-  ls.forEach((l, i) => { l.cx += ds[i]!.x; l.cy += ds[i]!.y; markManual(l); });
-  afterChange();
+  const units = compositionUnits();
+  if (units.length < 3) return;
+  const boxes = units.map((ls) => unionBox(ls.map(bboxMM)));
+  if (!placeUnits(units, distributeShifts(boxes, axis))) toast('La separación ya es uniforme');
 }
 
 /**
@@ -389,11 +481,12 @@ export function newPoster() {
   const hadImages = st.layers.length > 0;
   if (S.mode === 'crop') cancelCrop();
   if (S.mode !== 'move') setMode('move');
-  snap();
+  snapWithExport(); // deshacerlo devuelve también resolución, marcas, guía y omitir en blanco
   st.layers = [];
   st.sel = null;
   st.group = [];
   st.sheetsOn = false; // vuelve al estado inicial: sin hojas hasta que el usuario haga algo
+  st.layoutGuides = [];
   Object.assign(S, freshLayout(), DEFAULT_EXPORT); // el margen de la impresora se mantiene
   syncExportUI();
   layoutChanged();
@@ -405,6 +498,7 @@ export function newPoster() {
     { label: 'Deshacer', fn: undo });
 }
 export function afterHistory() {
+  duplicateRun = null;
   if (!st.sel && S.mode !== 'move') setMode('move');
   layoutRestored();
   syncExportUI();
@@ -422,34 +516,34 @@ export function removeLayer(l: Layer) {
   else afterChange();
   toast(`«${l.name}» quitada del póster`, 6000, { label: 'Deshacer', fn: undo });
 }
-export function reorder(l: Layer, to: 'front' | 'back' | number) {
-  const i = st.layers.indexOf(l);
-  let j = to === 'front' ? st.layers.length - 1 : to === 'back' ? 0 : i + to;
-  j = Math.min(Math.max(j, 0), st.layers.length - 1);
-  if (i === j) return;
+export function reorder(item: Layer | number, to: 'front' | 'back' | number | Layer) {
+  const { peers, index } = stackPeers(st.layers, item);
+  if (index < 0) return;
+  const last = peers.length - 1;
+  const dest = to === 'front' ? last : to === 'back' ? 0 : typeof to === 'number'
+    ? Math.max(0, Math.min(last, index + to)) : peers.findIndex((unit) => unit.includes(to));
+  if (dest < 0 || dest === index) return;
+  const start = st.layers.indexOf(peers[0]![0]!);
+  const [moved] = peers.splice(index, 1);
+  peers.splice(dest, 0, moved!);
+  const ordered = peers.flat();
   snap();
-  st.layers.splice(i, 1); st.layers.splice(j, 0, l);
-  tidyGroups();
+  st.layers.splice(start, ordered.length, ...ordered);
   afterChange();
 }
-export function duplicateLayer(l: Layer) {
-  snap();
-  // la copia de una imagen de un grupo queda dentro del mismo grupo, justo encima
-  const d = cloneLayer(l, { name: l.name + ' (copia)', fit: null });
-  d.cx += 10; d.cy += 10;
-  st.layers.splice(st.layers.indexOf(l) + 1, 0, d);
-  select(d);
-}
+export function duplicateLayer(l: Layer) { duplicateSelected([l]); }
 export function copyLayer(l: Layer) { toClip([l]); st.clipN = 0; toast(`«${l.name}» copiada`); }
 /**
- * Pega lo copiado en Pliego (una o varias imágenes), cada vez un poco más desplazado. Si el grupo del que se copió
+ * Pega lo copiado en engrande (una o varias imágenes), cada vez un poco más desplazado. Si el grupo del que se copió
  * sigue en el póster, se pega dentro de él, encima de lo que tiene; si no, suelto y al frente.
+ * Si esa posición queda fuera de la vista (se movió o se acercó la vista), se pega centrado en lo que se ve, como en
+ * Figma. inPlace (Ctrl/⌘ + Mayús + V): exactamente donde estaba el original, sin desplazar.
  */
-export function pasteLayer() {
+export function pasteLayer(inPlace = false) {
   const clip = st.clip;
   if (!clip?.length) return false;
   snap();
-  const n = ++st.clipN;
+  const n = inPlace ? 0 : ++st.clipN;
   const scope = pathExists(st.layers, st.clipScope) ? st.clipScope : [];
   const fresh = freshGroups(clip.map((c) => c.gpath), st.layers);
   const host = scope.length ? membersOf(st.layers, scope.at(-1)!.id) : [];
@@ -461,10 +555,21 @@ export function pasteLayer() {
     st.layers.splice(at++, 0, d);
     return d;
   });
+  if (!inPlace) {
+    const shift = intoView(unionBox(ds.map((l) => bboxMM(l))));
+    for (const d of ds) { d.cx += shift.x; d.cy += shift.y; }
+  }
   tidyGroups();
   selectMany(ds);
   scheduleSave();
   return true;
+}
+/** Desplazamiento (mm enteros) que lleva el centro de b al de la zona visible si ahora cae fuera de ella. */
+function intoView(b: { x0: number; y0: number; x1: number; y1: number }): Pt {
+  const f = freeArea(), a = s2mm({ x: f.x, y: f.y }), z = s2mm({ x: f.x + f.w, y: f.y + f.h });
+  const c = { x: (b.x0 + b.x1) / 2, y: (b.y0 + b.y1) / 2 };
+  if (c.x >= a.x && c.x <= z.x && c.y >= a.y && c.y <= z.y) return { x: 0, y: 0 };
+  return { x: Math.round((a.x + z.x) / 2 - c.x), y: Math.round((a.y + z.y) / 2 - c.y) };
 }
 /** Envuelve una transformación de la imagen seleccionada con su paso de deshacer. */
 export const tx = (fn: (l: Layer) => void) => () => {
@@ -481,7 +586,8 @@ export const centerSel = tx((l) => { const g = posterGeo(), c = cropCenter(l); l
 export const unstretchSel = tx((l) => { unstretch(l); markManual(l); });
 
 /* ---------- modos ---------- */
-let cropSession: Snapshot | null = null;
+const cropGeometry = (l: Layer) => ({ crop: { ...l.crop }, cx: l.cx, cy: l.cy, w: l.w, h: l.h, fit: l.fit && { ...l.fit } });
+let cropSession: { layer: Layer; before: ReturnType<typeof cropGeometry> } | null = null;
 const cursorFor = (m: Mode) => (m === 'wand' ? 'crosshair' : m === 'erase' ? 'none' : 'default');
 
 export function setMode(m: Mode) {
@@ -502,7 +608,7 @@ export function enterCrop() {
   if (st.sel.locked) { toast(LOCKED_MSG); return; }
   if (isTextLayer(st.sel)) { toast(TEXT_NO_PIXELS); return; }
   S.cropRatio = null; S.cropRatioKey = 'null'; cropRef = null;
-  cropSession = takeSnap();
+  cropSession = { layer: st.sel, before: cropGeometry(st.sel) };
   S.mode = 'crop';
   $('#cv').style.cursor = 'default';
   renderBar(); dirty();
@@ -511,15 +617,17 @@ export function applyCrop() {
   if (S.mode !== 'crop') return;
   const s = cropSession, sel = st.sel;
   cropSession = null; S.mode = 'move';
-  const p = s && sel && s.props.find((q) => q.l === sel);
-  // al encuadrar se mueve o amplía la imagen, no solo el recorte: se comparan las dos cosas
-  const key = (o: Layer | LayerProps) => JSON.stringify([o.crop, o.cx, o.cy, o.w, o.h]);
-  if (s && p && sel && key(p) !== key(sel)) { pushUndo(s); markManual(sel); }
+  if (s && sel === s.layer && JSON.stringify(s.before) !== JSON.stringify(cropGeometry(sel))) {
+    const snapshot = takeSnap();
+    Object.assign(snapshot.props.find((p) => p.l === sel)!, s.before);
+    pushUndo(snapshot);
+    markManual(sel);
+  }
   renderBar(); afterChange();
 }
 export function cancelCrop() {
   if (S.mode !== 'crop') return;
-  if (cropSession) restoreSnap(cropSession);
+  if (cropSession) Object.assign(cropSession.layer, cropSession.before);
   cropSession = null; S.mode = 'move';
   renderBar(); afterChange();
 }
@@ -548,16 +656,42 @@ const mmToPx = (l: Layer, m: Pt) => {
 /** Guarda el paso de deshacer y trabaja sobre una copia del lienzo (el anterior queda en el historial). */
 export function beginPixelEdit(l: Layer) { snap(); l.img = cloneCanvas(l.img); }
 
-export function paint(l: Layer, a: Pt, b: Pt) {
-  const r = S.brush / (V.k * Math.sqrt((l.w / l.img.width) * (l.h / l.img.height)));
-  const pa = mmToPx(l, s2mm(a)), pb = mmToPx(l, s2mm(b)), c = l.img.getContext('2d')!;
-  if (S.brushMode === 'erase') {
-    c.save(); c.globalCompositeOperation = 'destination-out'; c.lineCap = 'round'; c.lineWidth = 2 * r; c.strokeStyle = '#000'; c.fillStyle = '#000';
-    c.beginPath(); c.moveTo(pa.x, pa.y); c.lineTo(pb.x, pb.y); c.stroke();
-    c.beginPath(); c.arc(pb.x, pb.y, r, 0, Math.PI * 2); c.fill(); c.restore();
+/** Trazo circular en pantalla incluso si se estiró una sola dimensión de la capa. */
+function brushStroke(c: CanvasRenderingContext2D, a: Pt, b: Pt, radius: Pt) {
+  c.save();
+  c.scale(radius.x, radius.y);
+  c.fillStyle = c.strokeStyle = '#000';
+  c.lineWidth = 2;
+  c.lineCap = 'round';
+  c.beginPath();
+  if (a.x === b.x && a.y === b.y) {
+    c.arc(b.x / radius.x, b.y / radius.y, 1, 0, 2 * Math.PI);
+    c.fill();
   } else {
-    restoreStroke(l, c, pa, pb, r);
+    c.moveTo(a.x / radius.x, a.y / radius.y);
+    c.lineTo(b.x / radius.x, b.y / radius.y);
+    c.stroke();
   }
+  c.restore();
+}
+
+export function paint(l: Layer, a: Pt, b: Pt) {
+  if (l.locked || l.hidden || isTextLayer(l)) return;
+  const mm = S.brush / V.k;
+  const radius = { x: mm * l.img.width / l.w, y: mm * l.img.height / l.h };
+  const pa = mmToPx(l, s2mm(a)), pb = mmToPx(l, s2mm(b)), c = l.img.getContext('2d')!;
+  const k = l.crop;
+  c.save();
+  c.beginPath();
+  c.rect(k.x0 * l.img.width, k.y0 * l.img.height, (k.x1 - k.x0) * l.img.width, (k.y1 - k.y0) * l.img.height);
+  c.clip();
+  if (S.brushMode === 'erase') {
+    c.globalCompositeOperation = 'destination-out';
+    brushStroke(c, pa, pb, radius);
+  } else {
+    restoreStroke(l, c, pa, pb, radius);
+  }
+  c.restore();
   markCanvasChanged(l.img);
   dirty();
 }
@@ -579,10 +713,10 @@ const scratchCanvas = (c: HTMLCanvasElement | null, w: number, h: number) => {
  * sobre zonas ya restauradas, quedaban anillos semitransparentes («rebaba»). Ahora repasar no cambia nada.
  * Solo se trabaja en el rectángulo que toca el pincel.
  */
-function restoreStroke(l: Layer, c: CanvasRenderingContext2D, pa: Pt, pb: Pt, r: number) {
+function restoreStroke(l: Layer, c: CanvasRenderingContext2D, pa: Pt, pb: Pt, r: Pt) {
   const W = l.img.width, H = l.img.height;
-  const x0 = Math.max(0, Math.floor(Math.min(pa.x, pb.x) - r - 2)), y0 = Math.max(0, Math.floor(Math.min(pa.y, pb.y) - r - 2));
-  const x1 = Math.min(W, Math.ceil(Math.max(pa.x, pb.x) + r + 2)), y1 = Math.min(H, Math.ceil(Math.max(pa.y, pb.y) + r + 2));
+  const x0 = Math.max(0, Math.floor(Math.min(pa.x, pb.x) - r.x - 2)), y0 = Math.max(0, Math.floor(Math.min(pa.y, pb.y) - r.y - 2));
+  const x1 = Math.min(W, Math.ceil(Math.max(pa.x, pb.x) + r.x + 2)), y1 = Math.min(H, Math.ceil(Math.max(pa.y, pb.y) + r.y + 2));
   const bw = x1 - x0, bh = y1 - y0;
   if (bw <= 0 || bh <= 0) return;
   // máscara: los círculos del pincel a lo largo del segmento (con borde suave)
@@ -590,14 +724,7 @@ function restoreStroke(l: Layer, c: CanvasRenderingContext2D, pa: Pt, pb: Pt, r:
   const m = maskCanvas.getContext('2d')!;
   m.globalCompositeOperation = 'source-over';
   m.clearRect(0, 0, bw, bh);
-  m.fillStyle = '#000';
-  m.beginPath();
-  const d = Math.hypot(pb.x - pa.x, pb.y - pa.y), n = Math.max(1, Math.ceil(d / (r * 0.4)));
-  for (let i = 0; i <= n; i++) {
-    const x = pa.x + ((pb.x - pa.x) * i) / n - x0, y = pa.y + ((pb.y - pa.y) * i) / n - y0;
-    m.moveTo(x + r, y); m.arc(x, y, r, 0, Math.PI * 2);
-  }
-  m.fill();
+  brushStroke(m, { x: pa.x - x0, y: pa.y - y0 }, { x: pb.x - x0, y: pb.y - y0 }, r);
   // original × cobertura
   origCanvas = scratchCanvas(origCanvas, bw, bh);
   const o = origCanvas.getContext('2d')!;
@@ -621,7 +748,7 @@ let pixelBusy = false;
  * (el anterior queda en el historial). Si mientras tanto la imagen cambió, el resultado se descarta.
  */
 async function applyPixelJob(l: Layer, job: PixelJob, busyMsg: string): Promise<PixelResult | null> {
-  if (l.locked) { toast(LOCKED_MSG); return null; }
+  if (l.locked || l.hidden || isTextLayer(l)) return null;
   if (pixelBusy) { toast('Espera a que termine el proceso anterior…'); return null; }
   pixelBusy = true;
   const src = l.img, rev = canvasRevision(src), cv = $('#cv');
@@ -632,7 +759,7 @@ async function applyPixelJob(l: Layer, job: PixelJob, busyMsg: string): Promise<
   try {
     const ctx = src.getContext('2d', { willReadFrequently: true })!;
     const r = await runJob(() => ctx.getImageData(0, 0, src.width, src.height), job);
-    if (l.img !== src || canvasRevision(src) !== rev || !st.layers.includes(l)) {
+    if (l.locked || l.hidden || l.img !== src || canvasRevision(src) !== rev || !st.layers.includes(l)) {
       toast('La imagen cambió mientras se procesaba. Vuelve a intentarlo.');
       return null;
     }

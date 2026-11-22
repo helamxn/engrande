@@ -3,7 +3,7 @@
  * Todo está en milímetros del póster; las coordenadas locales (u, v) van de 0 a 1 sobre la imagen completa.
  */
 import { PAPERS } from './constants';
-import type { Crop, CropDrag, Fit, FitMode, Geo, HandleId, LayerGeom, Pt, ScaleDrag, Settings, Source, Transform, UV } from './types';
+import type { Crop, CropDrag, Fit, FitMode, Geo, HandleId, LayerGeom, LayoutGuide, Pt, ScaleDrag, Settings, Source, Transform, UV } from './types';
 
 export const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
 export const rad = (d: number) => (d * Math.PI) / 180;
@@ -12,6 +12,18 @@ export const normDeg = (d: number) => {
   const n = (((d + 180) % 360) + 360) % 360 - 180;
   return n === -180 ? 180 : n;
 };
+/** Tolerancia del imán de giro a 0/90/180/270 (grados). */
+export const ROT_SNAP = 3;
+/**
+ * Ángulo al girar con el ratón: con Shift, de 15° en 15°; sin él, se pega a los múltiplos de 90° cuando queda a menos
+ * de ROT_SNAP. Lo usan el giro de una capa (ángulo final) y el de varias (giro del marco común), para que el mismo
+ * gesto dé el mismo resultado.
+ */
+export function snapRotation(deg: number, step15: boolean) {
+  if (step15) return Math.round(deg / 15) * 15;
+  const q = Math.round(deg / 90) * 90;
+  return Math.abs(deg - q) < ROT_SNAP ? q : deg;
+}
 /**
  * Número de la hoja de la fila r y la columna c (desde 0): 1, 2, 3… de izquierda a derecha y de arriba abajo, el
  * mismo orden en que salen del PDF. Antes eran A1, B2…, que se confundían con los tamaños de papel (A1, A2) y se
@@ -19,13 +31,68 @@ export const normDeg = (d: number) => {
  */
 export const sheetNo = (r: number, c: number, cols: number) => r * cols + c + 1;
 
-export function geo(s: Pick<Settings, 'paper' | 'orient' | 'cols' | 'rows' | 'margin' | 'overlap'>): Geo {
+export function geo(s: Pick<Settings, 'paper' | 'orient' | 'cols' | 'rows' | 'margin' | 'overlap' | 'posterSize'>): Geo {
   let [pw, ph] = PAPERS[s.paper];
   if (s.orient === 'landscape') [pw, ph] = [ph, pw];
   const m = Math.min(s.margin, pw / 4);
   const tw = pw - 2 * m, th = ph - 2 * m;
   const ov = Math.min(s.overlap, tw / 3, th / 3);
-  return { pw, ph, m, tw, th, ov, W: s.cols * tw - (s.cols - 1) * ov, H: s.rows * th - (s.rows - 1) * ov };
+  const W = s.posterSize?.w ?? s.cols * tw - (s.cols - 1) * ov;
+  const H = s.posterSize?.h ?? s.rows * th - (s.rows - 1) * ov;
+  const sheets = (length: number, tile: number) => Math.max(1, Math.ceil((length - ov) / (tile - ov) - 1e-10));
+  return { pw, ph, m, tw, th, ov, W, H, cols: sheets(W, tw), rows: sheets(H, th) };
+}
+
+export function tileRegion(g: Geo, r: number, c: number) {
+  const x = c * (g.tw - g.ov), y = r * (g.th - g.ov);
+  return { x, y, w: Math.min(g.tw, g.W - x), h: Math.min(g.th, g.H - y) };
+}
+
+/* ---------- hojas que hay que imprimir («Omitir hojas en blanco») ---------- */
+/**
+ * Tramos de un eje del póster (columnas o filas) y qué hojas los imprimen: los de dentro de una sola hoja y las franjas
+ * de solape, que imprimen dos (la de un lado y la del otro). n hojas de `tile` mm que se solapan `ov` mm, en `total` mm.
+ */
+export function axisSegments(n: number, tile: number, ov: number, total: number): { a: number; b: number; idx: number[] }[] {
+  const spans = Array.from({ length: n }, (_, i) => ({ s: i * (tile - ov), e: Math.min(i * (tile - ov) + tile, total) }));
+  const cuts = [...new Set(spans.flatMap((t) => [t.s, t.e]).map((v) => Math.round(v * 1e6) / 1e6))].sort((a, b) => a - b);
+  const out: { a: number; b: number; idx: number[] }[] = [];
+  for (let k = 0; k + 1 < cuts.length; k++) {
+    const a = cuts[k]!, b = cuts[k + 1]!;
+    if (b - a < 1e-6) continue;
+    const idx = spans.flatMap((t, i) => (t.s <= a + 1e-6 && t.e >= b - 1e-6 ? [i] : []));
+    if (idx.length) out.push({ a, b, idx });
+  }
+  return out;
+}
+/** Zona del póster con sus hojas: dentro de una sola, en una franja de solape (dos) o en un cruce de franjas (cuatro). */
+export interface SheetCell { x0: number; y0: number; x1: number; y1: number; sheets: number[] }
+export function sheetCells(g: Geo): SheetCell[] {
+  const xs = axisSegments(g.cols, g.tw, g.ov, g.W), ys = axisSegments(g.rows, g.th, g.ov, g.H);
+  return ys.flatMap((y) => xs.map((x) => ({
+    x0: x.a, y0: y.a, x1: x.b, y1: y.b,
+    sheets: y.idx.flatMap((r) => x.idx.map((c) => sheetNo(r, c, g.cols))).sort((a, b) => a - b),
+  })));
+}
+/**
+ * Hojas que hay que imprimir para que no se pierda nada de lo que tiene tinta. Lo que está dentro de una sola hoja
+ * obliga a imprimirla. Lo que está en una franja de solape lo imprimen las dos hojas que la comparten y basta con una:
+ * se imprime una más solo si ninguna de ellas sale ya. Entonces se elige la que cubre más zonas pendientes (y, a
+ * igualdad, la de número menor). Antes salía cualquier hoja con tinta: una imagen que entraba 0,1 mm en la vecina
+ * hacía imprimir una hoja entera para una línea que la otra ya traía.
+ */
+export function chooseSheets(cells: { sheets: number[]; ink: boolean }[]): number[] {
+  const inked = cells.filter((c) => c.ink && c.sheets.length);
+  const chosen = new Set(inked.filter((c) => c.sheets.length === 1).map((c) => c.sheets[0]!));
+  let pending = inked.filter((c) => !c.sheets.some((s) => chosen.has(s)));
+  while (pending.length) {
+    const score = new Map<number, number>();
+    for (const c of pending) for (const s of c.sheets) score.set(s, (score.get(s) ?? 0) + 1);
+    const best = [...score].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0]![0];
+    chosen.add(best);
+    pending = pending.filter((c) => !c.sheets.includes(best));
+  }
+  return [...chosen].sort((a, b) => a - b);
 }
 
 /* ---------- coordenadas locales ---------- */
@@ -63,6 +130,21 @@ export const natRatio = (l: LayerGeom) => l.img.height / l.img.width;
 
 export function scaleLayer(l: Transform, f: number, p: Pt) {
   l.cx = p.x + (l.cx - p.x) * f; l.cy = p.y + (l.cy - p.y) * f; l.w *= f; l.h *= f;
+}
+/** Girada un múltiplo de 90° (0, 90, 180, 270): sus bordes siguen paralelos a los del póster. */
+export const quarterTurn = (rot: number) => Math.abs(normDeg(rot) - Math.round(normDeg(rot) / 90) * 90) < 0.01;
+/** Se pueden estirar en un solo eje: todas giradas de 90° en 90° y ningún texto (un texto escala sin deformar). */
+export const canStretch = (ls: { rot: number; src?: Source | null }[]) =>
+  ls.length > 0 && ls.every((l) => quarterTurn(l.rot) && l.src?.kind !== 'text');
+/**
+ * Estira en x por sx y en y por sy desde p (en ejes del póster), como al estirar un grupo por un lado. Solo vale para
+ * una capa girada un múltiplo de 90° (ver quarterTurn): girada 90° o 270°, su ancho va en vertical. Con otro giro,
+ * estirar en ejes del póster la sesgaría, y una capa no puede estar sesgada.
+ */
+export function stretchLayer(l: Transform, sx: number, sy: number, p: Pt) {
+  l.cx = p.x + (l.cx - p.x) * sx; l.cy = p.y + (l.cy - p.y) * sy;
+  const side = Math.abs(Math.round(normDeg(l.rot) / 90)) % 2 === 1;
+  l.w *= side ? sy : sx; l.h *= side ? sx : sy;
 }
 export function rotateLayer(l: Transform, d: number, p: Pt) {
   const a = rad(d), c = Math.cos(a), s = Math.sin(a), dx = l.cx - p.x, dy = l.cy - p.y;
@@ -109,10 +191,21 @@ const lines = (a: number, b: number) => [a, (a + b) / 2, b];
 const EPS = 1e-6;
 const same = (a: number, b: number) => Math.abs(a - b) < EPS;
 /** Bordes y centro del póster y de cada caja (las demás imágenes). */
-export function snapTargets(W: number, H: number, boxes: Box[]): SnapTargets {
+export function snapTargets(W: number, H: number, boxes: Box[], guides: LayoutGuide[] = []): SnapTargets {
   const px = lines(0, W), py = lines(0, H), x = [...px], y = [...py];
   for (const b of boxes) { x.push(...lines(b.x0, b.x1)); y.push(...lines(b.y0, b.y1)); }
-  return { x, y, px, py };
+  for (const g of guides) (g.axis === 'x' ? x : y).push(g.at);
+  return { x: x.sort((a, b) => a - b), y: y.sort((a, b) => a - b), px, py };
+}
+
+/** Primera línea mayor o igual a value en el índice ordenado al comenzar el gesto. */
+function lowerBound(lines: number[], value: number) {
+  let lo = 0, hi = lines.length;
+  while (lo < hi) {
+    const mid = Math.floor((lo + hi) / 2);
+    if (lines[mid]! < value) lo = mid + 1; else hi = mid;
+  }
+  return lo;
 }
 /**
  * El ajuste de un eje al mover: el más corto que deja algún borde o el centro (own) sobre una línea. Si hay
@@ -126,13 +219,16 @@ function bestShift(own: number[], all: number[], poster: number[], tol: number) 
   const better = (a: C, b: C) =>
     !same(Math.abs(a.d), Math.abs(b.d)) ? Math.abs(a.d) < Math.abs(b.d)
       : a.n !== b.n ? a.n > b.n : a.img !== b.img ? a.img : a.edge !== b.edge ? a.edge : false;
-  const count = (arr: number[], v: number) => arr.filter((w) => same(w, v)).length;
+  const count = (arr: number[], v: number) => lowerBound(arr, v + EPS) - lowerBound(arr, v - EPS);
   own.forEach((o, i) => {
-    for (const v of all) {
+    for (let j = lowerBound(all, o - tol); j < all.length; j++) {
+      const v = all[j]!;
+      if (v > o + tol) break;
+      if (j > 0 && v === all[j - 1]) continue;
       const d = v - o;
       if (Math.abs(d) > tol) continue;
       // img: la línea es de alguna imagen (no solo del póster)
-      const c: C = { d, g: v, n: own.filter((q) => all.some((w) => same(q + d, w))).length, img: count(all, v) > count(poster, v), edge: i !== 1 };
+      const c: C = { d, g: v, n: own.filter((q) => count(all, q + d) > 0).length, img: count(all, v) > count(poster, v), edge: i !== 1 };
       if (!best || better(c, best)) best = c;
     }
   });
@@ -391,7 +487,7 @@ export function distributeShifts(bs: Box[], axis: 'x' | 'y'): Pt[] {
   if (bs.length < 3) return out;
   const a0 = axis === 'x' ? 'x0' : 'y0', a1 = axis === 'x' ? 'x1' : 'y1';
   const order = bs.map((_, i) => i).sort((i, j) => bs[i]![a0] - bs[j]![a0] || bs[i]![a1] - bs[j]![a1]);
-  const first = bs[order[0]!]!, span = Math.max(...bs.map((b) => b[a1])) - first[a0];
+  const first = bs[order[0]!]!, last = bs[order.at(-1)!]!, span = last[a1] - first[a0];
   const sizes = bs.reduce((s, b) => s + (b[a1] - b[a0]), 0);
   const gap = (span - sizes) / (bs.length - 1);
   let pos = first[a0];
@@ -622,7 +718,7 @@ export function zoomInFrame(l: LayerGeom, f: number, P: Pt) {
 export function srcDims(l: LayerGeom & { src: Source | null }, hiArea: number) {
   const s = l.src, iw = l.img.width, ih = l.img.height;
   let w = iw, h = ih;
-  if (s?.kind === 'svg' || s?.kind === 'pdf' || s?.kind === 'text') { const a = iw / ih; w = Math.sqrt(hiArea * a); h = w / a; }
+  if (s && s.kind !== 'img') { const a = iw / ih; w = Math.sqrt(hiArea * a); h = w / a; }
   else if (s?.kind === 'img' && s.w && s.h) { const f = Math.min(1, Math.sqrt(hiArea / (s.w * s.h))); w = s.w * f; h = s.h * f; }
   return { w: Math.max(w, iw), h: Math.max(h, ih) };
 }

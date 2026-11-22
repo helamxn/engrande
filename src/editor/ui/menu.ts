@@ -7,12 +7,15 @@
  * - Táctil: los submenús no se abren al lado (no caben); el menú pasa a mostrar su contenido con «Atrás».
  */
 import {
-  alignSelected, autoBackground, centerSel, copyLayer, copySelected, cutSelected, distributeSelected, duplicateLayer,
+  addFigure, alignSelected, autoBackground, centerSel, compositionUnits, copyLayer, copySelected, copySelection, cutSelected, distributeSelected, duplicateLayer,
   duplicateSelected, enterCrop, fitSel, flip, groupName, groupSelected, hideSelected, leaveGroup, lockSelected,
   newPoster, pasteLayer, removeLayer, removeSelected, reorder, resetOriginal, rotate90, select, selectAll,
   selectedGroup, selectMany, setMode, toggleHidden, toggleLocked, ungroupSelected, groupMembers, unstretchSel,
 } from '../actions';
 import { focusGroupName, focusName } from './panel';
+import { stackPeers } from '../groups';
+import { figures } from '../figures';
+import type { ShapeSpec } from '../types';
 import { $, toast } from '../dom';
 import { isStretched } from '../geometry';
 import { isTouch } from '../platform';
@@ -55,8 +58,19 @@ export async function pasteAny() {
  * Lo que nunca aplica se oculta en vez de desactivarse: "Orden" con una sola imagen y "Quitar deformación"
  * si no está deformada. "Pegar" sí aparece desactivado, porque ese estado informa.
  */
+function orderMenu(item: Layer | number): MenuItem[] {
+  const { peers, index } = stackPeers(st.layers, item);
+  if (peers.length < 2) return [];
+  const top = index === peers.length - 1, bottom = index === 0;
+  return [{ label: 'Orden', icon: 'layers', submenu: [
+    { label: 'Traer al frente', kbd: k('mod+shift+]'), fn: () => reorder(item, 'front'), disabled: top },
+    { label: 'Traer adelante', kbd: k('mod+]'), fn: () => reorder(item, 1), disabled: top },
+    { label: 'Enviar atrás', kbd: k('mod+['), fn: () => reorder(item, -1), disabled: bottom },
+    { label: 'Enviar al fondo', kbd: k('mod+shift+['), fn: () => reorder(item, 'back'), disabled: bottom },
+  ] }];
+}
+
 export function layerMenu(l: Layer, prev: Layer[] = []): MenuItem[] {
-  const i = st.layers.indexOf(l), top = i === st.layers.length - 1, bottom = i === 0;
   const locked = l.hidden || l.locked; // oculta o bloqueada: no se puede editar hasta mostrarla o desbloquearla
   // en táctil no hay Shift ni Ctrl: mantener pulsada otra imagen ofrece sumarla a lo que estaba seleccionado
   const addTo = prev.filter((x) => !x.hidden && x !== l);
@@ -83,22 +97,15 @@ export function layerMenu(l: Layer, prev: Layer[] = []): MenuItem[] {
     { label: 'Cortar', icon: 'cut', kbd: k('mod+x'), fn: () => { select(l); cutSelected(); }, disabled: l.locked },
     { label: 'Pegar', icon: 'paste', kbd: k('mod+v'), fn: () => void pasteAny(), disabled: !canPaste() },
     { label: 'Duplicar', icon: 'dup', kbd: k('mod+d'), fn: () => duplicateLayer(l) },
-    { label: l.hidden ? 'Mostrar' : 'Ocultar', icon: l.hidden ? 'eye' : 'eyeOff', fn: () => toggleHidden(l) },
-    { label: l.locked ? 'Desbloquear' : 'Bloquear', icon: l.locked ? 'lockOpen' : 'lock', fn: () => toggleLocked(l) },
+    { label: l.hidden ? 'Mostrar' : 'Ocultar', icon: l.hidden ? 'eye' : 'eyeOff', kbd: k('mod+shift+h'), fn: () => toggleHidden(l) },
+    { label: l.locked ? 'Desbloquear' : 'Bloquear', icon: l.locked ? 'lockOpen' : 'lock', kbd: k('mod+shift+l'), fn: () => toggleLocked(l) },
     { label: 'Renombrar…', icon: 'rename', fn: () => { select(l); focusName(); } },
     ...(l.gpath.length ? [
       { label: 'Seleccionar el grupo', icon: 'group', fn: () => selectMany(groupMembers(l.gpath.at(-1)!.id)) } satisfies ActionItem,
       { label: 'Sacar del grupo', icon: 'ungroup', fn: () => leaveGroup(l) } satisfies ActionItem,
     ] : []),
     '-',
-    ...(st.layers.length > 1 ? [{
-      label: 'Orden', icon: 'layers', submenu: [
-        { label: 'Traer al frente', kbd: k('mod+shift+]'), fn: () => reorder(l, 'front'), disabled: top },
-        { label: 'Traer adelante', kbd: k('mod+]'), fn: () => reorder(l, 1), disabled: top },
-        { label: 'Enviar atrás', kbd: k('mod+['), fn: () => reorder(l, -1), disabled: bottom },
-        { label: 'Enviar al fondo', kbd: k('mod+shift+['), fn: () => reorder(l, 'back'), disabled: bottom },
-      ],
-    } satisfies SubmenuItem] : []),
+    ...orderMenu(l),
     {
       label: 'Girar y voltear', icon: 'rot', disabled: l.locked, submenu: [
         { label: 'Girar 90° a la derecha', kbd: k('r'), fn: rotate90(1) },
@@ -123,13 +130,13 @@ export function layerMenu(l: Layer, prev: Layer[] = []): MenuItem[] {
 /** Menú de varias imágenes seleccionadas. */
 /** Alinear las seleccionadas (submenú del menú de varias). */
 export const alignMenu = (): MenuItem[] => [
-  { label: 'A la izquierda', fn: () => alignSelected('left') },
-  { label: 'Al centro (horizontal)', fn: () => alignSelected('hcenter') },
-  { label: 'A la derecha', fn: () => alignSelected('right') },
+  { label: 'A la izquierda', kbd: k('alt+a'), fn: () => alignSelected('left') },
+  { label: 'Al centro (horizontal)', kbd: k('alt+h'), fn: () => alignSelected('hcenter') },
+  { label: 'A la derecha', kbd: k('alt+d'), fn: () => alignSelected('right') },
   '-',
-  { label: 'Arriba', fn: () => alignSelected('top') },
-  { label: 'Al centro (vertical)', fn: () => alignSelected('vcenter') },
-  { label: 'Abajo', fn: () => alignSelected('bottom') },
+  { label: 'Arriba', kbd: k('alt+w'), fn: () => alignSelected('top') },
+  { label: 'Al centro (vertical)', kbd: k('alt+v'), fn: () => alignSelected('vcenter') },
+  { label: 'Abajo', kbd: k('alt+s'), fn: () => alignSelected('bottom') },
 ];
 /** Repartir las seleccionadas (3 o más). */
 export const distributeMenu = (): MenuItem[] => [
@@ -145,32 +152,60 @@ export function groupMenu(): MenuItem[] {
   return [
     { head: whole != null ? `${groupName(whole)} · ${n} imágenes` : `${n} imágenes` },
     { label: 'Copiar', icon: 'copy', kbd: k('mod+c'), fn: copySelected },
-    { label: 'Cortar', icon: 'cut', kbd: k('mod+x'), fn: cutSelected },
+    { label: 'Cortar', icon: 'cut', kbd: k('mod+x'), fn: cutSelected, disabled: copySelection().some((l) => l.locked) },
     { label: 'Duplicar', icon: 'dup', kbd: k('mod+d'), fn: duplicateSelected },
     whole != null
       ? { label: 'Desagrupar', icon: 'ungroup', kbd: k('mod+shift+g'), fn: ungroupSelected }
       : { label: 'Agrupar', icon: 'group', kbd: k('mod+g'), fn: groupSelected },
     ...(whole != null ? [{ label: 'Renombrar grupo…', icon: 'rename', fn: () => focusGroupName(whole) } satisfies ActionItem] : []),
+    ...(whole != null ? orderMenu(whole) : []),
     '-',
-    { label: 'Alinear', icon: 'alignLeft', submenu: alignMenu() },
-    { label: 'Repartir', icon: 'distributeH', disabled: n < 3, submenu: distributeMenu() },
+    { label: whole != null ? 'Alinear con el póster' : 'Alinear', icon: 'alignLeft', submenu: alignMenu() },
+    { label: 'Repartir', icon: 'distributeH', disabled: compositionUnits().length < 3, submenu: distributeMenu() },
     '-',
-    { label: 'Ocultar las ' + n, icon: 'eyeOff', fn: hideSelected },
-    { label: 'Bloquear las ' + n, icon: 'lock', fn: lockSelected },
+    { label: 'Ocultar las ' + n, icon: 'eyeOff', kbd: k('mod+shift+h'), fn: hideSelected },
+    { label: 'Bloquear las ' + n, icon: 'lock', kbd: k('mod+shift+l'), fn: lockSelected },
     '-',
     { label: 'Deseleccionar', icon: 'x', kbd: k('esc'), fn: () => select(null) },
     { label: `Quitar ${n} del póster`, icon: 'del', kbd: k('del'), fn: removeSelected, danger: true },
+  ];
+}
+
+/** La fila identifica al grupo incluso cuando sus miembros editables no bastan para representarlo en el lienzo. */
+export function groupRowMenu(gid: number): MenuItem[] {
+  if (selectedGroup() === gid) return groupMenu();
+  const members = groupMembers(gid);
+  return [
+    { head: groupName(gid) + ' · ' + members.length + ' capas' },
+    { label: 'Copiar grupo', icon: 'copy', fn: () => copySelected(members) },
+    { label: 'Duplicar grupo', icon: 'dup', fn: () => duplicateSelected(members) },
+    ...orderMenu(gid),
   ];
 }
 /** «＋ Agregar» de la barra: lo que crea capas nuevas (con los mismos nombres que la bienvenida). */
 export const addMenu = (): MenuItem[] => [
   { label: 'Agregar imagen o PDF…', icon: 'addImage', kbd: k('mod+o'), fn: () => $<HTMLInputElement>('#file').click() },
   { label: 'Agregar texto', icon: 'text', kbd: k('t'), fn: startTextPlacement },
+  { label: 'Agregar forma', icon: 'shapes', submenu: (Object.keys(figures) as ShapeSpec['figure'][]).map((figure) => ({
+    label: figures[figure], fn: () => addFigure(figure),
+  })) },
   { label: 'Pegar', icon: 'paste', kbd: k('mod+v'), fn: () => void pasteAny(), disabled: !canPaste() },
 ];
+/** Las capas bloqueadas bajo el puntero se ofrecen de delante hacia atrás. */
+export function unlockMenu(layers: Layer[]): MenuItem[] {
+  if (!layers.length) return [];
+  const items: ActionItem[] = layers.map(l => ({
+    label: layers.length === 1 ? `Desbloquear «${l.name}»` : l.name, icon: 'lockOpen',
+    fn: () => {
+      if (l.locked && !l.hidden && st.layers.includes(l)) { toggleLocked(l); select(l); }
+    },
+  }));
+  return [items.length === 1 ? items[0]! : { label: 'Desbloquear objeto', icon: 'lockOpen', submenu: items }, '-'];
+}
+
 /** Menú del lienzo vacío. at: dónde se tocó (mm), para «Agregar texto aquí». */
 export function emptyMenu(at?: Pt): MenuItem[] {
-  const visible = st.layers.filter((l) => !l.hidden).length;
+  const visible = st.layers.filter((l) => !l.hidden && !l.locked).length;
   return [
     { label: 'Pegar', icon: 'paste', kbd: k('mod+v'), fn: () => void pasteAny(), disabled: !canPaste() },
     { label: 'Seleccionar todas', icon: 'selectBox', kbd: k('mod+a'), fn: selectAll, disabled: visible < 1 },
@@ -221,6 +256,7 @@ export function closeMenu(restore = false) {
   const inside = root.contains(document.activeElement) || sub.contains(document.activeElement);
   closeSub();
   root.hidden = true;
+  if (root.parentElement !== document.body) document.body.append(root, sub);
   if (restore && inside) focusBack(returnTo);
   returnTo = null;
 }
@@ -281,6 +317,12 @@ export function openMenu(x: number, y: number, items: MenuItem[], from: FocusTar
     const a = document.activeElement, el = a instanceof HTMLElement && a !== document.body ? a : null;
     returnTo = from ?? (() => el);
   } else if (from) returnTo = from;
+  // Una tarjeta popover está en la capa superior del navegador. Su menú debe pertenecer a esa misma tarjeta
+  // para recibir los clics aunque quede sobre ella. Los dos menús usan coordenadas fijas de la ventana.
+  const trigger = from?.() ?? document.activeElement;
+  const card = trigger?.closest(':popover-open') ?? document.elementFromPoint(x, y)?.closest(':popover-open');
+  const host = card ?? document.body;
+  if (root.parentElement !== host) host.append(root, sub);
   closeSub();
   drill = isTouch();
   rootItems = items;
@@ -410,6 +452,9 @@ export function initMenu() {
   root.setAttribute('aria-label', 'Opciones');
   sub.hidden = true;
   document.body.appendChild(sub);
+  document.addEventListener('toggle', (e) => {
+    if ((e as ToggleEvent).newState === 'closed' && e.target === root.parentElement) closeMenu();
+  }, true);
 
   document.addEventListener('pointerdown', (e) => {
     const t = e.target as Node;

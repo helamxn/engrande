@@ -19,8 +19,12 @@ export interface MeasureCtx { others: Box[]; targets: SnapTargets; W: number; H:
 /** Contexto para mover o transformar `moving`. posterOnly: el imán solo usa el póster (p. ej. al recortar). */
 export function measureCtx(moving: Layer[], posterOnly = false): MeasureCtx {
   const g = posterGeo();
-  const others = st.layers.filter((l) => !l.hidden && !moving.includes(l)).map((l) => bboxMM(l));
-  return { others: posterOnly ? [] : others, targets: snapTargets(g.W, g.H, posterOnly ? [] : others), W: g.W, H: g.H };
+  const excluded = new Set(moving);
+  const others = posterOnly ? [] : st.layers.filter((l) => !l.hidden && !excluded.has(l)).map((l) => bboxMM(l));
+  const guides = st.showGuides && st.snapGuides ? st.layoutGuides.filter((line) =>
+    line.at >= 0 && line.at <= (line.axis === 'x' ? g.W : g.H)) : [];
+  const targets = snapTargets(g.W, g.H, others, guides);
+  return { others, targets, W: g.W, H: g.H };
 }
 /** Caja del póster (también es referencia para el imán y para medir). */
 export const posterBox = (c: { W: number; H: number }): Box => ({ x0: 0, y0: 0, x1: c.W, y1: c.H });

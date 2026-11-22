@@ -1,6 +1,21 @@
 import { describe, expect, it, vi } from 'vitest';
 import { releaseUnused, trimStack } from './history';
 
+it('una flecha después de deshacer abre un paso nuevo y corta la rama de rehacer', async () => {
+  const { clearHistory, snapSeries, undo, redo } = await import('./history');
+  const { S } = await import('./state');
+  const original = S.margin;
+  clearHistory();
+  try {
+    snapSeries('margin-test'); S.margin = original + 1;
+    snapSeries('margin-test'); S.margin = original + 2;
+    undo(); expect(S.margin).toBe(original);
+    snapSeries('margin-test'); S.margin = original + 3;
+    redo(); expect(S.margin).toBe(original + 3);
+    undo(); expect(S.margin).toBe(original);
+  } finally { S.margin = original; clearHistory(); }
+});
+
 const canvas = (w: number, h: number) => ({ width: w, height: h });
 const step = (...imgs: { width: number; height: number }[]) => ({ props: imgs.map((img) => ({ img, orig: img })) });
 
@@ -98,15 +113,31 @@ describe('instantáneas (takeSnap / restoreSnap)', () => {
     expect(st.group).toEqual([a, b]);
   });
 
-  it('deshacer devuelve también la resolución, las marcas y la guía (p. ej. tras «Nuevo póster»)', async () => {
+  it('los ajustes de descarga solo vuelven con el paso de «Nuevo póster»; deshacer otra cosa no los toca', async () => {
     const { takeSnap, restoreSnap } = await import('./history');
     const { S, st } = await import('./state');
     st.layers = []; st.group = [];
-    Object.assign(S, { dpi: 300, marks: false, guide: false });
-    const s = takeSnap();
-    Object.assign(S, { dpi: 150, marks: true, guide: true });
-    restoreSnap(s);
-    expect([S.dpi, S.marks, S.guide]).toEqual([300, false, false]);
+    Object.assign(S, { dpi: 300, marks: false, guide: false, skipBlank: true });
+    const edit = takeSnap(), fresh = { ...takeSnap(), restoreExport: true };
+    Object.assign(S, { dpi: 150, marks: true, guide: true, skipBlank: false });
+    restoreSnap(edit); // p. ej. deshacer un movimiento después de cambiar la resolución
+    expect([S.dpi, S.marks, S.guide, S.skipBlank]).toEqual([150, true, true, false]);
+    restoreSnap(fresh); // deshacer «Nuevo póster»
+    expect([S.dpi, S.marks, S.guide, S.skipBlank]).toEqual([300, false, false, true]);
+  });
+
+  it('deshacer y rehacer «Nuevo póster» llevan y traen los ajustes de descarga', async () => {
+    const h = await import('./history');
+    const { S, st } = await import('./state');
+    st.layers = []; st.group = [];
+    Object.assign(S, { dpi: 300, skipBlank: true });
+    h.snapWithExport();
+    Object.assign(S, { dpi: 150, skipBlank: false }); // lo que hace «Nuevo póster»
+    h.undo();
+    expect([S.dpi, S.skipBlank]).toEqual([300, true]);
+    h.redo();
+    expect([S.dpi, S.skipBlank]).toEqual([150, false]);
+    h.clearHistory();
   });
 
   it('deshacer devuelve las hojas a la vista (póster sin imágenes con la distribución elegida)', async () => {

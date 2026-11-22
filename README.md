@@ -10,7 +10,19 @@ Todo ocurre en el navegador: no hay servidor, cuentas ni base de datos, y las im
 - Varias imágenes o páginas de PDF que se colocan, recortan, agrupan y retocan (quitar el fondo, borrador, varita).
 - Textos para títulos en grande o moldes: se escriben sobre el lienzo, con 20 familias y 55 variantes de Google Fonts, o una fuente del equipo del usuario, que no se guarda. Incluye búsqueda, vista previa y selección de estilo.
 - Tamaño de letra en puntos, altura de referencia en cm, color hexadecimal editable y botón para restablecerlo.
-- Ayudas de precisión: imán, rejilla de 1 mm y medidas.
+- Arrastra desde una regla para crear una guía horizontal o vertical. Arrastra la línea para moverla o devuélvela a su regla para quitarla. En **Póster → Reglas y guías** puedes cambiar su visibilidad y el ajuste magnético. Las guías se guardan con el proyecto, también en un póster vacío. El PDF contiene solo el diseño y las marcas de impresión elegidas.
+- Rectángulos, elipses y triángulos desde **Agregar → Agregar forma**, con relleno editable en Selección. Al cambiar el color se conservan las zonas borradas.
+- **Mayús + 2** encuadra la selección en el espacio libre del inspector. **Ctrl/⌘ + 0** o **Mayús + 1** vuelve al póster completo y **Mayús + 0** pone el 100 % (tamaño real aproximado).
+- Atajos de Figma para componer: **Alt + A / H / D** alinea a la izquierda, al centro o a la derecha y **Alt + W / V / S** arriba, al centro o abajo (una sola cosa, con el póster). **Ctrl/⌘ + Mayús + H** oculta y **Ctrl/⌘ + Mayús + L** bloquea.
+- **Ctrl/⌘ + arrastrar un tirador** recorta ese lado sin entrar en Recortar (como en Figma). Con Alt recorta desde el centro y con Mayús en una esquina conserva la proporción.
+- **Alt + arrastrar** mueve una copia; con **Mayús**, en línea recta, pulsadas en cualquier orden (también si Alt llega después del clic, antes de mover).
+- El tamaño del póster y sus hojas se ven abajo a la izquierda, delante de la línea de estado. Al pulsarlo se abre Póster.
+- Pegar coloca lo copiado desplazado; si eso queda fuera de la vista, lo centra en lo que se ve. **Ctrl/⌘ + Mayús + V** pega en el mismo sitio.
+- En la lista de capas, **Mayús + clic** elige un tramo y **Ctrl/⌘ + clic** suma o quita una capa.
+- Los campos de medidas aceptan operaciones y la unidad al final (`21/2`, `14,3+2`, `(10+5)*2`, `30°`). Arrastrar el nombre de un campo en horizontal cambia su valor (Mayús: 10 veces más) en un solo paso de deshacer.
+- Con varias seleccionadas, el panel muestra el ancho, el alto, la posición y el giro del conjunto, con su proporción. Los lados del marco estiran el conjunto en un eje (Alt: desde el centro; Mayús: sin deformar), salvo si hay textos o imágenes giradas en ángulo, que no se pueden estirar sin sesgarse.
+- Con el borrador, **[** y **]** cambian el tamaño del pincel. Girar una o varias capas se pega a 0°, 90°, 180° y 270° (Mayús: de 15° en 15°).
+- Al alinear varios elementos, cada grupo conserva su composición interna. Un grupo seleccionado por sí solo se alinea con el área imprimible. La distribución requiere tres elementos del mismo nivel.
 - Descarga en PDF por hojas, con marcas de corte y guía de armado, o en una sola hoja grande para imprenta.
 - Funciona con ratón, teclado, pantalla táctil y móvil. La tecla `?` muestra todos los atajos y gestos.
 
@@ -66,12 +78,13 @@ vercel.json                       cabeceras de seguridad y caché
 
 - **Guardado:** el póster se guarda solo en IndexedDB, con los archivos originales. Mientras escribes también se guarda un borrador de las palabras, incluso antes de crear la primera capa. Al volver se reabre la edición; confirmarla es un único paso de deshacer. El historial de deshacer no se guarda.
 - **Calidad:** las imágenes grandes se editan en una copia más ligera. Al descargar se vuelve al archivo original.
-- **Precisión:** las posiciones caen en mm enteros. El imán a otras imágenes y al póster tiene prioridad sobre la rejilla, y Ctrl/⌘ desactiva los dos.
+- **Precisión:** al pasar el ratón se resalta lo que seleccionaría el clic: las zonas transparentes de una imagen dejan ver la de debajo. Las posiciones caen en mm enteros. El imán a otras imágenes y al póster tiene prioridad sobre la rejilla, y Ctrl/⌘ desactiva los dos.
 - **Texto:** se convierte en contornos con la fuente. El póster guarda esos contornos y no la fuente, así que se puede imprimir sin ella; para cambiar las palabras de un texto con una fuente propia hay que volver a cargarla. La entrada admite 10.000 caracteres; se siguen recuperando los textos más largos de versiones anteriores.
 - **Tipografías:** el catálogo inicial de Google Fonts está en `src/editor/text/catalog.ts`, con archivos WOFF de Fontsource servidos desde el mismo dominio. Cada variante se descarga al elegirla, sin llamadas del navegador a Google. Sus licencias están en `public/fonts/licenses/`. Añadir otro proveedor no requiere cambiar el formato de los textos guardados.
 - **Medidas del texto:** el tamaño en puntos mide el cuerpo tipográfico (1 pt = 25,4/72 mm). La altura de una H es una referencia aproximada de impresión; el marco puede incluir el espacio del renglón. Cambiar de familia conserva los puntos.
 - **Color del texto:** acepta códigos hexadecimales de tres o seis dígitos, con o sin `#`. Al arrastrar el selector se reutiliza una vista previa a resolución de pantalla; al confirmar se regenera el texto y se guarda un solo paso de deshacer. El color predeterminado es `#111111`.
 - **Hojas:** se numeran 1, 2, 3… en el mismo orden que las páginas del PDF.
+- **Omitir hojas en blanco:** una hoja sale si tiene tinta (cualquier píxel que no sea blanco puro) fuera de las franjas de solape. Lo que cae en una franja lo imprimen las dos hojas que la comparten, así que basta con una de ellas. La tarjeta del PDF dice cuáles saldrán («las 1 y 2»). Las hojas que no toca ninguna capa no se dibujan para comprobarlo, y el resultado se reutiliza hasta que cambie algo.
 - **Color:** todo se trabaja en sRGB. Los PDF en CMYK se convierten con perfil, y el PDF descargado va en RGB sin perfil ICC.
 
 ## Seguridad

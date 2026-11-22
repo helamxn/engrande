@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  alignShifts, alignedLines, applyCropDrag, equalSpacing, guideSegments, measureBetween, nearestBox, gridLevels, snapBox, snapEdges, snapSize, snapTargets, applyFit, boxInside, distributeShifts, unionBox, applyScale, bboxMM, conformCrop, cropCenter, cropPtsMM, fitLayer, geo, hasCutMarks, inside,
-  displaySide, flipOnScreen, isStretched, localToMM, markLen, mmToLocal, newLayoutMemory, normDeg, panInFrame, pppOf, relayout,
+  alignShifts, alignedLines, applyCropDrag, equalSpacing, guideSegments, measureBetween, nearestBox, gridLevels, snapBox, snapEdges, snapSize, snapTargets, applyFit, boxInside, distributeShifts, unionBox, applyScale, bboxMM, conformCrop, cropCenter, cropPtsMM, fitLayer, geo, tileRegion, hasCutMarks, inside,
+  displaySide, flipOnScreen, isStretched, localToMM, markLen, mmToLocal, newLayoutMemory, normDeg, panInFrame, quarterTurn, axisSegments, chooseSheets, sheetCells, snapRotation, stretchLayer, pppOf, relayout,
   rotateLayer, sheetNo, solvePointer, srcDims, startScale, stepToLines, gridStep, onGrid, toGrid, type RelayoutMode,
   unstretch, visH, visW, zoomInFrame, contentBox, personBox, PERSON_GAP, PERSON_H,
 } from './geometry';
@@ -24,6 +24,17 @@ describe('geo', () => {
     expect(g.tw).toBe(198); expect(g.th).toBe(285);
     expect(g.W).toBe(2 * 198 - 10); expect(g.H).toBe(2 * 285 - 10);
   });
+  it('conserva el tamaño físico y calcula las hojas según el papel y el solape', () => {
+    const posterSize = { w: 500, h: 700 };
+    const a4 = geo(settings({ posterSize }));
+    expect(a4).toMatchObject({ W: 500, H: 700, cols: 3, rows: 3 });
+    expect(tileRegion(a4, 2, 2)).toEqual({ x: 376, y: 550, w: 124, h: 150 });
+    expect(geo(settings({ posterSize, paper: 'A3' }))).toMatchObject({ W: 500, H: 700, cols: 2, rows: 2 });
+    const small = geo(settings({ posterSize: { w: 5, h: 9 } }));
+    expect(small.cols * small.rows).toBe(1);
+    expect(tileRegion(small, 0, 0)).toEqual({ x: 0, y: 0, w: 5, h: 9 });
+    expect(geo(settings({ posterSize: { w: 386, h: 285 } }))).toMatchObject({ cols: 2, rows: 1 });
+  });
   it('gira el papel en horizontal', () => {
     const g = geo(settings({ orient: 'landscape' }));
     expect(g.pw).toBe(297); expect(g.ph).toBe(210);
@@ -41,6 +52,32 @@ describe('ángulos', () => {
     expect(normDeg(-180)).toBe(180);
     expect(normDeg(540)).toBe(180);
     expect(normDeg(-90)).toBe(-90);
+  });
+
+  it('el giro se pega a 0/90/180/270 cerca y va de 15° en 15° con Shift', () => {
+    expect(snapRotation(2.5, false)).toBe(0);
+    expect(snapRotation(-88, false)).toBe(-90);
+    expect(snapRotation(183, false)).toBe(183);
+    expect(snapRotation(181.9, false)).toBe(180);
+    expect(snapRotation(40, false)).toBe(40);
+    expect(snapRotation(38, true)).toBe(45);
+    expect(snapRotation(-8, true)).toBe(-15);
+  });
+});
+
+describe('estirar en ejes del póster', () => {
+  it('solo con giros de 90° en 90°', () => {
+    expect([0, 90, -90, 180, 270, 360.004].map(quarterTurn)).toEqual([true, true, true, true, true, true]);
+    expect([45, 1, -0.5].map(quarterTurn)).toEqual([false, false, false]);
+  });
+  it('la caja visible se estira desde el punto fijo, también recortada, volteada o girada 90°', () => {
+    for (const extra of [{}, { rot: 90 }, { rot: -90, flipX: true }, { rot: 180, crop: { x0: 0.1, y0: 0.2, x1: 0.7, y1: 0.9 } }]) {
+      const l = layer({ cx: 50, cy: 40, w: 30, h: 20, ...extra }), b0 = bboxMM(l), p = { x: b0.x0, y: 0 };
+      stretchLayer(l, 2, 1, p);
+      const b = bboxMM(l);
+      expect(b.x0).toBeCloseTo(b0.x0); expect(b.x1 - b.x0).toBeCloseTo(2 * (b0.x1 - b0.x0));
+      expect(b.y0).toBeCloseTo(b0.y0); expect(b.y1).toBeCloseTo(b0.y1);
+    }
   });
 });
 
@@ -667,5 +704,41 @@ describe('persona de referencia', () => {
     expect(b.x1).toBe(406);
     // en un póster más alto que la persona, arriba manda el papel
     expect(contentBox({ W: 1000, H: 2400, m: 6 }, true).y0).toBe(-6);
+  });
+});
+// Una capa intermedia puede sobresalir por la derecha de la última. Los extremos elegidos siguen fijos.
+it('distribuye cajas superpuestas sin desplazar los extremos', () => {
+  const rect = (x0: number, x1: number) => ({ x0, x1, y0: 0, y1: 10 });
+  const shifts = distributeShifts([rect(0, 10), rect(10, 110), rect(50, 60)], 'x');
+  expect(shifts[0]!.x).toBe(0);
+  expect(shifts[2]!.x).toBe(0);
+  expect(shifts[1]!.x).toBe(-30);
+});
+
+describe('hojas que hay que imprimir (omitir hojas en blanco)', () => {
+  it('parte un eje en lo de cada hoja y las franjas de solape', () => {
+    // 2 columnas de 198 mm que se solapan 10 mm: 0–188 (la 1), 188–198 (las dos), 198–386 (la 2)
+    expect(axisSegments(2, 198, 10, 386)).toEqual([
+      { a: 0, b: 188, idx: [0] }, { a: 188, b: 198, idx: [0, 1] }, { a: 198, b: 386, idx: [1] },
+    ]);
+    // sin solape no hay franjas compartidas; la última hoja puede ser más corta (tamaño exacto)
+    expect(axisSegments(2, 100, 0, 150)).toEqual([{ a: 0, b: 100, idx: [0] }, { a: 100, b: 150, idx: [1] }]);
+    expect(axisSegments(1, 198, 10, 198)).toEqual([{ a: 0, b: 198, idx: [0] }]);
+  });
+  it('en 2 × 2, el cruce de las franjas lo imprimen las cuatro hojas', () => {
+    const g = geo({ paper: 'A4', orient: 'portrait', cols: 2, rows: 2, margin: 6, overlap: 10 } as Settings);
+    const cells = sheetCells(g);
+    expect(cells).toHaveLength(9);
+    expect(cells.find((c) => c.sheets.length === 4)).toMatchObject({ x0: 188, x1: 198, sheets: [1, 2, 3, 4] });
+  });
+  it('lo de dentro de una hoja la obliga; lo de una franja, basta con una de las dos', () => {
+    const cell = (sheets: number[], ink = true) => ({ sheets, ink });
+    expect(chooseSheets([cell([1]), cell([1, 2]), cell([2], false)])).toEqual([1]); // la franja ya la trae la 1
+    expect(chooseSheets([cell([1, 2]), cell([1], false), cell([2], false)])).toEqual([1]); // solo en la franja: una
+    expect(chooseSheets([cell([2]), cell([1, 2])])).toEqual([2]);
+    expect(chooseSheets([cell([1]), cell([3]), cell([1, 2])])).toEqual([1, 3]);
+    // dos franjas que comparten la hoja 2: con ella sola bastan las dos
+    expect(chooseSheets([cell([1, 2]), cell([2, 3])])).toEqual([2]);
+    expect(chooseSheets([cell([1], false), cell([1, 2], false)])).toEqual([]);
   });
 });

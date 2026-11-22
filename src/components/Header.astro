@@ -49,7 +49,7 @@ const icon = 'size-[17px]';
     <span class="mx-0.5 h-6 w-px bg-line" aria-hidden="true"></span>
     <!-- zoom: el porcentaje; al pulsarlo encaja el póster entero (acercar y alejar: rueda, pellizco, + y −, menú) -->
     <div class="tgroup" role="group" aria-label="Zoom">
-      <button type="button" id="zoomFit" class="tpct" title="Ver todo el póster (Ctrl+0) · rueda, + o − para acercar o alejar · 100 % = tamaño real aproximado">
+      <button type="button" id="zoomFit" class="tpct" title="Ver todo el póster (Ctrl+0 o Mayús + 1) · rueda, + o − para acercar o alejar · Mayús + 0: 100 % = tamaño real aproximado">
         <span id="zoomPct">100%</span>
       </button>
     </div>
@@ -89,6 +89,7 @@ const icon = 'size-[17px]';
     </div>
     <p class="note">150 basta para un póster que se mira a un metro; 300 da archivos mucho más pesados.</p>
   </div>
+  <label class="check"><input type="checkbox" id="skipBlank" /><span>Omitir hojas en blanco<small>Al descargar o imprimir por hojas se conserva la numeración del mosaico.</small></span></label>
   <label class="check"><input type="checkbox" id="marks" checked /><span>Marcas de corte y de solape<small>Esquinas para recortar y línea discontinua donde va la hoja vecina.</small></span></label>
   <label class="check"><input type="checkbox" id="guide" checked /><span>Página de guía de armado<small>Primera página con el mapa de hojas y los pasos.</small></span></label>
   <div class="grid grid-cols-2 gap-2">

@@ -3,7 +3,7 @@ import { expect, type Page } from '@playwright/test';
 
 /** Caja de una imagen en mm (zona visible, sin girar), tal como queda guardada. */
 export interface SavedBox { x0: number; y0: number; x1: number; y1: number; w: number; h: number }
-export interface Saved { names: string[]; boxes: SavedBox[]; layout: Record<string, unknown>; dpi: number }
+export interface Saved { names: string[]; boxes: SavedBox[]; layout: Record<string, unknown>; guides: { axis: 'x' | 'y'; at: number }[]; dpi: number }
 
 /**
  * «Agregar texto» y elegir dónde: el de la bienvenida o el de «＋ Agregar» en la barra, y un clic en el lienzo, que
@@ -57,7 +57,7 @@ export function saved(page: Page): Promise<Saved | null> {
       t.oncomplete = () => {
         const p = g.result as undefined | {
           layers: { name: string; cx: number; cy: number; w: number; h: number; crop: { x0: number; y0: number; x1: number; y1: number } }[];
-          layout: Record<string, unknown>; dpi: number;
+          layout: Record<string, unknown>; layoutGuides?: Saved['guides']; dpi: number;
         };
         if (!p) { res(null); return; }
         res({
@@ -68,7 +68,7 @@ export function saved(page: Page): Promise<Saved | null> {
             const x1 = l.cx - l.w / 2 + l.w * l.crop.x1, y1 = l.cy - l.h / 2 + l.h * l.crop.y1;
             return { x0, y0, x1, y1, w: x1 - x0, h: y1 - y0 };
           }),
-          layout: p.layout, dpi: p.dpi,
+          layout: p.layout, guides: p.layoutGuides ?? [], dpi: p.dpi,
         });
       };
     };

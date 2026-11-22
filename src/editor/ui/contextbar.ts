@@ -36,7 +36,7 @@ const SEP_DW = '<span class="sep dw"></span>';
  * se elige dónde poner un texto, se ve marcado.
  */
 const addBtn = () =>
-  `<button type="button" class="tb" data-act="add" aria-haspopup="menu" title="Agregar imagen o PDF, texto o pegar" aria-label="Agregar"`
+  `<button type="button" class="tb" data-act="add" aria-haspopup="menu" title="Agregar imagen, PDF, texto o forma, o pegar" aria-label="Agregar"`
   + `${st.placingText ? ' aria-pressed="true"' : ''}${S.mode !== 'move' ? ' disabled' : ''}>`
   + `${ICON.plus}<span>Agregar</span>${ICON.chevronDown.replace('class="', 'class="chev ')}</button>`;
 
@@ -74,7 +74,7 @@ function dockBar(): string {
     case 'erase':
       return `<button type="button" class="tb" data-act="bm" data-m="erase" aria-pressed="${S.brushMode === 'erase'}">${ICON.erase}<span>Borrar</span></button>`
         + `<button type="button" class="tb" data-act="bm" data-m="restore" aria-pressed="${S.brushMode === 'restore'}">${ICON.restore}<span>Restaurar</span></button>`
-        + `${SEP}<label class="mini"><input type="range" id="bBrush" aria-label="Tamaño del pincel" min="4" max="90" value="${S.brush}"><output id="bBrushOut">${S.brush} px</output></label>`
+        + `${SEP}<label class="mini"><input type="range" id="bBrush" aria-label="Tamaño del pincel" min="${BRUSH_MIN}" max="${BRUSH_MAX}" value="${S.brush}"><output id="bBrushOut">${S.brush} px</output></label>`
         + SEP + tb('check', 'Listo', 'done', 'Listo', 'primary');
     case 'wand':
       return `<label class="mini"><input type="range" id="bTol" aria-label="Tolerancia" min="5" max="140" value="${S.tol}"><output id="bTolOut">${S.tol}</output></label>`
@@ -103,7 +103,7 @@ function deskBar(): string {
     case 'erase':
       return `<button type="button" class="tb" data-act="bm" data-m="erase" aria-pressed="${S.brushMode === 'erase'}">${ICON.erase}<span>Borrar</span></button>`
         + `<button type="button" class="tb" data-act="bm" data-m="restore" aria-pressed="${S.brushMode === 'restore'}">${ICON.restore}<span>Restaurar</span></button>`
-        + `${SEP}<label class="mini">Pincel <input type="range" id="bBrush" min="4" max="90" value="${S.brush}"><output id="bBrushOut">${S.brush} px</output></label>`
+        + `${SEP}<label class="mini">Pincel <input type="range" id="bBrush" min="${BRUSH_MIN}" max="${BRUSH_MAX}" value="${S.brush}"><output id="bBrushOut">${S.brush} px</output></label>`
         + SEP + tb('check', 'Listo', 'done', 'Listo (Esc)', 'primary');
     case 'wand':
       return `<label class="mini">Tolerancia <input type="range" id="bTol" min="5" max="140" value="${S.tol}"><output id="bTolOut">${S.tol}</output></label>`
@@ -120,10 +120,8 @@ export function renderBar() {
   bar.innerHTML = addBtn() + (ctx ? SEP + ctx : ''); // solo constantes y números: sin datos del usuario
   bar.hidden = false;
   bar.querySelector<HTMLInputElement>('#bBrush')?.addEventListener('input', (e) => {
-    S.brush = +(e.target as HTMLInputElement).value;
-    $('#bBrushOut').textContent = S.brush + ' px';
+    setBrush(+(e.target as HTMLInputElement).value);
     st.hover = { x: view.CW / 2, y: view.CH / 2 };
-    dirty();
   });
   bar.querySelector<HTMLInputElement>('#bTol')?.addEventListener('input', (e) => {
     S.tol = +(e.target as HTMLInputElement).value;
@@ -204,4 +202,15 @@ export function initContextBar() {
   });
   dockMQ?.addEventListener('change', () => renderBar());
 
+}
+
+/** Límites del pincel (px de pantalla), los del deslizador de la barra. */
+export const BRUSH_MIN = 4, BRUSH_MAX = 90;
+/** Cambia el tamaño del pincel (deslizador, o [ y ] como en Photoshop) y lo refleja en la barra y en el círculo. */
+export function setBrush(px: number) {
+  S.brush = Math.round(Math.min(BRUSH_MAX, Math.max(BRUSH_MIN, px)));
+  const input = document.querySelector<HTMLInputElement>('#bBrush'), out = document.querySelector('#bBrushOut');
+  if (input) input.value = String(S.brush);
+  if (out) out.textContent = S.brush + ' px';
+  dirty();
 }

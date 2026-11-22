@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cm, cmGap, fmt1, parseNum } from './format';
+import { cm, cmGap, fmt1, numberList, parseNum } from './format';
 
 describe('formato de números (coma decimal)', () => {
   it('muestra cm y campos con coma', () => {
@@ -11,6 +11,21 @@ describe('formato de números (coma decimal)', () => {
     expect(parseNum('14,3')).toBe(14.3);
     expect(parseNum(' 14.3 ')).toBe(14.3);
     expect(parseNum('abc')).toBeNaN();
+  });
+  it('acepta la unidad al final y operaciones, como en Figma', () => {
+    expect(parseNum('14 cm')).toBe(14);
+    expect(parseNum('30°')).toBe(30);
+    expect(parseNum('21/2')).toBe(10.5);
+    expect(parseNum('14,3+2')).toBeCloseTo(16.3);
+    expect(parseNum('(10+5)*2')).toBe(30);
+    expect(parseNum('2 × 3')).toBe(6);
+    expect(parseNum('-3')).toBe(-3);
+    expect(parseNum('10-2-3')).toBe(5);
+    expect(parseNum('8/2/2')).toBe(2);
+    expect(parseNum('1+2*3')).toBe(7);
+  });
+  it('lo incompleto o lo que no es un número no vale', () => {
+    for (const s of ['', '5+', '(2', '2)', '5/0', '1,2,3', '3 manzanas', '1e5']) expect(parseNum(s)).toBeNaN();
   });
 });
 
@@ -30,5 +45,15 @@ describe('distancias medidas', () => {
   it('un hueco pequeño nunca dice 0,0', () => {
     expect(cmGap(0.3)).toBe('0,03');
     expect(cmGap(3.5)).toBe('0,35');
+  });
+});
+
+describe('lista de hojas', () => {
+  it('junta los seguidos y termina con «y»', () => {
+    expect(numberList([4])).toBe('4');
+    expect(numberList([1, 2])).toBe('1 y 2');
+    expect(numberList([1, 2, 3, 5])).toBe('1–3 y 5');
+    expect(numberList([1, 3, 4, 5, 9, 10])).toBe('1, 3–5, 9 y 10');
+    expect(numberList([])).toBe('');
   });
 });

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  childOf, commonPath, freshGroups, groupOf, nextGid, nextGroupName, normalizeGroups, pathExists, scopeOf,
-  splitPaths, unitAt, type GroupRef,
+  childOf, commonPath, copyMembers, freshGroups, groupOf, listRange, nextGid, nextGroupName, normalizeGroups, pathExists, scopeOf,
+  splitPaths, unitAt, unitsInScope, type GroupRef,
 } from './groups';
 
 type T = { name: string; gpath: GroupRef[] };
@@ -33,6 +33,20 @@ describe('grupos de imágenes', () => {
 });
 
 describe('grupos dentro de grupos', () => {
+  it('copia un subgrupo completo sin incorporar la capa oculta que pertenece solo al padre', () => {
+    const a = L('a', 1, 2), b = L('b', 1, 2), hidden = L('oculta', 1, 2), outer = L('fondo', 1), other = L('otra');
+    const ls = [outer, a, hidden, b, other];
+    const editable = (l: T) => l !== hidden && l !== outer;
+    expect(copyMembers(ls, [a, b], editable)).toEqual([a, hidden, b]);
+    expect(copyMembers(ls, [a], editable)).toEqual([a]);
+    expect(copyMembers(ls, [a, other], editable)).toEqual([a, other]);
+    expect(copyMembers(ls, [a, b, other], editable)).toEqual(ls);
+  });
+  it('alinea cada grupo como una pieza y conserva los subgrupos al entrar un nivel', () => {
+    const a = L('a', 1), b = L('b', 1, 2), c = L('c', 1, 2), d = L('d');
+    expect(unitsInScope([a, b, c, d], null)).toEqual([[a, b, c], [d]]);
+    expect(unitsInScope([a, b, c], 1)).toEqual([[a], [b, c]]);
+  });
   // grupo 1 = { a, grupo 2 = { b, c } }, y d suelta
   const tree = () => [L('a', 1), L('b', 1, 2), L('d'), L('c', 1, 2)];
   it('junta cada subgrupo dentro de su grupo', () => {
@@ -112,5 +126,21 @@ describe('copias de grupos', () => {
     expect(pathExists(ls, [{ id: 1, name: '' }])).toBe(true);
     expect(pathExists(ls, [{ id: 9, name: '' }])).toBe(false);
     expect(pathExists(ls, [])).toBe(true);
+  });
+});
+
+describe('rango en la lista de capas', () => {
+  const rows = ['a', 'b', 'c', 'd', 'e'];
+  it('va de lo último pulsado a lo pulsado ahora, en cualquier sentido', () => {
+    expect(listRange(rows, ['b'], ['d'])).toEqual(['b', 'c', 'd']);
+    expect(listRange(rows, ['d'], ['b'])).toEqual(['b', 'c', 'd']);
+    expect(listRange(rows, ['c'], ['c'])).toEqual(['c']);
+  });
+  it('una fila de grupo cuenta entera', () => {
+    expect(listRange(rows, ['a'], ['c', 'd'])).toEqual(['a', 'b', 'c', 'd']);
+    expect(listRange(rows, ['b', 'c'], ['e'])).toEqual(['b', 'c', 'd', 'e']);
+  });
+  it('sin ancla que siga en el póster, solo lo pulsado', () => {
+    expect(listRange(rows, ['x'], ['d'])).toEqual(['d']);
   });
 });

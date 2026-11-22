@@ -206,6 +206,9 @@
     & em { @apply text-[.78rem] not-italic text-muted; }
   }
   .pf { @apply flex min-w-0 flex-col gap-1; & > span { @apply text-[.72rem] font-semibold text-muted; } }
+  /* etiqueta que se arrastra para cambiar el valor (ver scrubLabel en panel.ts), como en Figma */
+  .pf > span.scrub { @apply cursor-ew-resize select-none self-start; }
+  body.scrubbing, body.scrubbing * { cursor: ew-resize !important; user-select: none; }
   .lock {
     @apply grid h-[38px] w-[34px] cursor-pointer place-items-center rounded-lg border border-line bg-transparent text-muted;
     &[aria-pressed="true"] { @apply border-accent bg-accent-soft text-accent; }
@@ -321,11 +324,11 @@
   .selection-close { @apply grid size-8 flex-none cursor-pointer place-items-center rounded-md border-0 bg-transparent text-muted hover:bg-accent-soft hover:text-fg; & svg { @apply size-4; } }
   .text-color-field {
     @apply items-center gap-2 pl-2;
-    & #tColor { @apply size-7 w-7 flex-none cursor-pointer appearance-none rounded-md border border-line p-0; }
-    & #tColor::-webkit-color-swatch-wrapper { padding: 0; }
-    & #tColor::-webkit-color-swatch { border: 0; border-radius: 5px; }
-    & #tColor::-moz-color-swatch { border: 0; border-radius: 5px; }
-    & #tColorHex { @apply min-w-0 flex-1 text-left; }
+    & input[type=color] { @apply size-7 w-7 flex-none cursor-pointer appearance-none rounded-md border border-line p-0; }
+    & input[type=color]::-webkit-color-swatch-wrapper { padding: 0; }
+    & input[type=color]::-webkit-color-swatch { border: 0; border-radius: 5px; }
+    & input[type=color]::-moz-color-swatch { border: 0; border-radius: 5px; }
+    & input[type=text] { @apply min-w-0 flex-1 text-left; }
     & button { @apply mr-1 grid size-8 flex-none cursor-pointer place-items-center rounded-md border-0 bg-transparent text-muted; }
     & button:hover { @apply bg-accent-soft text-fg; }
     & button svg { @apply size-4; }

@@ -4,7 +4,7 @@ import { addImage, fingers, listNames, openApp, savedBox, screenMap, selectRow }
 
 test.use({ hasTouch: true });
 
-/** Póster 2×1 con una foto seleccionada; devuelve el centro de la foto en pantalla y su caja guardada. */
+/** Póster con una foto seleccionada; devuelve el centro de la foto en pantalla y su caja guardada. */
 async function setup(page: Page) {
   await openApp(page);
   await addImage(page);
@@ -25,6 +25,16 @@ test('mantener pulsada una imagen abre su menú; los submenús se abren dentro, 
   await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
   await expect(menu.getByRole('menuitem', { name: 'Atrás' })).toBeVisible();
   await expect(menu.getByRole('menuitem', { name: /Borrador/ })).toBeVisible();
+});
+
+test('una pulsación prolongada permite desbloquear un objeto deseleccionado desde el lienzo', async ({ page }) => {
+  const { c } = await setup(page), f = await fingers(page);
+  await f.hold(c, 800);
+  await page.getByRole('menuitem', { name: 'Bloquear', exact: true }).tap();
+  await page.touchscreen.tap(outside.x, outside.y);
+  await f.hold(c, 800);
+  await page.getByRole('menuitem', { name: 'Desbloquear «foto»' }).tap();
+  await expect(page.locator('#ctxbar [data-act=crop]')).toBeVisible();
 });
 
 test('mantener pulsado el fondo abre el menú del póster', async ({ page }) => {

@@ -4,26 +4,32 @@ import {
   selectedGroup, selectMany, selectUnit, setMode, toggleInSelection, unitOf, wandAt, enterGroup,
 } from '../actions';
 import {
-  applyCropDrag, applyScale, bboxMM, boxInside, cropCenter, equalSpacing, inside, insideImage, measureBetween,
-  mmToLocal, nearestBox, normDeg, onGrid, panInFrame, toGrid, rotateLayer, scaleLayer, snapBox, snapEdges, snapSize, solvePointer,
+  applyCropDrag, applyScale, bboxMM, boxInside, stretchLayer, cropCenter, equalSpacing, inside, insideImage, measureBetween,
+  mmToLocal, nearestBox, normDeg, onGrid, snapRotation, panInFrame, toGrid, rotateLayer, scaleLayer, snapBox, snapEdges, snapSize, solvePointer,
   startScale, unionBox, zoomInFrame, type Box, type Gap, type SnapTargets,
 } from '../geometry';
-import { unitAt } from '../groups';
-import { commitPending, setPending, snap, takeSnap, undo } from '../history';
+import { unitsInScope } from '../groups';
+import { placeGuide, removeGuide } from '../ui/guides';
+import { commitPending, historyRevision, setPending, snap, takeSnap } from '../history';
 import { scheduleSave } from '../io/persist';
 import { lastPointerType, setLastPointer } from '../platform';
 import { boxHandles, dirty, groupCorner, groupCursor, groupFrameMM, groupHandles, handleCursor, nearest } from '../render';
 import { posterGeo, S, sheetsVisible, st, V } from '../state';
-import { panBy, s2mm, zoomAt } from '../view';
+import { panBy, posterFrame, rulerAt, s2mm, zoomAt } from '../view';
 import { clearHelpers, measureCtx, measureTo, setGuides, snapPx, stopMeasure, type MeasureCtx } from '../measure';
-import { closeMenu, emptyMenu, groupMenu, layerMenu, openMenu } from '../ui/menu';
+import { closeMenu, emptyMenu, groupMenu, layerMenu, openMenu, unlockMenu } from '../ui/menu';
 import { renderList, syncSel } from '../ui/panel';
 import { addText, cancelTextPlacement, editText } from '../text/editor';
 import { dragWidth, fontFor, isText, setWidthMode, type TextLayer } from '../text/text';
-import type { CropDrag, HandleId, Layer, LayerGeom, Pt, ScaleDrag } from '../types';
+import type { CropDrag, HandleId, Layer, LayerGeom, LayoutGuide, Pt, ScaleDrag } from '../types';
+
+interface GuideDrag {
+  t: 'guide'; axis: LayoutGuide['axis']; original: LayoutGuide | null; start: number;
+}
 
 type Drag =
   | { t: 'none' }
+  | GuideDrag
   | { t: 'pan'; last: Pt }
   /** Mover la imagen o todas las seleccionadas: posición inicial de cada una. */
   | MoveDrag
@@ -33,12 +39,14 @@ type Drag =
   | { t: 'marquee'; a: Pt; add: boolean; base: Layer[]; moved: boolean }
   /** Escalar el grupo desde una esquina: corner (la que se arrastra), opp (la opuesta) y center, en mm. */
   | { t: 'gscale'; corner: Pt; opp: Pt; center: Pt; items: { l: Layer; g: LayerGeom }[] }
+  /** Estirar el conjunto desde un lado (solo en su eje): box0, el marco al empezar. */
+  | { t: 'gside'; id: 'n' | 'e' | 's' | 'w'; m0: Pt; box0: Box; items: { l: Layer; g: LayerGeom }[] }
   /** Girar el grupo alrededor del centro de su marco; frame0: el marco al empezar. */
   | { t: 'grot'; pivot: Pt; a0: number; frame0: Pt[]; items: { l: Layer; g: LayerGeom }[] }
   | { t: 'rot'; cc: Pt; a0: number; r0: number }
   /** Recortar: la imagen se arrastra bajo el marco de recorte, que queda fijo. */
   | { t: 'frame'; m0: Pt; start: LayerGeom }
-  | { t: 'paint'; last: Pt }
+  | { t: 'paint'; last: Pt; layer: Layer; started: boolean }
   | { t: 'tap'; x: number; y: number; moved: boolean }
   | ScaleDrag
   | CropDrag;
@@ -51,6 +59,8 @@ type Drag =
 interface MoveDrag {
   t: 'move'; m0: Pt; items: { l: Layer; x: number; y: number }[]; box0: Box; targets: SnapTargets; others: Box[];
   dupOf: Layer[] | null; altAt?: Pt; toggle?: { l: Layer; at: Pt };
+  /** Dónde se pulsó (px): si Alt llega antes de empezar a mover, también se arrastra una copia. */
+  downAt?: Pt;
 }
 
 /** Pellizco con dos dedos: zoom de la vista, transformar la imagen o (al recortar) encuadrarla en el marco. */
@@ -66,10 +76,40 @@ let drag: Drag | null = null;
 let lpTimer: ReturnType<typeof setTimeout> | null = null;
 let lpStart: Pt | null = null;
 let spaceDown = false;
+/** Revisión del historial al empezar el gesto: si al soltar sigue igual, el gesto no cambió nada (ver endPtr). */
+let gestureRev = 0;
 
 export const setSpaceDown = (v: boolean) => { spaceDown = v; };
 /** Durante un gesto la barra contextual se oculta para no estorbar. */
 export const isGesturing = () => !!gest || !!(drag && !['none', 'tap', 'pan'].includes(drag.t));
+export function cancelGuideDrag() {
+  if (drag?.t !== 'guide') return false;
+  drag = null; st.guideDraft = null; dirty();
+  return true;
+}
+
+function onPoster(p: Pt) {
+  const f = posterFrame();
+  return p.x >= f.x && p.y >= f.y && p.x <= f.x + f.w && p.y <= f.y + f.h;
+}
+
+function guideAt(p: Pt, tolerance: number, event: MouseEvent) {
+  if (!st.showGuides || !onPoster(p) || event.altKey || event.shiftKey || event.ctrlKey || event.metaKey || spaceDown) return null;
+  const m = s2mm(p), g = posterGeo();
+  let hit: LayoutGuide | null = null;
+  for (const line of st.layoutGuides) {
+    if (line.at < 0 || line.at > (line.axis === 'x' ? g.W : g.H)) continue;
+    const distance = Math.abs(m[line.axis] - line.at) * V.k;
+    if (distance <= tolerance) { tolerance = distance; hit = line; }
+  }
+  return hit;
+}
+
+function guidePosition(d: GuideDrag, p: Pt) {
+  const m = s2mm(p)[d.axis], g = posterGeo();
+  const at = d.original ? d.original.at + Math.round(m - d.start) : Math.round(m);
+  return Math.max(0, Math.min(at, d.axis === 'x' ? g.W : g.H));
+}
 
 /** El punto (mm) cae en el margen sin imprimir: fuera del póster pero dentro del papel de las hojas de fuera. */
 function inBand(m: Pt) {
@@ -115,10 +155,10 @@ function inGroupFrame(m: Pt) {
  * Empieza a mover lo seleccionado. Para los imanes se guardan la caja de lo que se mueve y las líneas del póster y de
  * las demás imágenes visibles (se calculan una vez, no en cada movimiento).
  */
-function startMove(m: Pt, dupOf: Layer[] | null = null): MoveDrag {
-  const sel = selected(), c = measureCtx(sel);
+function startMove(m: Pt, dupOf: Layer[] | null = null, moving = selected()): MoveDrag {
+  const sel = selected(), c = measureCtx(moving);
   return {
-    t: 'move', m0: m, items: sel.map((l) => ({ l, x: l.cx, y: l.cy })),
+    t: 'move', m0: m, items: moving.map((l) => ({ l, x: l.cx, y: l.cy })),
     box0: unionBox(sel.map((l) => bboxMM(l))), targets: c.targets, others: c.others, dupOf,
   };
 }
@@ -138,7 +178,7 @@ function hitOther(p: Pt, exclude: Layer[]): Layer | null {
  *   para ver si los márgenes quedan iguales.
  */
 function measureDuring(d: Drag, p: Pt) {
-  const moving = d.t === 'move' || d.t === 'gscale' ? d.items.map((it) => it.l) : st.sel ? [st.sel] : [];
+  const moving = d.t === 'move' || d.t === 'gscale' || d.t === 'gside' ? d.items.map((it) => it.l) : st.sel ? [st.sel] : [];
   if (!moving.length) { st.measure = null; return; }
   const b = unionBox(moving.map((l) => bboxMM(l)));
   let t: Box | null = d.t === 'move' && d.dupOf?.length ? unionBox(d.dupOf.map((l) => bboxMM(l))) : null;
@@ -150,7 +190,7 @@ function measureDuring(d: Drag, p: Pt) {
   st.measure = { ...measureBetween(b, target, !t), target };
 }
 /** Gestos en los que Alt mide en vivo. */
-const measurable = (d: Drag | null): d is Drag => !!d && (d.t === 'move' || d.t === 'scale' || d.t === 'gscale');
+const measurable = (d: Drag | null): d is Drag => !!d && (d.t === 'move' || d.t === 'scale' || d.t === 'gscale' || d.t === 'gside');
 /** Último punto del arrastre, para recalcular la medida si se pulsa o suelta Alt sin mover el ratón. */
 let lastDragPt: Pt | null = null;
 /** Alt cambió durante un arrastre: se mide (o se deja de medir) desde el estado actual, sin nada congelado. */
@@ -177,7 +217,9 @@ const movedEdges = (b: Box, b0: Box) => {
  */
 function edgeHelpers(e: PointerEvent, l: Layer, m: Pt, apply: (m: Pt) => void, size?: { id: HandleId; alt: boolean }) {
   st.guides = null; st.gaps = null;
-  if (!edgeCtx || e.ctrlKey || e.metaKey || !upright(l)) return;
+  // Ctrl/⌘ quita el imán, salvo en el recorte rápido, que se hace precisamente con Ctrl/⌘
+  const quickCrop = drag?.t === 'crop' && !!drag.quick;
+  if (!edgeCtx || (!quickCrop && (e.ctrlKey || e.metaKey)) || !upright(l)) return;
   const tol = snapPx(e.pointerType) / V.k;
   const b = bboxMM(l), mv = movedEdges(b, edgeCtx.box0);
   const s = snapEdges(b, mv, edgeCtx.ctx.targets, tol);
@@ -238,7 +280,7 @@ export function refreshMeasure(p: Pt | null = st.hover) {
   if (measurable(drag)) return; // durante el gesto mide measureDuring
   const sel = selected();
   if (!st.altDown || !sel.length || !p || S.mode !== 'move') { stopMeasure(); return; }
-  const h = hitLayer(p, false);
+  const h = hitLayer(p); // la misma que resalta el ratón y elegiría el clic
   measureTo(sel, h && !sel.includes(h) ? h : null);
 }
 
@@ -246,9 +288,8 @@ export function refreshMeasure(p: Pt | null = st.hover) {
 function inMarquee(a: Pt, b: Pt): Layer[] {
   const p = s2mm(a), q = s2mm(b);
   const box = { x0: Math.min(p.x, q.x), y0: Math.min(p.y, q.y), x1: Math.max(p.x, q.x), y1: Math.max(p.y, q.y) };
-  const ins = st.layers.filter((l) => touchable(l) && boxInside(bboxMM(l), box));
   // un grupo (el de más afuera) solo entra si caben todas sus imágenes (como en Figma)
-  return ins.filter((l) => unitAt(st.layers, l, null).every((x) => !touchable(x) || ins.includes(x)));
+  return unitsInScope(st.layers.filter(touchable), null).filter((unit) => unit.every((l) => boxInside(bboxMM(l), box))).flat();
 }
 /** Menú de una imagen: si forma parte de un grupo, el del grupo; si no, se selecciona sola. */
 function menuFor(h: Layer) {
@@ -261,6 +302,13 @@ function menuFor(h: Layer) {
   return layerMenu(h, prev);
 }
 
+function canvasMenu(p: Pt) {
+  const m = s2mm(p), h = hitLayer(p);
+  const locked = st.layers.filter(l => l.locked && !l.hidden && inside(l, m)).reverse();
+  if (!h && selected().length) select(null);
+  return [...unlockMenu(locked), ...(h ? menuFor(h) : emptyMenu(m))];
+}
+
 export function initPointer(cv: HTMLCanvasElement) {
   /** Cambia el cursor solo si es distinto (asignar el mismo valor en cada movimiento también cuesta). */
   const setCursor = (c: string) => { if (cv.style.cursor !== c) cv.style.cursor = c; };
@@ -271,6 +319,7 @@ export function initPointer(cv: HTMLCanvasElement) {
     setLastPointer(e.pointerType);
     if (e.button === 2) return;
     cv.setPointerCapture(e.pointerId);
+    if (!ptrs.size) gestureRev = historyRevision();
     const p = pos(e);
     ptrs.set(e.pointerId, p);
     if (st.hoverBand) { st.hoverBand = false; dirty(); } // al pulsar, el aviso del margen estorba
@@ -285,6 +334,7 @@ export function initPointer(cv: HTMLCanvasElement) {
       return;
     }
     if (ptrs.size === 2) {
+      st.guideDraft = null;
       // pellizco: transforma la imagen solo si el centro del gesto cae sobre ella; si no, hace zoom de la vista.
       // Al recortar, pellizcar sobre la imagen la amplía o reduce dentro del marco.
       drag = null;
@@ -299,16 +349,19 @@ export function initPointer(cv: HTMLCanvasElement) {
       return;
     }
     if (ptrs.size > 2) return;
+    const ruler = rulerAt(p);
+    if (ruler && !spaceDown && e.button === 0) {
+      drag = { t: 'guide', axis: ruler, original: null, start: s2mm(p)[ruler] };
+      return;
+    }
     lpStart = p;
     if (e.pointerType !== 'mouse') {
       // mantener pulsado = menú contextual
       lpTimer = setTimeout(() => {
         lpTimer = null;
         if (ptrs.size !== 1) return;
-        if (drag?.t === 'paint') undo();
         drag = null; setPending(null);
-        const h = hitLayer(p);
-        const items = h ? menuFor(h) : (select(null), emptyMenu(s2mm(p)));
+        const items = canvasMenu(p);
         const r = cv.getBoundingClientRect();
         openMenu(r.left + p.x, r.top + p.y, items);
         dirty();
@@ -327,15 +380,25 @@ export function initPointer(cv: HTMLCanvasElement) {
           const items = st.group.map((l) => ({ l, g: geomOf(l) }));
           if (h.id === 'rot') drag = { t: 'grot', pivot: center, a0: Math.atan2(m.y - center.y, m.x - center.x), frame0: fr, items };
           else {
+            const box0 = unionBox(st.group.map((l) => bboxMM(l)));
             const i = groupCorner(h.id);
-            drag = { t: 'gscale', corner: fr[i]!, opp: fr[(i + 2) % 4]!, center, items };
-            edgeCtx = { box0: unionBox(st.group.map((l) => bboxMM(l))), ctx: measureCtx(st.group) };
+            if (i < 0) drag = { t: 'gside', id: h.id as 'n' | 'e' | 's' | 'w', m0: m, box0, items };
+            else drag = { t: 'gscale', corner: fr[i]!, opp: fr[(i + 2) % 4]!, center, items };
+            edgeCtx = { box0, ctx: measureCtx(st.group) };
           }
           return;
         }
       }
       if (sel && touchable(sel)) {
         const h = nearest(boxHandles(sel, true), p, R);
+        // Ctrl/⌘ + tirador (como en Figma): recorta ese lado sin entrar en el modo de recorte. Con Alt, desde el centro;
+        // con Mayús en una esquina, con la proporción. El texto no se recorta: sus tiradores escalan como siempre
+        if (h && h.id !== 'rot' && (e.ctrlKey || e.metaKey) && !isText(sel)) {
+          setPending(takeSnap());
+          drag = { t: 'crop', id: h.id, k0: { ...sel.crop }, ratio0: (sel.w * (sel.crop.x1 - sel.crop.x0)) / (sel.h * (sel.crop.y1 - sel.crop.y0)), quick: true };
+          edgeCtx = { box0: bboxMM(sel), ctx: measureCtx([sel]) };
+          return;
+        }
         if (h) {
           setPending(takeSnap());
           const cc = cropCenter(sel);
@@ -346,21 +409,34 @@ export function initPointer(cv: HTMLCanvasElement) {
           return;
         }
       }
+      const guide = guideAt(p, e.pointerType === 'touch' ? 10 : 5, e);
+      if (guide && e.button === 0) {
+        clearLP();
+        drag = { t: 'guide', original: guide, axis: guide.axis, start: m[guide.axis] };
+        st.hoverL = null;
+        setCursor(guide.axis === 'x' ? 'ew-resize' : 'ns-resize');
+        dirty(); return;
+      }
       const hit = hitLayer(p), multi = e.shiftKey || e.ctrlKey || e.metaKey;
-      if (hit && multi) {
+      if (hit && e.altKey) {
+        // Alt + arrastrar: mueve una copia (y se mide contra la original mientras siga Alt pulsado), también con Mayús
+        // (en horizontal o vertical) o Ctrl (sin imán), en cualquier orden. La copia se crea al empezar a arrastrar (ver
+        // el caso 'move' de pointermove): un Alt + clic solo selecciona. Se copia lo que se coge: una que no estaba
+        // seleccionada pasa a ser la selección (Mayús aquí es «en línea recta», no «sumar»).
+        if (!isSelected(hit)) selectUnit(hit);
+        drag = { ...startMove(m), altAt: p };
+        cv.style.cursor = 'copy';
+      } else if (hit && multi) {
         // Shift o Ctrl + clic: añade o quita. Una que no estaba se añade al pulsar y ya se puede arrastrar todo junto.
         // Una que ya estaba se quita al soltar, y solo si no se arrastró: así Shift o Ctrl + arrastrar mueve lo
         // seleccionado (en horizontal o vertical, o sin imán) en vez de deseleccionarla (como en Figma)
         setPending(takeSnap());
-        if (isSelected(hit)) drag = { ...startMove(m), toggle: { l: hit, at: p } };
-        else { toggleInSelection(hit); drag = isSelected(hit) ? startMove(m) : { t: 'none' }; }
+        if (isSelected(hit)) drag = { ...startMove(m), toggle: { l: hit, at: p }, downAt: p };
+        else { toggleInSelection(hit); drag = isSelected(hit) ? { ...startMove(m), downAt: p } : { t: 'none' }; }
       } else if (hit) {
         if (!isSelected(hit)) selectUnit(hit); // de un grupo: el grupo entero
-        // Alt + arrastrar: mueve una copia (y se mide contra la original mientras siga Alt pulsado). La copia se
-        // crea al empezar a arrastrar (ver el caso 'move' de pointermove): un Alt + clic solo selecciona.
-        if (e.altKey) drag = { ...startMove(m), altAt: p };
-        else { setPending(takeSnap()); drag = startMove(m); }
-        cv.style.cursor = e.altKey ? 'copy' : 'grabbing';
+        setPending(takeSnap()); drag = { ...startMove(m), downAt: p };
+        cv.style.cursor = 'grabbing';
       } else if (e.pointerType !== 'touch') {
         // ratón o lápiz sobre el fondo: recuadro de selección (la vista se mueve con Espacio, la rueda o el botón central)
         drag = { t: 'marquee', a: p, add: multi, base: multi ? selected() : [], moved: false };
@@ -379,10 +455,9 @@ export function initPointer(cv: HTMLCanvasElement) {
       if (hit && hit !== sel) { select(hit); drag = { t: 'none' }; }
       else { if (!hit) applyCrop(); drag = { t: 'pan', last: p }; }
     } else if (S.mode === 'erase' && sel) {
-      if (!inside(sel, m)) { const hit = hitLayer(p); if (hit && hit !== sel) { select(hit); drag = { t: 'none' }; return; } }
-      beginPixelEdit(sel);
-      drag = { t: 'paint', last: p };
-      paint(sel, p, p);
+      if (!inside(sel, m)) { const hit = hitLayer(p); if (hit) select(hit); return; }
+      drag = { t: 'paint', last: p, layer: sel, started: e.pointerType === 'mouse' };
+      if (drag.started) { beginPixelEdit(sel); paint(sel, p, p); }
     } else if (S.mode === 'wand') {
       drag = { t: 'tap', x: p.x, y: p.y, moved: false };
     }
@@ -396,11 +471,16 @@ export function initPointer(cv: HTMLCanvasElement) {
       const prevHoverL = st.hoverL;
       if (e.pointerType === 'mouse') {
         if (st.placingText) { st.hoverL = null; setCursor('text'); if (prevHoverL) dirty(); return; }
+        const ruler = rulerAt(p);
+        if (ruler) { st.hoverL = null; setCursor(ruler === 'x' ? 'ew-resize' : 'ns-resize'); dirty(); return; }
         if (S.mode === 'move') {
           const gh = st.group.length > 1 ? nearest(groupHandles(), p, 11) : null;
           if (gh) { st.hoverL = null; setCursor(groupCursor(gh.id)); if (st.hoverL !== prevHoverL) dirty(); return; }
           const h = sel && touchable(sel) && nearest(boxHandles(sel, true), p, 11);
-          st.hoverL = h ? null : hitLayer(p, false);
+          const guide = !h && guideAt(p, 5, e);
+          if (guide) { st.hoverL = null; setCursor(guide.axis === 'x' ? 'ew-resize' : 'ns-resize'); if (prevHoverL) dirty(); return; }
+          // lo que se resalta es lo que seleccionaría el clic: sobre la zona transparente de una imagen, la de debajo
+          st.hoverL = h ? null : hitLayer(p);
           setCursor(h && sel ? handleCursor(sel, h.id) : st.hoverL ? (e.altKey ? 'copy' : 'move') : 'default');
           // sobre el margen sin imprimir (la franja alrededor del póster), sin imagen encima: se explica qué es
           const band = !h && !st.hoverL && inBand(s2mm(p));
@@ -451,6 +531,9 @@ export function initPointer(cv: HTMLCanvasElement) {
     if (!drag) return;
     const m = s2mm(p);
     switch (drag.t) {
+      case 'guide':
+        st.guideDraft = { original: drag.original, axis: drag.axis, at: onPoster(p) ? guidePosition(drag, p) : -1 };
+        break;
       case 'textbox': {
         // el recuadro se ve mientras se arrastra (el mismo dibujo que el de selección)
         if (drag.edit) break;
@@ -462,6 +545,10 @@ export function initPointer(cv: HTMLCanvasElement) {
       case 'pan': panBy(p.x - drag.last.x, p.y - drag.last.y); drag.last = p; break;
       case 'move': {
         let d = drag;
+        // Alt pulsado después del clic, pero antes de mover nada: también es arrastrar una copia
+        if (e.altKey && d.downAt && !d.altAt && !d.dupOf && historyRevision() === gestureRev) {
+          setPending(null); d.toggle = undefined; d.altAt = d.downAt;
+        }
         if (d.toggle) {
           if (Math.hypot(p.x - d.toggle.at.x, p.y - d.toggle.at.y) < 4) break; // aún es un clic
           d.toggle = undefined; // es un arrastre: se mueve y no se quita de la selección
@@ -469,8 +556,8 @@ export function initPointer(cv: HTMLCanvasElement) {
         if (d.altAt) {
           if (Math.hypot(p.x - d.altAt.x, p.y - d.altAt.y) < 4) break; // aún no es un arrastre
           const originals = selected();
-          snap(); cloneSelectedInPlace();
-          d = drag = startMove(d.m0, originals); // ahora se mueven las copias y las originales son referencia del imán
+          snap();
+          d = drag = startMove(d.m0, originals, cloneSelectedInPlace());
         }
         commitPending();
         let dx = m.x - d.m0.x, dy = m.y - d.m0.y;
@@ -540,10 +627,41 @@ export function initPointer(cv: HTMLCanvasElement) {
         if (e.altKey || st.altDown) measureDuring(drag, p); else st.measure = null;
         syncSel(); break;
       }
+      case 'gside': {
+        commitPending();
+        // el lado se mueve lo que el puntero (sin saltar a él al cogerlo); queda fijo el opuesto (con Alt, el centro).
+        // Mayús: sin deformar
+        const d = drag, b = d.box0, horiz = d.id === 'e' || d.id === 'w';
+        const lo = horiz ? b.x0 : b.y0, hi = horiz ? b.x1 : b.y1, far = d.id === 'e' || d.id === 's';
+        const edge0 = far ? hi : lo, P = e.altKey ? (lo + hi) / 2 : far ? lo : hi;
+        let edge = edge0 + (horiz ? m.x - d.m0.x : m.y - d.m0.y), line: number | null = null;
+        st.guides = null; st.gaps = null;
+        // imán: el lado se pega a bordes y centros (de las demás, del póster y de las guías); si no, a un mm entero
+        if (edgeCtx && !(e.ctrlKey || e.metaKey)) {
+          let best = snapPx(e.pointerType) / V.k;
+          for (const t of horiz ? edgeCtx.ctx.targets.x : edgeCtx.ctx.targets.y) {
+            const dd = Math.abs(t - edge);
+            if (dd <= best) { best = dd; line = t; }
+          }
+          edge = line ?? onGrid(edge);
+        }
+        // nunca se da la vuelta ni se aplasta del todo
+        const f = Math.max(0.02, (edge - P) / (edge0 - P));
+        const pivot = horiz ? { x: P, y: (b.y0 + b.y1) / 2 } : { x: (b.x0 + b.x1) / 2, y: P };
+        for (const it of d.items) {
+          restoreGeom(it.l, it.g);
+          if (e.shiftKey) scaleLayer(it.l, f, pivot); else stretchLayer(it.l, horiz ? f : 1, horiz ? 1 : f, pivot);
+          markManual(it.l);
+        }
+        if (edgeCtx && line != null) setGuides(unionBox(d.items.map((it) => bboxMM(it.l))), edgeCtx.ctx, horiz ? line : null, horiz ? null : line);
+        lastDragPt = p;
+        if (e.altKey || st.altDown) measureDuring(drag, p); else st.measure = null;
+        syncSel(); break;
+      }
       case 'grot': {
         commitPending();
         let d = ((Math.atan2(m.y - drag.pivot.y, m.x - drag.pivot.x) - drag.a0) * 180) / Math.PI;
-        if (e.shiftKey) d = Math.round(d / 15) * 15;
+        d = snapRotation(d, e.shiftKey);
         for (const it of drag.items) { restoreGeom(it.l, it.g); rotateLayer(it.l, d, drag.pivot); markManual(it.l); }
         const pivot = drag.pivot;
         st.groupFrame = drag.frame0.map((q) => rotPt(q, pivot, d));
@@ -576,16 +694,18 @@ export function initPointer(cv: HTMLCanvasElement) {
         commitPending();
         markManual(sel);
         let r = drag.r0 + ((Math.atan2(m.y - drag.cc.y, m.x - drag.cc.x) - drag.a0) * 180) / Math.PI;
-        if (e.shiftKey) r = Math.round(r / 15) * 15;
-        else { const q = Math.round(r / 90) * 90; if (Math.abs(r - q) < 3) r = q; } // imán a 0/90/180/270
+        r = snapRotation(r, e.shiftKey);
         rotateLayer(sel, normDeg(r - sel.rot), drag.cc);
         syncSel(); break;
       }
       case 'crop': {
         if (!sel) break;
-        const d = drag;
-        applyCropDrag(sel, d, m, e.shiftKey, e.altKey, S.cropRatio);
-        edgeHelpers(e, sel, m, (mm) => applyCropDrag(sel, d, mm, e.shiftKey, e.altKey, S.cropRatio));
+        const d = drag, ratio = d.quick ? null : S.cropRatio; // la proporción elegida es la del modo de recorte
+        if (d.quick) { commitPending(); markManual(sel); }
+        applyCropDrag(sel, d, m, e.shiftKey, e.altKey, ratio);
+        edgeHelpers(e, sel, m, (mm) => applyCropDrag(sel, d, mm, e.shiftKey, e.altKey, ratio));
+        lastDragPt = p;
+        syncSel();
         break;
       }
       case 'frame': {
@@ -595,7 +715,14 @@ export function initPointer(cv: HTMLCanvasElement) {
         panInFrame(sel, drag.start, { x: dx, y: dy });
         break;
       }
-      case 'paint': if (sel) { paint(sel, drag.last, p); drag.last = p; } break;
+      case 'paint': {
+        if (!sel || sel !== drag.layer || S.mode !== 'erase') break;
+        if (!drag.started) {
+          if (lpTimer) break;
+          beginPixelEdit(sel); drag.started = true;
+        }
+        paint(sel, drag.last, p); drag.last = p; break;
+      }
       case 'tap': if (Math.hypot(p.x - drag.x, p.y - drag.y) > 6) drag.moved = true; break;
     }
     dirty();
@@ -605,6 +732,17 @@ export function initPointer(cv: HTMLCanvasElement) {
     clearLP();
     if (!ptrs.has(e.pointerId)) return;
     const p = pos(e), sel = st.sel;
+    const wasGuide = drag?.t === 'guide';
+    if (drag?.t === 'guide') {
+      if (e.type === 'pointerup') {
+        if (drag.original && rulerAt(p) === drag.axis) removeGuide(drag.original);
+        else if (onPoster(p)) placeGuide(drag.axis, guidePosition(drag, p), drag.original);
+      }
+      st.guideDraft = null;
+    }
+    if (drag?.t === 'paint' && !drag.started && e.type === 'pointerup' && sel === drag.layer && S.mode === 'erase') {
+      beginPixelEdit(sel); paint(sel, drag.last, p);
+    }
     if (drag?.t === 'marquee') { st.marquee = null; if (drag.moved) cv.style.cursor = 'default'; }
     if (drag?.t === 'textbox') {
       st.marquee = null;
@@ -622,7 +760,9 @@ export function initPointer(cv: HTMLCanvasElement) {
       if (sel && inside(sel, s2mm(p))) wandAt(p);
       else { const hit = hitLayer(p); if (hit) select(hit); else setMode('move'); }
     }
-    if ((drag && ['paint', 'scale', 'crop', 'frame', 'move', 'rot', 'gscale', 'grot'].includes(drag.t)) || gest?.mode === 'layer' || gest?.mode === 'group') {
+    // un clic sobre una imagen (mover sin llegar a moverla) no cambia nada: ni lista que rehacer ni nada que guardar
+    const idleClick = drag?.t === 'move' && historyRevision() === gestureRev;
+    if ((drag && ['paint', 'scale', 'crop', 'frame', 'move', 'rot', 'gscale', 'gside', 'grot'].includes(drag.t) && !idleClick) || gest?.mode === 'layer' || gest?.mode === 'group') {
       renderList(); syncSel(); scheduleSave();
     }
     // al soltar el giro, el marco vuelve a ser la caja común (alineada con la pantalla)
@@ -636,7 +776,10 @@ export function initPointer(cv: HTMLCanvasElement) {
     drag = null; setPending(null);
     if (toggleOnUp) toggleInSelection(toggleOnUp);
     if (ptrs.size === 0 && e.pointerType !== 'mouse') st.hover = null;
-    if (S.mode === 'move' && e.pointerType === 'mouse') cv.style.cursor = st.sel && inside(st.sel, s2mm(p)) ? 'move' : 'default';
+    if (S.mode === 'move' && e.pointerType === 'mouse') {
+      const axis = wasGuide && (rulerAt(p) ?? guideAt(p, 5, e)?.axis);
+      setCursor(axis ? (axis === 'x' ? 'ew-resize' : 'ns-resize') : st.sel && touchable(st.sel) && inside(st.sel, s2mm(p)) ? 'move' : 'default');
+    }
     dirty();
   };
   cv.addEventListener('pointerup', endPtr);
@@ -645,6 +788,7 @@ export function initPointer(cv: HTMLCanvasElement) {
     if (e.pointerType !== 'mouse' || ptrs.size) return;
     const had = !!st.hoverL || S.mode === 'erase' || st.hoverBand;
     st.hover = null; st.hoverL = null; st.hoverBand = false;
+    stopMeasure();
     if (had) dirty();
   });
 
@@ -669,6 +813,7 @@ export function initPointer(cv: HTMLCanvasElement) {
       const sh = nearest(boxHandles(ts, false), pos(e), 11);
       if (sh && (sh.id === 'e' || sh.id === 'w')) { void setWidthMode(ts, false); return; }
     }
+    if (S.mode === 'move' && guideAt(pos(e), 5, e)) return;
     const h = hitLayer(pos(e));
     if (!h) return;
     if (S.mode === 'crop') { applyCrop(); return; }
@@ -680,9 +825,7 @@ export function initPointer(cv: HTMLCanvasElement) {
   cv.addEventListener('contextmenu', (e) => {
     e.preventDefault();
     if (lastPointerType() !== 'mouse') return; // en táctil el menú lo abre "mantener pulsado"
-    const h = hitLayer(pos(e));
     if (S.mode === 'crop') applyCrop();
-    if (h) openMenu(e.clientX, e.clientY, menuFor(h));
-    else { if (selected().length) select(null); openMenu(e.clientX, e.clientY, emptyMenu(s2mm(pos(e)))); }
+    openMenu(e.clientX, e.clientY, canvasMenu(pos(e)));
   });
 }

@@ -2,18 +2,20 @@
 import { BRAND } from '../../brand';
 import type { jsPDF as JsPDF } from 'jspdf';
 import { $, freeCanvas, tick, toast } from '../dom';
-import { cm } from '../format';
-import { hasCutMarks, markLen, sheetNo, srcDims } from '../geometry';
+import { cmGap } from '../format';
+import { bboxMM, chooseSheets, hasCutMarks, markLen, sheetCells, sheetNo, srcDims, tileRegion, type SheetCell } from '../geometry';
 import { markExported } from '../history';
 import { editMaskData } from '../pixels';
 import { HI_AREA, SINGLE_AREA } from '../platform';
 import { drawAll } from '../render';
+import { canvasRevision } from './persist';
 import { syncExportButtons } from '../ui/panel';
 import { PAPERS } from '../constants';
 import { posterGeo, S, st } from '../state';
 import { loadImg } from './load';
 import { renderPdfPage } from './pdf';
 import { textCanvas } from '../text/raster';
+import { figureCanvas } from '../figures';
 import type { Geo } from '../types';
 
 type HiMap = Map<HTMLCanvasElement, HTMLCanvasElement>;
@@ -46,10 +48,89 @@ function renderRegion(x0: number, y0: number, wmm: number, hmm: number, dpi: num
   c.height = Math.max(1, Math.round((hmm / 25.4) * dpi));
   const x = c.getContext('2d')!;
   x.fillStyle = '#ffffff'; x.fillRect(0, 0, c.width, c.height);
-  const s = c.width / wmm;
-  x.setTransform(s, 0, 0, s, -x0 * s, -y0 * s);
+  const sx = c.width / wmm, sy = c.height / hmm;
+  x.setTransform(sx, 0, 0, sy, -x0 * sx, -y0 * sy);
   drawAll(x, (l) => hi?.get(l.img) ?? l.img);
   return c;
+}
+/* ---------- «Omitir hojas en blanco»: qué hojas hacen falta ---------- */
+/** Hay tinta (algo que no es blanco puro) en el rectángulo [x0, x1) × [y0, y1) del lienzo, en px. Lee por bandas. */
+function inkIn(ctx: CanvasRenderingContext2D, x0: number, y0: number, x1: number, y1: number) {
+  const w = x1 - x0;
+  if (w <= 0 || y1 <= y0) return false;
+  for (let y = y0; y < y1; y += 128) {
+    const { data } = ctx.getImageData(x0, y, w, Math.min(128, y1 - y));
+    const pixels = new Uint32Array(data.buffer, data.byteOffset, data.length / 4);
+    for (let i = 0; i < pixels.length; i++) if (pixels[i] !== 0xffffffff) return true;
+  }
+  return false;
+}
+type InkCell = SheetCell & { ink: boolean };
+/**
+ * Marca las zonas de la hoja (ver sheetCells) en las que hay tinta, examinando el papel antes del JPEG y de las
+ * anotaciones. Cada píxel cuenta para la zona en la que cae su centro. Devuelve si la hoja tiene tinta.
+ */
+function markInk(canvas: HTMLCanvasElement, t: { x: number; y: number; w: number; h: number }, cells: InkCell[]) {
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })!, sx = canvas.width / t.w, sy = canvas.height / t.h;
+  const px = (v: number, s: number, max: number) => Math.min(max, Math.max(0, Math.round(v * s)));
+  let any = false;
+  for (const c of cells) {
+    if (c.x1 <= t.x || c.x0 >= t.x + t.w || c.y1 <= t.y || c.y0 >= t.y + t.h) continue;
+    const ink = inkIn(ctx, px(c.x0 - t.x, sx, canvas.width), px(c.y0 - t.y, sy, canvas.height),
+      px(c.x1 - t.x, sx, canvas.width), px(c.y1 - t.y, sy, canvas.height));
+    if (ink) { c.ink = true; any = true; }
+  }
+  return any;
+}
+/** Algo visible toca esta zona del póster. Si nada la toca, está en blanco y no hace falta dibujarla para saberlo. */
+const touched = (t: { x: number; y: number; w: number; h: number }) => st.layers.some((l) => {
+  if (l.hidden || l === st.editingText) return false;
+  const b = bboxMM(l);
+  return b.x1 > t.x + 1e-6 && b.x0 < t.x + t.w - 1e-6 && b.y1 > t.y + 1e-6 && b.y0 < t.y + t.h - 1e-6;
+});
+
+/**
+ * Resultado de la última comprobación, con lo que la decide: las hojas, la resolución y cada capa (posición, recorte,
+ * opacidad, lienzo y su contenido). Mientras no cambie nada, abrir la tarjeta del PDF o descargar no vuelve a dibujar
+ * todas las hojas a la resolución final (con 3 × 3 hojas a 300 ppp eran casi 2 s cada vez).
+ */
+let plan: { key: string; sheets: number[] } | null = null;
+const ids = new WeakMap<object, number>();
+let nextId = 1;
+const idOf = (o: object | null) => { if (!o) return 0; let i = ids.get(o); if (!i) { i = nextId++; ids.set(o, i); } return i; };
+function printKey() {
+  return JSON.stringify([posterGeo(), S.dpi, idOf(st.editingText), st.layers.map((l) => [
+    idOf(l), l.hidden, l.cx, l.cy, l.w, l.h, l.rot, l.flipX, l.flipY, l.crop, l.opacity, idOf(l.img), canvasRevision(l.img), idOf(l.orig), idOf(l.src),
+  ])]);
+}
+/**
+ * Hojas que se imprimirán con «Omitir hojas en blanco» (números del mosaico), o null si se canceló (current() dejó de
+ * valer). Solo se dibujan las hojas que toca alguna capa; en cada una se mira qué zonas tienen tinta y chooseSheets
+ * decide (lo de una franja de solape basta con imprimirlo una vez). onTile recibe cada hoja con tinta ya dibujada,
+ * para que la descarga la aproveche sin dibujarla otra vez.
+ */
+async function findSheets(current: () => boolean, hi: HiMap, onTile?: (n: number, canvas: HTMLCanvasElement) => void, progressOf?: (n: number, N: number) => void) {
+  const key = printKey();
+  if (plan?.key === key) return plan.sheets;
+  const g = posterGeo(), cells: InkCell[] = sheetCells(g).map((c) => ({ ...c, ink: false }));
+  for (let r = 0; r < g.rows; r++) for (let c = 0; c < g.cols; c++) {
+    if (!current()) return null;
+    const n = sheetNo(r, c, g.cols), t = tileRegion(g, r, c);
+    if (!touched(t)) continue;
+    progressOf?.(n, g.cols * g.rows); await tick();
+    const canvas = renderRegion(t.x, t.y, t.w, t.h, S.dpi, hi);
+    const mine = cells.filter((cell) => cell.sheets.includes(n));
+    if (markInk(canvas, t, mine) && onTile) onTile(n, canvas); else freeCanvas(canvas);
+  }
+  const sheets = chooseSheets(cells);
+  plan = { key, sheets };
+  return sheets;
+}
+/** Para el resumen de la tarjeta del PDF: qué hojas se imprimirán (null si se canceló). */
+export async function sheetsToPrint(current: () => boolean): Promise<number[] | null> {
+  if (plan?.key === printKey()) return plan.sheets;
+  const hi = await hiSources(S.dpi);
+  try { return await findSheets(current, hi); } finally { hi.forEach(freeCanvas); }
 }
 /** Codifica en JPEG y libera el lienzo enseguida (con tamaño 0 Safari devuelve la memoria sin esperar). */
 const jpg = (c: HTMLCanvasElement) => { const d = c.toDataURL('image/jpeg', 0.92); freeCanvas(c); return d; };
@@ -77,7 +158,7 @@ async function hiSources(dpi: number): Promise<HiMap> {
   const need = new Map<HTMLCanvasElement, { l: (typeof st.layers)[number]; w: number }>();
   for (const l of st.layers) {
     if (!l.src || l.hidden) continue;
-    const w = (l.w / 25.4) * dpi, cur = need.get(l.img);
+    const w = Math.max(l.w, l.h * l.img.width / l.img.height) * dpi / 25.4, cur = need.get(l.img);
     if (!cur || w > cur.w) need.set(l.img, { l, w });
   }
   const out: HiMap = new Map();
@@ -89,7 +170,8 @@ async function hiSources(dpi: number): Promise<HiMap> {
       let base: CanvasImageSource, url: string | null = null;
       const src = l.src!;
       if (src.kind === 'text') base = textCanvas(src.spec, tw, th); // contornos: nítidos a cualquier tamaño
-      else if (src.kind === 'pdf') base = await renderPdfPage(l.pdf!, l.page, Math.max(tw, th), Infinity);
+      else if (src.kind === 'shape') base = figureCanvas(src.spec, tw, th);
+      else if (src.kind === 'pdf') base = await renderPdfPage(l.pdf!, l.page, Math.max(tw, th), Infinity, false);
       else { url = URL.createObjectURL(src.blob); base = await loadImg(url); }
       const c = document.createElement('canvas');
       c.width = tw; c.height = th;
@@ -122,12 +204,12 @@ function cutMarks(pdf: JsPDF, g: Geo) {
 
 /** Nombre de una opción del navegador en una sola línea (espacios que no se parten al ajustar el texto). */
 const nb = (t: string) => t.replace(/ /g, '\u00a0');
-function guidePage(pdf: JsPDF, g: Geo) {
+function guidePage(pdf: JsPDF, g: Geo, included: Set<number>) {
   const m = Math.max(12, g.m), aw = g.pw - 2 * m;
   pdf.setFont('helvetica', 'bold'); pdf.setFontSize(18); pdf.setTextColor(20, 30, 40);
   pdf.text('Guía de armado', m, m + 5);
   pdf.setFont('helvetica', 'normal'); pdf.setFontSize(9.5); pdf.setTextColor(80, 90, 100);
-  pdf.text(`Póster de ${cm(g.W)} × ${cm(g.H)} cm · ${S.cols} × ${S.rows} hojas ${S.paper} · solape ${Math.round(g.ov)} mm`, m, m + 11);
+  pdf.text(`Póster de ${cmGap(g.W)} × ${cmGap(g.H)} cm · ${g.cols} × ${g.rows} hojas ${S.paper} · solape ${Math.round(g.ov)} mm`, m, m + 11);
   // si no hay marcas de corte (desactivadas o margen pequeño), se corta por el borde de la imagen impresa
   const by = hasCutMarks(g, S.marks) ? 'por las marcas de corte' : 'por el borde de la imagen impresa';
   const dashed = S.marks ? 'sobre la línea discontinua' : `a ${Math.round(g.ov)} mm del borde de la vecina`;
@@ -144,21 +226,25 @@ function guidePage(pdf: JsPDF, g: Geo) {
       `2. Recorta los cuatro bordes de cada hoja ${by}.`,
       '3. Une las hojas borde con borde y pégalas con cinta por detrás, siguiendo los números del mapa.',
     ];
+  if (included.size < g.rows * g.cols) steps.push('Las posiciones con un guion se dejaron en blanco. Respeta su espacio al montar.');
+  if (S.posterSize) steps.push(`Recorta el contorno final a ${cmGap(g.W)} × ${cmGap(g.H)} cm.`);
   // pasos en líneas que caben en el ancho (las que siguen a la primera de un paso, sangradas)
   pdf.setFont('helvetica', 'normal'); pdf.setFontSize(9.5);
   const lines = steps.flatMap((t) => (pdf.splitTextToSize(t, aw - 5) as string[]).map((ln, i) => (i ? '    ' + ln : ln)));
   const stepsH = lines.length * 5 + 6 + RULER_H, top = m + 18, ah = g.ph - top - m - stepsH;
   const s = Math.min(aw / g.W, ah / g.H), w = g.W * s, h = g.H * s, x = (g.pw - w) / 2, y = top;
-  pdf.addImage(jpg(renderRegion(0, 0, g.W, g.H, Math.min(150, (1500 * 25.4) / g.W))), 'JPEG', x, y, w, h);
+  const previewDpi = Math.min(150, (1500 * 25.4) / Math.max(g.W, g.H));
+  pdf.addImage(jpg(renderRegion(0, 0, g.W, g.H, previewDpi)), 'JPEG', x, y, w, h);
   pdf.setDrawColor(194, 26, 90); pdf.setLineWidth(0.35); pdf.rect(x, y, w, h);
   pdf.setLineDashPattern([1.2, 1], 0);
-  for (let c = 1; c < S.cols; c++) for (const xx of [c * (g.tw - g.ov), c * (g.tw - g.ov) + g.ov]) pdf.line(x + xx * s, y, x + xx * s, y + h);
-  for (let r = 1; r < S.rows; r++) for (const yy of [r * (g.th - g.ov), r * (g.th - g.ov) + g.ov]) pdf.line(x, y + yy * s, x + w, y + yy * s);
+  for (let c = 1; c < g.cols; c++) for (const xx of [c * (g.tw - g.ov), c * (g.tw - g.ov) + g.ov]) pdf.line(x + xx * s, y, x + xx * s, y + h);
+  for (let r = 1; r < g.rows; r++) for (const yy of [r * (g.th - g.ov), r * (g.th - g.ov) + g.ov]) pdf.line(x, y + yy * s, x + w, y + yy * s);
   pdf.setLineDashPattern([], 0); pdf.setFontSize(9); pdf.setFont('helvetica', 'bold');
-  for (let r = 0; r < S.rows; r++) for (let c = 0; c < S.cols; c++) {
-    const cx = x + (c * (g.tw - g.ov) + g.tw / 2) * s, cy = y + (r * (g.th - g.ov) + g.th / 2) * s;
+  for (let r = 0; r < g.rows; r++) for (let c = 0; c < g.cols; c++) {
+    const t = tileRegion(g, r, c), number = sheetNo(r, c, g.cols);
+    const cx = x + (t.x + t.w / 2) * s, cy = y + (t.y + t.h / 2) * s;
     pdf.setFillColor(255, 255, 255); pdf.roundedRect(cx - 5, cy - 3, 10, 6, 1.5, 1.5, 'F'); pdf.setTextColor(194, 26, 90);
-    pdf.text(String(sheetNo(r, c, S.cols)), cx, cy, { align: 'center', baseline: 'middle' });
+    pdf.text(included.has(number) ? String(number) : '–', cx, cy, { align: 'center', baseline: 'middle' });
   }
   pdf.setFont('helvetica', 'normal'); pdf.setFontSize(9.5); pdf.setTextColor(40, 50, 60);
   lines.forEach((t, i) => pdf.text(t, m, y + h + 9 + i * 5));
@@ -189,7 +275,7 @@ function ruler(pdf: JsPDF, x: number, y: number, withText: boolean) {
  * ve en el póster armado). Solo si la franja cabe; la guía de armado la lleva siempre.
  */
 function sheetRuler(pdf: JsPDF, g: Geo) {
-  if (S.rows < 2 || g.ov < 9 || g.tw < 180) return;
+  if (g.rows < 2 || g.ov < 9 || g.tw < 180) return;
   const x = g.m + g.tw - 108, y = g.m + g.th - g.ov + 1;
   pdf.setFillColor(255, 255, 255); pdf.roundedRect(x - 2, y - 0.5, 110, 8, 1, 1, 'F');
   ruler(pdf, x, y + 1, false);
@@ -199,15 +285,15 @@ function sheetRuler(pdf: JsPDF, g: Geo) {
  * Nombre de la hoja. Siempre que se pueda va dentro de la franja de solape que la hoja vecina tapará al pegar
  * (se imprime seguro y no se ve en el póster armado); si no hay franja, en el margen, pegado a la imagen.
  */
-function sheetLabel(pdf: JsPDF, g: Geo, r: number, c: number, i: number, N: number) {
+function sheetLabel(pdf: JsPDF, g: Geo, r: number, c: number, i: number, N: number, included: Set<number>) {
   const txt = `Hoja ${i} de ${N} · fila ${r + 1}, columna ${c + 1}`;
   pdf.setFont('helvetica', 'normal'); pdf.setFontSize(6.5);
   const tw = pdf.getTextWidth(txt) + 3, th = 3.6;
-  if (g.ov >= th + 1 && r < S.rows - 1) {
+  if (g.ov >= th + 1 && r < g.rows - 1 && included.has(i + g.cols)) {
     const x = g.m + 3, y = g.m + g.th - g.ov / 2;
     pdf.setFillColor(255, 255, 255); pdf.roundedRect(x, y - th / 2, tw, th, 1, 1, 'F'); pdf.setTextColor(90, 90, 90);
     pdf.text(txt, x + 1.5, y, { baseline: 'middle' });
-  } else if (g.ov >= th + 1 && c < S.cols - 1) {
+  } else if (g.ov >= th + 1 && c < g.cols - 1 && included.has(i + 1)) {
     const x = g.m + g.tw - g.ov / 2, y = g.m + g.th - 3;
     pdf.setFillColor(255, 255, 255); pdf.roundedRect(x - th / 2, y - tw, th, tw, 1, 1, 'F'); pdf.setTextColor(90, 90, 90);
     pdf.text(txt, x, y - 1.5, { baseline: 'middle', angle: 90 });
@@ -264,33 +350,62 @@ async function buildTiles(to: 'download' | 'print') {
   setBusy(true);
   let hi: HiMap | undefined;
   try {
-    const g = posterGeo(), N = S.cols * S.rows, o = g.pw > g.ph ? 'landscape' : 'portrait';
+    const g = posterGeo(), N = g.cols * g.rows, o = g.pw > g.ph ? 'landscape' : 'portrait';
     progress('Preparando el generador de PDF…');
     const { jsPDF } = await jspdf();
     const pdf = new jsPDF({ unit: 'mm', format: [g.pw, g.ph], orientation: o, compress: true });
     progress('Preparando imágenes en alta resolución…'); await tick();
     hi = await hiSources(S.dpi);
-    let first = true;
-    if (S.guide) { guidePage(pdf, g); first = false; }
-    let i = 0;
-    for (let r = 0; r < S.rows; r++) for (let c = 0; c < S.cols; c++) {
-      i++; progress(`Preparando hoja ${i} de ${N}…`); await tick();
-      if (!first) pdf.addPage([g.pw, g.ph], o);
-      first = false;
-      pdf.addImage(jpg(renderRegion(c * (g.tw - g.ov), r * (g.th - g.ov), g.tw, g.th, S.dpi, hi)), 'JPEG', g.m, g.m, g.tw, g.th, undefined, 'FAST');
+    // con «Omitir hojas en blanco», primero qué hojas hacen falta (las que ya se dibujaron para saberlo se aprovechan)
+    const ready = new Map<number, string>();
+    let wanted: number[] | null = null;
+    if (S.skipBlank) {
+      wanted = await findSheets(() => true, hi, (n, canvas) => { ready.set(n, jpg(canvas)); },
+        (n) => progress(`Buscando hojas en blanco… ${n} de ${N}`));
+    }
+    const included = new Set<number>();
+    for (let r = 0; r < g.rows; r++) for (let c = 0; c < g.cols; c++) {
+      const number = sheetNo(r, c, g.cols), t = tileRegion(g, r, c);
+      if (wanted && !wanted.includes(number)) continue;
+      let image = ready.get(number);
+      if (!image) {
+        progress(`Preparando hoja ${number} de ${N}…`); await tick();
+        image = jpg(renderRegion(t.x, t.y, t.w, t.h, S.dpi, hi));
+      }
+      ready.delete(number);
+      if (included.size) pdf.addPage([g.pw, g.ph], o);
+      included.add(number);
+      pdf.addImage(image, 'JPEG', g.m, g.m, t.w, t.h, undefined, 'FAST');
+    }
+    ready.clear();
+    if (!included.size) { setStatus('Todas las hojas están en blanco. Desactiva «Omitir hojas en blanco» para incluirlas.'); return; }
+    let page = 0;
+    for (const i of included) {
+      pdf.setPage(++page);
+      const r = Math.floor((i - 1) / g.cols), c = (i - 1) % g.cols;
+      const { w, h } = tileRegion(g, r, c);
+      const tile = { ...g, tw: w, th: h };
       if (S.marks) {
-        cutMarks(pdf, g);
+        cutMarks(pdf, tile);
+        pdf.setDrawColor(90); pdf.setLineWidth(0.12);
+        if (w < g.tw - 0.001) pdf.line(g.m + w, g.m, g.m + w, g.m + h);
+        if (h < g.th - 0.001) pdf.line(g.m, g.m + h, g.m + w, g.m + h);
         pdf.setDrawColor(194, 26, 90); pdf.setLineWidth(0.25); pdf.setLineDashPattern([2, 1.5], 0);
-        if (g.ov > 0 && c < S.cols - 1) pdf.line(g.m + g.tw - g.ov, g.m, g.m + g.tw - g.ov, g.m + g.th);
-        if (g.ov > 0 && r < S.rows - 1) pdf.line(g.m, g.m + g.th - g.ov, g.m + g.tw, g.m + g.th - g.ov);
+        if (g.ov > 0 && c < g.cols - 1 && included.has(i + 1)) pdf.line(g.m + w - g.ov, g.m, g.m + w - g.ov, g.m + h);
+        if (g.ov > 0 && r < g.rows - 1 && included.has(i + g.cols)) pdf.line(g.m, g.m + h - g.ov, g.m + w, g.m + h - g.ov);
         pdf.setLineDashPattern([], 0);
       }
-      sheetLabel(pdf, g, r, c, i, N);
-      if (r === 0 && c === 0) sheetRuler(pdf, g);
+      sheetLabel(pdf, tile, r, c, i, N, included);
+      if (i === 1 && included.has(i + g.cols)) sheetRuler(pdf, tile);
+    }
+    if (S.guide) {
+      pdf.addPage([g.pw, g.ph], o);
+      guidePage(pdf, g, included);
+      pdf.movePage(included.size + 1, 1);
     }
     progress('Generando archivo…'); await tick();
     if (to === 'print') printFile(pdf.output('blob'));
-    else saveFile(pdf.output('blob'), `${BRAND.name}-${S.cols}x${S.rows}-${S.paper}.pdf`);
+    else saveFile(pdf.output('blob'), `${BRAND.name}-${g.cols}x${g.rows}-${S.paper}.pdf`);
   } catch (err) {
     console.error(err);
     setStatus('Algo falló al crear el PDF. Prueba con menos calidad.');
@@ -312,7 +427,8 @@ export async function exportSingle() {
     progress('Generando archivo…'); await tick();
     // si el tamaño del póster obligó a bajar la calidad, se avisa en vez de hacerlo en silencio
     const note = dpi < S.dpi - 0.5 ? ` · calidad limitada a ${Math.floor(dpi)} ppp por el tamaño del póster (la imprenta puede preferir el PDF por hojas)` : '';
-    saveFile(pdf.output('blob'), `${BRAND.name}-${Math.round(g.W / 10)}x${Math.round(g.H / 10)}cm.pdf`, note);
+    const nameSize = (mm: number) => S.posterSize ? Number((mm / 10).toFixed(2)) : Math.round(mm / 10);
+    saveFile(pdf.output('blob'), `${BRAND.name}-${nameSize(g.W)}x${nameSize(g.H)}cm.pdf`, note);
   } catch (err) {
     console.error(err);
     setStatus('Algo falló al crear el PDF.');

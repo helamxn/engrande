@@ -1,29 +1,31 @@
 /** Panel lateral: pestañas, ajustes de hojas, propiedades de la imagen, lista de imágenes, exportación y lectura. */
-import type { GroupRef } from '../groups';
+import { listRange, type GroupRef } from '../groups';
 import {
-  afterChange, centerSel, fitSel, groupMembers, groupName, hideSelected, lockSelected, markManual, renameGroup, renameLayer,
-  reorder, select, selectedGroup, selectMany, setOpacity, toggleGroupFlag, toggleHidden, toggleInSelection,
+  afterChange, applyCrop, canStretch, centerSel, commonRotation, setGroupFrame, fitSel, groupMembers, groupName, hideSelected, lockSelected, markManual, renameGroup, renameLayer,
+  reorder, select, selected, selectedGroup, selectMany, setOpacity, toggleGroupFlag, toggleHidden,
   toggleLocked, unstretchSel,
 } from '../actions';
 import { MAX_COLS_ROWS, PRESETS } from '../constants';
-import { $, $$, toast } from '../dom';
-import { cm, fmt1, parseNum } from '../format';
+import { $, $$, freeCanvas, toast } from '../dom';
+import { cm, cmGap, fmtMeasure, numberList, parseNum } from '../format';
 import {
   applyFit, bboxMM, cropCenter, geo, isStretched, keepCenter, natRatio, newLayoutMemory, normDeg, pppOf, qualityOf, relayout,
-  rotateLayer, scaleLayer, visH, visW,
+  rotateLayer, scaleLayer, unionBox, visH, visW,
 } from '../geometry';
-import { snap } from '../history';
+import { commitPending, setPending, snap, snapSeries, takeSnap } from '../history';
+import { initGuides } from './guides';
 import { deskMQ, HI_AREA, isTouch } from '../platform';
 import { rich } from './keys';
 import { C, isFreshPoster, posterGeo, S, sheetsVisible, st } from '../state';
 import { dirty } from '../render';
 import { fitView } from '../view';
 import { renderPdfPage } from '../io/pdf';
+import { sheetsToPrint } from '../io/export';
 import { canvasRevision, scheduleSave } from '../io/persist';
 import { ICON } from './icons';
 import { isPanelOff, openSheet, togglePanel } from './layout';
 import { initListDrag } from './listdrag';
-import { groupMenu, layerMenu, openMenu } from './menu';
+import { groupMenu, groupRowMenu, layerMenu, openMenu } from './menu';
 import type { Quality, RelayoutMode } from '../geometry';
 import { getPref, setPref } from '../prefs';
 import type { Geo, Layer, LayoutSettings, Orient, Paper } from '../types';
@@ -133,6 +135,7 @@ export function syncExportUI() {
   for (const x of $$('[data-dpi]')) x.setAttribute('aria-pressed', String(Number(x.dataset.dpi) === S.dpi));
   $<HTMLInputElement>('#marks').checked = S.marks;
   $<HTMLInputElement>('#guide').checked = S.guide;
+  $<HTMLInputElement>('#skipBlank').checked = !!S.skipBlank;
   syncLayoutUI();
   syncNewPoster();
 }
@@ -148,17 +151,37 @@ export function layoutRestored() {
  * Cambia un ajuste de la hoja guardando el paso de deshacer. Un arrastre continuo del mismo deslizador
  * cuenta como un solo paso; si el valor no cambia, no se guarda nada.
  */
-let lastLayoutEdit = { key: '', t: 0 };
 function editLayout<K extends keyof LayoutSettings>(key: K, value: LayoutSettings[K], coalesce = false) {
   if (S[key] === value) return;
-  const now = performance.now();
-  if (!(coalesce && lastLayoutEdit.key === key && now - lastLayoutEdit.t < 1000)) snap();
-  lastLayoutEdit = { key, t: now };
+  const next = geo({ ...S, [key]: value });
+  if (next.cols > MAX_COLS_ROWS || next.rows > MAX_COLS_ROWS) {
+    if (key === 'margin' || key === 'overlap') $<HTMLInputElement>('#' + key).value = String(S[key]);
+    toast(`Este tamaño necesita ${next.cols} × ${next.rows} hojas. El máximo es ${MAX_COLS_ROWS} por lado.`);
+    syncLayoutUI();
+    return;
+  }
+  applyCrop();
+  if (coalesce) snapSeries('layout-' + key); else snap();
   (S as LayoutSettings)[key] = value;
   st.sheetsOn = true; // el usuario eligió la hoja: desde ahora se ven aunque el póster esté vacío
   layoutChanged();
 }
 export function syncLayoutUI() {
+  const g = posterGeo(), exact = !!S.posterSize;
+  $('#bySize').setAttribute('aria-pressed', String(exact));
+  $('#bySheets').setAttribute('aria-pressed', String(!exact));
+  $('#sizeFields').hidden = !exact;
+  $('#sheetFields').hidden = exact;
+  setField('#posterWidth', fmtMeasure(g.W / 10)); setField('#posterHeight', fmtMeasure(g.H / 10));
+  if (exact) {
+    const excessX = g.cols * (g.tw - g.ov) + g.ov - g.W;
+    const excessY = g.rows * (g.th - g.ov) + g.ov - g.H;
+    const trim = [excessX > 0.001 && `${fmtMeasure(excessX / 10)} cm a la derecha`,
+      excessY > 0.001 && `${fmtMeasure(excessY / 10)} cm abajo`].filter(Boolean);
+    const total = g.cols * g.rows;
+    $('#tileSummary').textContent = `${g.cols} ${g.cols === 1 ? 'columna' : 'columnas'} × ${g.rows} ${g.rows === 1 ? 'fila' : 'filas'} · ${total} ${total === 1 ? 'hoja' : 'hojas'} ${S.paper}.`
+      + (trim.length ? ` Tras quitar los márgenes, recorta ${trim.join(' y ')}.` : '');
+  }
   $('#colsOut').textContent = String(S.cols);
   $('#rowsOut').textContent = String(S.rows);
   for (const b of $$('#presets [data-c]')) b.setAttribute('aria-pressed', String(+b.dataset.c! === S.cols && +b.dataset.r! === S.rows));
@@ -183,7 +206,7 @@ const PRESET_BOX = 26;
  */
 function syncPresetIcons() {
   for (const b of $$('#presets [data-c]')) {
-    const g = geo({ ...S, cols: +b.dataset.c!, rows: +b.dataset.r! }), k = PRESET_BOX / Math.max(g.W, g.H);
+    const g = geo({ ...S, posterSize: null, cols: +b.dataset.c!, rows: +b.dataset.r! }), k = PRESET_BOX / Math.max(g.W, g.H);
     const grid = b.querySelector<HTMLElement>('.sheet-grid')!;
     grid.style.width = `${Math.max(4, Math.round(g.W * k))}px`;
     grid.style.height = `${Math.max(4, Math.round(g.H * k))}px`;
@@ -201,9 +224,16 @@ function syncWelcome() {
 }
 
 /* ---------- propiedades de la imagen seleccionada ---------- */
+/** Campo que acaba de aplicar lo escrito: aunque tenga el foco, muestra el resultado («21/2» pasa a «10,5»). */
+let appliedField: HTMLInputElement | null = null;
 function setField(id: string, v: string | number) {
   const el = $<HTMLInputElement>(id);
-  if (document.activeElement !== el) el.value = String(v);
+  if (document.activeElement !== el || el === appliedField) el.value = String(v);
+}
+/** Aplica lo escrito en un campo y lo deja con el valor resultante, ya formateado. */
+function showResult(el: HTMLInputElement, apply: () => void) {
+  appliedField = el;
+  try { apply(); } finally { appliedField = null; }
 }
 export function syncSel() {
   const sel = st.sel;
@@ -218,6 +248,11 @@ export function syncSel() {
     const ops = st.group.map((l) => Math.round(l.opacity * 100)), same = ops.every((o) => o === ops[0]);
     setField('#gOpacity', Math.max(...ops));
     $('#gOpacityOut').textContent = same ? `${ops[0]} %` : 'varias';
+    const b = unionBox(st.group.map((l) => bboxMM(l))), r = commonRotation(st.group);
+    setField('#gW', fmtMeasure((b.x1 - b.x0) / 10)); setField('#gH', fmtMeasure((b.y1 - b.y0) / 10));
+    setField('#gX', fmtMeasure(b.x0 / 10)); setField('#gY', fmtMeasure(b.y0 / 10));
+    setField('#gR', r == null ? '' : fmtMeasure(r));
+    syncRatioButtons();
   }
   $('#lockNote').hidden = !sel?.locked;
   if (sel) {
@@ -225,8 +260,8 @@ export function syncSel() {
     const op = Math.round(sel.opacity * 100);
     setField('#pOpacity', op); $('#pOpacityOut').textContent = `${op} %`;
     const b = bboxMM(sel);
-    setField('#pW', fmt1(visW(sel) / 10)); setField('#pH', fmt1(visH(sel) / 10));
-    setField('#pX', fmt1(b.x0 / 10)); setField('#pY', fmt1(b.y0 / 10)); setField('#pR', Math.round(sel.rot));
+    setField('#pW', fmtMeasure(visW(sel) / 10)); setField('#pH', fmtMeasure(visH(sel) / 10));
+    setField('#pX', fmtMeasure(b.x0 / 10)); setField('#pY', fmtMeasure(b.y0 / 10)); setField('#pR', fmtMeasure(sel.rot));
     $('#unstretch').hidden = !isStretched(sel);
     $('#pdfField').hidden = !(sel.pdf && sel.pages > 1);
     if (sel.pdf) { $<HTMLInputElement>('#pdfPage').max = String(sel.pages); setField('#pdfPage', sel.page); $('#pdfPages').textContent = 'de ' + sel.pages; }
@@ -236,23 +271,37 @@ export function syncSel() {
   followSelection();
   updateStats(); updateHint();
 }
+/** Botones de «Mantener proporción» (imagen y conjunto). El del conjunto, fijo si no se puede estirar. */
+function syncRatioButtons() {
+  const forced = st.group.length > 1 && !canStretch(st.group);
+  for (const [id, on] of [['#pLock', S.lock], ['#gRatio', S.lock || forced]] as const) {
+    const b = $<HTMLButtonElement>(id);
+    b.setAttribute('aria-pressed', String(on));
+    b.innerHTML = ICON[on ? 'ratioOn' : 'ratioOff']; // constante del código
+  }
+  const g = $<HTMLButtonElement>('#gRatio');
+  g.disabled = forced;
+  g.title = forced ? 'Con textos o imágenes giradas en ángulo, el conjunto escala sin deformar' : 'Mantener proporción';
+}
+/** Lo que hace un campo numérico: si ahora se puede cambiar, cómo se aplica un valor y el paso de ↑ ↓ y del arrastre. */
+interface NumTarget { ok: () => boolean; apply: (v: number) => void; step?: number }
 /**
- * Campo numérico de la imagen (texto con coma decimal, no type=number, que mostraría «14.3» según el navegador).
- * Enter o salir del campo aplica; ↑ ↓ suman o restan step (con Shift, 10 veces más), como en Figma.
+ * Campo numérico (texto con coma decimal, no type=number, que mostraría «14.3» según el navegador), como en Figma:
+ * - Enter o salir del campo aplica; admite operaciones («21/2», «14,3+2»; ver parseNum);
+ * - ↑ ↓ suman o restan el paso (con Mayús, 10 veces más);
+ * - arrastrar su etiqueta en horizontal cambia el valor (un paso por píxel; con Mayús, 10): un solo paso de deshacer.
  */
-function numField(id: string, apply: (l: Layer, v: number) => void, step = 0.1) {
-  const el = $<HTMLInputElement>(id);
+function numInput(id: string, t: NumTarget) {
+  const el = $<HTMLInputElement>(id), step = t.step ?? 0.1;
   // texto que ya se aplicó: Enter aplica y, al salir del campo, el navegador lanza otro «change» con el mismo
   // texto, que no debe dejar un segundo paso de deshacer (vacío)
   let applied: string | null = null;
   const run = () => {
-    const sel = st.sel;
-    if (!sel || el.value === applied) return;
+    if (el.value === applied) return;
     const v = parseNum(el.value);
-    if (!Number.isFinite(v)) { syncSel(); return; }
-    if (sel.locked) { syncSel(); return; }
-    applied = el.value;
-    snap(); apply(sel, v); afterChange();
+    if (!Number.isFinite(v) || !t.ok()) { showResult(el, syncSel); return; } // no vale: vuelve al que había
+    showResult(el, () => { snap(); t.apply(v); afterChange(); });
+    applied = el.value; // el resultado: al salir del campo no se vuelve a aplicar
   };
   el.addEventListener('focus', () => { applied = null; });
   el.addEventListener('change', run);
@@ -263,13 +312,80 @@ function numField(id: string, apply: (l: Layer, v: number) => void, step = 0.1) 
       if (!Number.isFinite(v)) return;
       e.preventDefault();
       const d = (e.key === 'ArrowUp' ? 1 : -1) * step * (e.shiftKey ? 10 : 1);
-      el.value = step < 1 ? fmt1(v + d) : String(Math.round(v + d));
+      el.value = fmtMeasure(v + d);
       run(); el.select();
     }
   });
+  scrubLabel(el, t, step);
 }
+/** Arrastrar la etiqueta de un campo (ratón o lápiz; en táctil el gesto es desplazar el panel). */
+function scrubLabel(el: HTMLInputElement, t: NumTarget, step: number) {
+  const label = el.closest('label')?.querySelector<HTMLElement>(':scope > span:first-child');
+  if (!label) return;
+  label.classList.add('scrub');
+  let drag: { id: number; x: number; v0: number; moved: boolean } | null = null, swallowClick = false;
+  label.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0 || e.pointerType === 'touch' || !t.ok()) return;
+    const v0 = parseNum(el.value);
+    if (!Number.isFinite(v0)) return;
+    e.preventDefault(); // sin seleccionar texto ni enfocar todavía
+    // con el campo enfocado, lo escrito se aplica antes y el campo deja de tapar el valor que va cambiando
+    if (document.activeElement === el) el.blur();
+    label.setPointerCapture(e.pointerId);
+    drag = { id: e.pointerId, x: e.clientX, v0, moved: false };
+    setPending(takeSnap()); // el paso de deshacer se guarda solo si el valor llega a cambiar
+  });
+  label.addEventListener('pointermove', (e) => {
+    if (!drag || e.pointerId !== drag.id) return;
+    const dx = Math.round(e.clientX - drag.x);
+    if (!drag.moved && Math.abs(dx) < 3) return;
+    if (!drag.moved) { drag.moved = true; document.body.classList.add('scrubbing'); }
+    const v = Math.round(Math.round((drag.v0 + dx * step * (e.shiftKey ? 10 : 1)) / step) * step * 1e6) / 1e6;
+    if (!t.ok()) return;
+    commitPending(); t.apply(v); afterChange();
+  });
+  const end = (e: PointerEvent) => {
+    if (!drag || e.pointerId !== drag.id) return;
+    const moved = drag.moved;
+    drag = null; setPending(null);
+    document.body.classList.remove('scrubbing');
+    // un clic sin arrastrar es el de siempre: va al campo; después de arrastrar, el clic que sigue no lo enfoca
+    if (moved) swallowClick = true; else { el.focus(); el.select(); }
+  };
+  label.addEventListener('pointerup', end);
+  label.addEventListener('pointercancel', end);
+  label.addEventListener('click', (e) => { if (swallowClick) { swallowClick = false; e.preventDefault(); } });
+  label.addEventListener('pointerdown', () => { swallowClick = false; }, true);
+}
+/** Campo de la imagen seleccionada (no bloqueada). */
+const numField = (id: string, apply: (l: Layer, v: number) => void, step = 0.1) =>
+  numInput(id, { ok: () => !!st.sel && !st.sel.locked, apply: (v) => apply(st.sel!, v), step });
 
 /* ---------- lista de imágenes ---------- */
+/**
+ * Ancla de Mayús + clic en la lista: lo último pulsado sin Mayús (una capa o los miembros de un grupo). Si ya no está
+ * seleccionado (se cambió la selección en el lienzo), el rango parte de lo seleccionado, como en Figma.
+ */
+let listAnchor: Layer[] = [];
+/**
+ * Clic en una fila (capa o grupo), como en Figma, Photoshop e Illustrator: solo, selecciona; con Ctrl/⌘, suma o
+ * quita; con Mayús, todo lo que hay entre el ancla y la fila. Ocultas y bloqueadas no entran (como en el lienzo).
+ */
+function clickRow(e: MouseEvent, items: Layer[], plain: () => void) {
+  // una oculta o bloqueada no se puede sumar: el clic la selecciona sola (para mostrarla o desbloquearla)
+  if (items.every((l) => l.hidden || l.locked)) { listAnchor = items; plain(); return; }
+  if (e.shiftKey && !e.ctrlKey && !e.metaKey) {
+    const cur = selected(), from = listAnchor.some((l) => cur.includes(l)) ? listAnchor : cur;
+    if (from.length) { selectMany(listRange(st.layers, from, items)); return; }
+  }
+  listAnchor = items;
+  if (e.ctrlKey || e.metaKey) {
+    const cur = selected(), on = items.every((l) => cur.includes(l));
+    selectMany(on ? cur.filter((l) => !items.includes(l)) : [...cur, ...items]);
+    return;
+  }
+  plain();
+}
 /**
  * Miniaturas reutilizadas: cada imagen conserva su canvas de 88 × 88 y solo se vuelve a dibujar si cambió
  * lo que muestra (lienzo, su contenido, el recorte, la proporción o los colores del tema).
@@ -353,16 +469,16 @@ function groupRow(gid: number, depth: number, hidden: boolean): HTMLLIElement {
   const nm = document.createElement('span'); nm.textContent = groupName(gid); // dato del usuario: textContent
   const sm = document.createElement('small'); sm.textContent = `${members.length} imágenes` + (allHidden ? ' · oculto' : allLocked ? ' · bloqueado' : '');
   nm.appendChild(sm); b.appendChild(nm);
-  b.addEventListener('click', pick);
+  b.addEventListener('click', (e) => clickRow(e, members, pick));
   b.addEventListener('dblclick', () => focusGroupName(gid)); // doble clic: renombrar, como con las imágenes
-  b.addEventListener('contextmenu', (e) => { e.preventDefault(); pick(); if (st.group.length > 1) openMenu(e.clientX, e.clientY, groupMenu()); });
+  b.addEventListener('contextmenu', (e) => { e.preventDefault(); pick(); openMenu(e.clientX, e.clientY, groupRowMenu(gid)); });
   li.append(chev, b);
   const acts: [keyof typeof ICON, string, (e: MouseEvent) => void][] = [
     [allHidden ? 'eyeOff' : 'eye', allHidden ? 'Mostrar el grupo' : 'Ocultar el grupo', () => toggleGroupFlag(gid, 'hidden')],
     [allLocked ? 'lock' : 'lockOpen', allLocked ? 'Desbloquear el grupo' : 'Bloquear el grupo', () => toggleGroupFlag(gid, 'locked')],
     ['more', 'Más opciones del grupo', (e) => {
       const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-      pick(); if (st.group.length > 1) openMenu(r.left, r.bottom + 4, groupMenu(), () => moreOfGroup(gid));
+      pick(); openMenu(r.left, r.bottom + 4, groupRowMenu(gid), () => moreOfGroup(gid));
     }],
   ];
   for (const [ic, t, fn] of acts) {
@@ -376,9 +492,46 @@ function groupRow(gid: number, depth: number, hidden: boolean): HTMLLIElement {
   return li;
 }
 
+/**
+ * Lo que dibujan las filas, salvo la selección: si no cambia (lo más frecuente: seleccionar, o soltar un clic), basta
+ * con marcar la selección y, si hace falta, redibujar las miniaturas en su sitio; no se reconstruye la lista. Con 16
+ * imágenes, reconstruirla eran ~4 ms por clic, y obligaba al navegador a recalcular la página entera.
+ */
+let listKey = '';
+// las filas guardan su objeto (rowLayer y los clics): cuenta el objeto, no solo su número
+const layerTokens = new WeakMap<Layer, number>();
+let nextToken = 1;
+const layerToken = (l: Layer) => { let t = layerTokens.get(l); if (!t) { t = nextToken++; layerTokens.set(l, t); } return t; };
+const listStructure = () => JSON.stringify([[...collapsed], st.layers.map((l) => [
+  layerToken(l), l.name, l.hidden, l.locked, l.opacity, cm(visW(l)), cm(visH(l)), l.pdf ? l.page : 0, l.gpath.map((g) => [g.id, g.name]),
+])]);
+/** Marca en la lista lo seleccionado (filas de imagen y de grupo). */
+function syncListSelection(ol: Element) {
+  const gsel = selectedGroup();
+  for (const li of ol.querySelectorAll<HTMLElement>(':scope > li')) {
+    const l = rowLayer.get(li);
+    const on = l ? l === st.sel || st.group.includes(l) : gsel != null && li.dataset.gid === String(gsel);
+    li.classList.toggle('on', on);
+    li.querySelector(':scope > .layer-main')?.setAttribute('aria-pressed', String(on));
+  }
+}
+
 export function renderList() {
   const ol = document.querySelector('#layers');
   if (!ol || !C.chk1) return;
+  const key = listStructure();
+  if (key === listKey && ol.childElementCount) {
+    syncListSelection(ol);
+    for (const l of st.layers) thumbFor(l); // misma miniatura (el mismo canvas): se redibuja en su sitio si cambió
+    afterList();
+    return;
+  }
+  listKey = key;
+  const active = document.activeElement;
+  const oldRow = active instanceof HTMLButtonElement && active.matches(':focus-visible') && ol.contains(active) ? active.closest('li') : null;
+  const focusedLayer = oldRow && rowLayer.get(oldRow);
+  const focusedGroup = oldRow?.dataset.gid;
+  const buttonIndex = oldRow ? [...oldRow.querySelectorAll('button')].indexOf(active as HTMLButtonElement) : -1;
   ol.textContent = '';
   const n = st.layers.length;
   let prev: GroupRef[] = [];
@@ -405,8 +558,7 @@ export function renderList() {
     const b = document.createElement('button');
     b.type = 'button'; b.className = 'layer-main';
     b.setAttribute('aria-pressed', String(on));
-    // Shift o Ctrl + clic en la lista también suma o quita de la selección
-    b.addEventListener('click', (e) => { if ((e.shiftKey || e.ctrlKey || e.metaKey) && !l.hidden) toggleInSelection(l); else select(l); });
+    b.addEventListener('click', (e) => clickRow(e, [l], () => select(l)));
     // teclado: Alt + ↑ ↓ cambia el orden (arriba = al frente) y el foco sigue a la imagen
     b.addEventListener('keydown', (e) => {
       if (!e.altKey || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return;
@@ -454,6 +606,15 @@ export function renderList() {
     ol.appendChild(li);
   });
   $('#layerCount').textContent = String(n);
+  if (buttonIndex >= 0) {
+    const row = [...ol.querySelectorAll('li:not([hidden])')].find((li) =>
+      focusedLayer ? rowLayer.get(li) === focusedLayer : (li as HTMLElement).dataset.gid === focusedGroup);
+    row?.querySelectorAll('button')[buttonIndex]?.focus({ preventScroll: true });
+  }
+  afterList();
+}
+/** Lo que depende de las imágenes, fuera de la lista: bienvenida, descarga, «Nuevo póster» y la pista. */
+function afterList() {
   syncWelcome();
   syncExportButtons();
   syncNewPoster();
@@ -468,7 +629,7 @@ export function syncNewPoster() {
   b.title = fresh ? 'Ya es un póster nuevo' : newTitle;
 }
 /** Páginas del PDF por hojas (una por hoja y, si se pide, la guía). */
-export const pdfPages = () => S.cols * S.rows + (S.guide ? 1 : 0);
+export const pdfPages = () => { const g = posterGeo(); return g.cols * g.rows + Number(S.guide); };
 /** Hay algo que imprimir (las ocultas no se imprimen). */
 export const isPrintable = () => st.layers.some((l) => !l.hidden);
 /**
@@ -484,7 +645,7 @@ export function syncExportButtons() {
     b.title = printable ? '' : why;
   }
   const pages = `${n} ${n === 1 ? 'página' : 'páginas'}`;
-  if (printable) $('#quickExport').title = `PDF por hojas · ${pages} · ${S.dpi} ppp`;
+  if (printable) $('#quickExport').title = `PDF por hojas · ${S.skipBlank ? 'omitir hojas en blanco' : pages} · ${S.dpi} ppp`;
   $<HTMLButtonElement>('#newPosterAlt').disabled = isFreshPoster();
 }
 
@@ -494,8 +655,24 @@ export function syncExportButtons() {
  * imagen seleccionada. Arriba de la tarjeta del PDF se dice qué se va a descargar y, solo si alguna imagen no tiene buena
  * calidad, un aviso estándar (icono, título y texto).
  */
+/**
+ * Tamaño del póster abajo a la izquierda, junto a la línea de estado: «19,8 × 28,5 cm · 1 hoja A4». El margen va en el título (la
+ * descripción completa). Antes se dibujaba sobre el papel, encima de la regla: se montaba con sus números, se movía con
+ * la vista y se ocultaba al chocar con la barra o las ventanas.
+ */
+function syncPosterSize(g: Geo) {
+  $('#posterSize').hidden = !sheetsVisible();
+  const n = g.cols * g.rows, short = `${cmGap(g.W)} × ${cmGap(g.H)} cm · ${n} ${n === 1 ? 'hoja' : 'hojas'} ${S.paper}`;
+  const b = $('#posterSize'), full = `Póster ${short}` + (g.m > 0 ? ` · margen ${Math.round(g.m)} mm` : '');
+  if (b.textContent !== short) b.textContent = short;
+  b.title = `${full}. Pulsa para cambiar hojas, papel, margen y solape`;
+  b.setAttribute('aria-label', `${full}. Abrir Póster`);
+}
+let countTimer = 0;
 export function updateStats() {
-  const g = posterGeo(), n = S.cols * S.rows;
+  clearTimeout(countTimer);
+  const g = posterGeo(), n = g.cols * g.rows;
+  syncPosterSize(g);
   // las ocultas no se imprimen: no cuentan
   const rows = st.layers.filter((l) => !l.hidden).map((l) => { const ppp = pppOf(l, HI_AREA); return { l, ppp, q: qualityOf(ppp) }; });
   const bad = rows.filter((r) => r.q === 'bad'), warn = rows.filter((r) => r.q === 'warn');
@@ -506,12 +683,28 @@ export function updateStats() {
   const info = document.createElement('p');
   info.className = 'm-0 text-[.88rem] font-semibold';
   const orient = S.orient === 'portrait' ? (n === 1 ? 'vertical' : 'verticales') : (n === 1 ? 'horizontal' : 'horizontales');
-  info.textContent = `Póster ${cm(g.W)} × ${cm(g.H)} cm · ${n} ${n === 1 ? 'hoja' : 'hojas'} ${S.paper} ${orient}`;
+  info.textContent = `Póster ${cmGap(g.W)} × ${cmGap(g.H)} cm · ${n} ${n === 1 ? 'hoja' : 'hojas'} ${S.paper} ${orient}`;
   // y el PDF por hojas: cuántas páginas (con la guía) y a qué resolución
   const pages = pdfPages(), sub = document.createElement('p');
   sub.className = 'm-0 text-[.84rem] text-muted';
   sub.textContent = `PDF por hojas: ${pages} ${pages === 1 ? 'página' : 'páginas'}${S.guide ? ' (con la guía)' : ''} · ${S.dpi} ppp`;
   box.append(info, sub);
+  if (S.skipBlank) {
+    sub.textContent = 'Se omitirán las hojas en blanco.';
+    const current = () => sub.isConnected && $('#pdfCard').matches(':popover-open') && !document.body.classList.contains('exporting');
+    if (rows.length && current()) {
+      sub.textContent = 'Contando hojas con contenido…';
+      countTimer = window.setTimeout(async () => {
+        try {
+          const sheets = await sheetsToPrint(current), k = sheets?.length ?? 0;
+          // cuáles: si una línea finísima obliga a imprimir otra hoja, se ve cuál es
+          if (sheets && current()) sub.textContent = k
+            ? `Se imprimirán ${k} de ${n} hojas del póster (${k === 1 ? 'la' : 'las'} ${numberList(sheets)})${S.guide ? ' + 1 guía de armado' : ''} · ${S.dpi} ppp`
+            : 'Todas las hojas están en blanco. Desactiva la omisión para imprimirlas.';
+        } catch { if (current()) sub.textContent = 'Las hojas en blanco se comprobarán al generar el PDF.'; }
+      }, 120);
+    }
+  }
   if (!rows.length) {
     const p = document.createElement('p');
     p.className = 'm-0 text-[.86rem] text-muted';
@@ -567,6 +760,7 @@ export function updateHint() {
 
 
 export function initPanel() {
+  initGuides();
   initSelectionCard();
   // pestañas
   for (const b of $$<HTMLButtonElement>('[role=tab]')) {
@@ -592,6 +786,39 @@ export function initPanel() {
   });
 
   // hojas
+  $('#bySize').onclick = () => {
+    if (S.posterSize) return;
+    const g = posterGeo();
+    editLayout('posterSize', { w: g.W, h: g.H });
+  };
+  $('#bySheets').onclick = () => {
+    if (!S.posterSize) return;
+    const g = posterGeo();
+    applyCrop(); snap();
+    Object.assign(S, { posterSize: null, cols: g.cols, rows: g.rows });
+    layoutChanged();
+  };
+  // tamaño exacto: como los campos de Selección (coma decimal, operaciones como «100/2», ↑ ↓ de 1 mm y, con Mayús,
+  // de 1 cm). Lo que no es una medida válida (vacío, 0 o negativo) vuelve al valor que había
+  for (const [id, key] of [['#posterWidth', 'w'], ['#posterHeight', 'h']] as const) {
+    const field = $<HTMLInputElement>(id);
+    const apply = (cm: number) => {
+      if (!S.posterSize) return;
+      if (!(cm >= 0.1)) { showResult(field, syncLayoutUI); return; } // no vale: vuelve al que había
+      const mm = Math.round(cm * 100) / 10;
+      showResult(field, () => { if (mm !== S.posterSize![key]) editLayout('posterSize', { ...S.posterSize!, [key]: mm }); else syncLayoutUI(); });
+    };
+    field.onchange = () => apply(parseNum(field.value));
+    field.onkeydown = (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); apply(parseNum(field.value)); field.select(); return; }
+      if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+      const v = parseNum(field.value);
+      if (!Number.isFinite(v)) return;
+      e.preventDefault();
+      field.value = fmtMeasure(Math.round((v + (e.key === 'ArrowUp' ? 1 : -1) * (e.shiftKey ? 1 : 0.1)) * 1000) / 1000);
+      apply(parseNum(field.value)); field.select();
+    };
+  }
   const presets = $('#presets');
   for (const [c, r] of PRESETS) {
     const b = document.createElement('button');
@@ -608,8 +835,8 @@ export function initPanel() {
     label.textContent = `${c}×${r}`;
     b.append(box, label);
     b.addEventListener('click', () => {
-      if (S.cols === c && S.rows === r) return;
-      snap(); S.cols = c; S.rows = r; st.sheetsOn = true; layoutChanged();
+      if (S.cols === c && S.rows === r && sheetsVisible()) return;
+      applyCrop(); snap(); S.cols = c; S.rows = r; st.sheetsOn = true; layoutChanged();
     });
     presets.appendChild(b);
   }
@@ -675,6 +902,8 @@ export function initPanel() {
   });
   gOpacity.addEventListener('change', () => renderList());
   initListDrag($('#layers'), (li) => rowLayer.get(li));
+  // el tamaño del póster (abajo a la izquierda) abre Póster, lo mismo que su botón
+  $('#posterSize').addEventListener('click', () => $<HTMLButtonElement>('[data-open=sheets]').click());
   $('#gHide').addEventListener('click', hideSelected);
   $('#gLock').addEventListener('click', lockSelected);
   numField('#pW', (l, v) => { const f = Math.max(3, v * 10) / visW(l); if (S.lock || l.src?.kind === 'text') scaleLayer(l, f, cropCenter(l)); else keepCenter(l, (x) => { x.w *= f; }); markManual(l); });
@@ -682,34 +911,57 @@ export function initPanel() {
   numField('#pX', (l, v) => { l.cx += v * 10 - bboxMM(l).x0; markManual(l); });
   numField('#pY', (l, v) => { l.cy += v * 10 - bboxMM(l).y0; markManual(l); });
   numField('#pR', (l, v) => { rotateLayer(l, normDeg(v) - l.rot, cropCenter(l)); markManual(l); }, 1);
-  $('#pLock').addEventListener('click', () => {
-    S.lock = !S.lock;
-    const b = $('#pLock');
-    b.setAttribute('aria-pressed', String(S.lock));
-    b.innerHTML = ICON[S.lock ? 'ratioOn' : 'ratioOff']; // constante del código
-  });
+  // la proporción fija es una sola preferencia: la de una imagen y la del conjunto van juntas
+  for (const id of ['#pLock', '#gRatio']) $(id).addEventListener('click', () => { S.lock = !S.lock; syncRatioButtons(); });
+  // varias: el marco común (con su proporción, como una sola). Si alguna está girada en ángulo o es un texto, no se
+  // pueden estirar en un eje: ancho y alto van siempre juntos
+  const groupOk = () => st.group.length > 1;
+  const gField = (id: string, key: 'w' | 'h' | 'x' | 'y' | 'rot', k = 10) =>
+    numInput(id, { ok: groupOk, apply: (v) => setGroupFrame(st.group, { [key]: v * k }), step: key === 'rot' ? 1 : 0.1 });
+  gField('#gW', 'w'); gField('#gH', 'h'); gField('#gX', 'x'); gField('#gY', 'y'); gField('#gR', 'rot', 1);
   $('#unstretch').addEventListener('click', unstretchSel);
   $('#fitContain').addEventListener('click', fitSel('contain'));
   $('#fitCover').addEventListener('click', fitSel('cover'));
   $('#center').addEventListener('click', centerSel);
+  const pageRequests = new WeakMap<Layer, number>();
   $<HTMLInputElement>('#pdfPage').addEventListener('change', async (e) => {
     const l = st.sel, input = e.target as HTMLInputElement;
-    if (!l?.pdf) return;
+    if (!l?.pdf || l.locked) return;
     const n = Math.min(Math.max(parseInt(input.value) || 1, 1), l.pages);
+    const request = (pageRequests.get(l) ?? 0) + 1;
+    pageRequests.set(l, request);
     input.value = String(n);
+    if (n === l.page) return;
+    const previous = l.img;
     try {
       const c = await renderPdfPage(l.pdf, n);
+      if (pageRequests.get(l) !== request || l.img !== previous || !st.layers.includes(l) || l.locked) {
+        freeCanvas(c);
+        if (pageRequests.get(l) === request && st.sel === l) input.value = String(l.page);
+        return;
+      }
+      if (st.sel === l) applyCrop();
       snap();
       const w = visW(l);
       keepCenter(l, (x) => { Object.assign(x, { img: c, orig: c, page: n, crop: { x0: 0, y0: 0, x1: 1, y1: 1 } }); x.w = w; x.h = w * natRatio(x); });
       // si estaba ajustada al póster, la nueva página (quizá de otra proporción) también se ajusta
       if (l.fit) applyFit(l, l.fit, posterGeo());
       afterChange();
-    } catch { toast('No se pudo leer esa página'); }
+    } catch {
+      if (pageRequests.get(l) === request && st.sel === l) {
+        input.value = String(l.page); toast('No se pudo leer esa página');
+      }
+    }
   });
 
   // exportar
   for (const b of $$('[data-dpi]')) b.addEventListener('click', () => { S.dpi = Number(b.dataset.dpi); syncExportUI(); scheduleSave(); });
+  // los ajustes de descarga no son pasos de deshacer (ni este ni la resolución, las marcas o la guía)
+  $<HTMLInputElement>('#skipBlank').onchange = (e) => {
+    S.skipBlank = (e.target as HTMLInputElement).checked;
+    syncExportUI(); scheduleSave();
+  };
+  $('#pdfCard').addEventListener('toggle', updateStats);
   $<HTMLInputElement>('#marks').addEventListener('change', (e) => { S.marks = (e.target as HTMLInputElement).checked; syncNewPoster(); scheduleSave(); });
   $<HTMLInputElement>('#guide').addEventListener('change', (e) => { S.guide = (e.target as HTMLInputElement).checked; syncLayoutUI(); syncNewPoster(); scheduleSave(); });
 

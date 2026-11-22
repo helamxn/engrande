@@ -69,6 +69,22 @@ const tabs = [
   <!-- Póster: las hojas (cuántas, papel, orientación, margen y solape). El PDF tiene su tarjeta (Header.astro) -->
   <div class={pane} role="tabpanel" id="pane-sheets" aria-labelledby="tab-sheets" data-pane="sheets">
     <div class={field}>
+      <div class="lbl" id="sizeModeLabel">Tamaño del póster</div>
+      <div class="seg full" role="group" aria-labelledby="sizeModeLabel">
+        <button type="button" id="bySheets" aria-pressed="true">Por hojas</button>
+        <button type="button" id="bySize" aria-pressed="false">Por tamaño</button>
+      </div>
+      <div id="sizeFields" hidden>
+        <div class="grid grid-cols-2 gap-2">
+          <!-- como los demás campos de medida (Selección): texto con coma decimal, operaciones y la unidad dentro -->
+          {([['posterWidth', 'Ancho'], ['posterHeight', 'Alto']] as const).map(([id, label]) => (
+            <label class="pf"><span>{label}</span><span class="unit"><input {id} type="text" inputmode="decimal" autocomplete="off" spellcheck="false" /><em>cm</em></span></label>
+          ))}
+        </div>
+        <p id="tileSummary" class="note mt-2" aria-live="polite"></p>
+      </div>
+    </div>
+    <div class={field} id="sheetFields">
       <div class="lbl">Distribución <span class="val">columnas × filas</span></div>
       <!-- presets en cuadrícula de 4: dos filas parejas en vez de 5 + 3 -->
       <div class="grid grid-cols-4 gap-1.5" id="presets"></div>
@@ -78,7 +94,7 @@ const tabs = [
           <span class="text-[.78rem] text-muted" id="lblCols">Columnas</span>
           <div class="tgroup full" role="group" aria-labelledby="lblCols">
             <button type="button" data-step="cols" data-d="-1" aria-label="Menos columnas" title="Menos columnas"><Icon name="minus" class="size-4" /></button>
-            <output id="colsOut" class="tval">2</output>
+            <output id="colsOut" class="tval">1</output>
             <button type="button" data-step="cols" data-d="1" aria-label="Más columnas" title="Más columnas"><Icon name="plus" class="size-4" /></button>
           </div>
         </div>
@@ -126,6 +142,15 @@ const tabs = [
       <input type="range" id="overlap" class="range-mark" min="0" max="30" step="1" value="10" />
       <p class="note">La franja rosada se imprime en las dos hojas vecinas. Al pegar una encima de otra, no se pierde nada de la imagen.</p>
     </div>
+    <details class="border-t border-line pt-3">
+      <summary class="cursor-pointer font-semibold text-sm">Reglas y guías</summary>
+      <div class="mt-3 flex flex-col gap-3">
+        <label class="check"><input id="rulers" type="checkbox" checked /><span>Mostrar reglas en mm<small>Arrastra desde una regla para crear una guía. Puedes mover la línea o devolverla a su regla para quitarla.</small></span></label>
+        <label class="check"><input id="showGuides" type="checkbox" checked /><span>Mostrar guías</span></label>
+        <label class="check"><input id="snapGuides" type="checkbox" checked /><span>Ajustar objetos a las guías</span></label>
+        <p class="note">Las guías parten de la esquina superior izquierda del área imprimible. Sirven para alinear capas y quedan fuera del PDF.</p>
+      </div>
+    </details>
   </div>
 
   <!-- Imágenes -->

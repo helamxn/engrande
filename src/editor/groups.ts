@@ -30,6 +30,21 @@ export const nextGid = (layers: Groupable[]) => layers.reduce((m, l) => Math.max
 export const inGroup = (l: Groupable, id: number) => l.gpath.some((g) => g.id === id);
 /** Imágenes del grupo id (a cualquier profundidad), en el orden de layers. */
 export const membersOf = <T extends Groupable>(layers: T[], id: number) => layers.filter((l) => inGroup(l, id));
+
+/** Para copiar un grupo entero también cuentan sus descendientes protegidos. */
+export function copyMembers<T extends Groupable>(layers: T[], selection: T[], editable: (l: T) => boolean): T[] {
+  if (selection.length < 2) return selection;
+  const picked = new Set(selection);
+  const scope = scopeOf(layers, selection, editable);
+  const whole = new Set(selection.flatMap((l) => {
+    const depth = scope === null ? 0 : l.gpath.findIndex((g) => g.id === scope) + 1;
+    return l.gpath.slice(depth).map((g) => g.id);
+  }));
+  for (const l of layers) if (editable(l) && !picked.has(l)) {
+    for (const g of l.gpath) whole.delete(g.id);
+  }
+  return layers.filter((l) => picked.has(l) || l.gpath.some((g) => whole.has(g.id)));
+}
 /** El grupo id, tal como lo guarda alguna de sus imágenes (para su nombre). */
 export const findGroup = (layers: Groupable[], id: number) => {
   for (const l of layers) { const g = l.gpath.find((x) => x.id === id); if (g) return g; }
@@ -50,6 +65,27 @@ export function childOf(l: Groupable, scope: number | null): number | null | und
 export function unitAt<T extends Groupable>(layers: T[], l: T, scope: number | null): T[] {
   const c = childOf(l, scope);
   return c == null ? [l] : membersOf(layers, c);
+}
+
+/** Elementos seleccionados en un nivel. Una transformación de composición conserva la distancia entre hermanos del mismo grupo. */
+export function unitsInScope<T extends Groupable>(ls: T[], scope: number | null): T[][] {
+  const units = new Map<T | number, T[]>();
+  for (const l of ls) {
+    const key = childOf(l, scope) ?? l;
+    const members = units.get(key);
+    if (members) members.push(l); else units.set(key, [l]);
+  }
+  return [...units.values()];
+}
+
+/** Orden entre hermanos. Un grupo se desplaza como bloque, incluso si tiene descendientes ocultos. */
+export function stackPeers<T extends Groupable>(layers: T[], item: T | number) {
+  const l = typeof item === 'number' ? layers.find((layer) => inGroup(layer, item)) : item;
+  if (!l) return { peers: [] as T[][], index: -1 };
+  const level = typeof item === 'number' ? l.gpath.findIndex((g) => g.id === item) : l.gpath.length;
+  const scope = l.gpath[level - 1]?.id ?? null;
+  const peers = unitsInScope(scope === null ? layers : membersOf(layers, scope), scope);
+  return { peers, index: peers.findIndex((unit) => unit.includes(l)) };
 }
 /** Grupos que comparten todas (del más externo al más interno). */
 export function commonPath(ls: Groupable[]): GroupRef[] {
@@ -147,6 +183,15 @@ export function freshGroups(paths: GroupRef[][], used: Groupable[]): GroupRef[][
   }));
 }
 /** Copia de una cadena de grupos (cada imagen tiene la suya: cambiar el nombre en una no toca las demás). */
+/**
+ * Mayús + clic en la lista de capas: todo lo que hay entre lo último pulsado (from) y lo pulsado ahora (to), ambos
+ * incluidos, en el orden del póster. from y to pueden ser una capa o los miembros de un grupo (su fila).
+ */
+export function listRange<T>(layers: T[], from: T[], to: T[]): T[] {
+  const at = [...from, ...to].map((l) => layers.indexOf(l)).filter((i) => i >= 0);
+  if (!at.length) return [];
+  return layers.slice(Math.min(...at), Math.max(...at) + 1);
+}
 export const clonePath = (p: GroupRef[]) => p.map((g) => ({ ...g }));
 /** ¿Existe aún esta cadena de grupos en el póster? (para pegar dentro del grupo del que se copió) */
 export const pathExists = (layers: Groupable[], p: GroupRef[]) =>

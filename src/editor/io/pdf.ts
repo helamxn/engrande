@@ -33,8 +33,11 @@ export async function openPdf(data: ArrayBuffer): Promise<PDFDocumentProxy> {
   }).promise;
 }
 
-/** Renderiza una página a un canvas cuyo lado mayor es maxSide (sin pasar de maxScale × el tamaño nominal). */
-export async function renderPdfPage(doc: PDFDocumentProxy, n: number, maxSide = MAX_SIDE, maxScale = 4) {
+/**
+ * Renderiza una página a un canvas cuyo lado mayor es maxSide (sin pasar de maxScale × el tamaño nominal).
+ * readable: será el lienzo de trabajo de una capa, del que se leen píxeles (no la copia a alta resolución del PDF).
+ */
+export async function renderPdfPage(doc: PDFDocumentProxy, n: number, maxSide = MAX_SIDE, maxScale = 4, readable = true) {
   const page = await doc.getPage(n);
   const vp0 = page.getViewport({ scale: 1 });
   const scale = Math.min(maxScale, maxSide / Math.max(vp0.width, vp0.height));
@@ -42,6 +45,9 @@ export async function renderPdfPage(doc: PDFDocumentProxy, n: number, maxSide = 
   const c = document.createElement('canvas');
   c.width = Math.round(vp.width);
   c.height = Math.round(vp.height);
+  // la página es el lienzo de trabajo de la capa: se leen sus píxeles (clic preciso, varita, quitar fondo, borrador).
+  // Con el contexto creado así (pdf.js reutiliza el que ya tiene el lienzo), leer no obliga a traerlos de la GPU
+  if (readable) c.getContext('2d', { willReadFrequently: true });
   // intent 'print': renderiza lo que se imprimiría (anotaciones de impresión incluidas) y no depende de
   // requestAnimationFrame, que el navegador pausa en pestañas en segundo plano (la exportación se quedaba colgada)
   await page.render({ canvas: c, viewport: vp, background: '#ffffff', intent: 'print' }).promise;

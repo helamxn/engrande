@@ -1,10 +1,13 @@
 /** Gestos en el lienzo y rejilla de 1 mm: Alt + clic, Alt + arrastrar, flechas, mover, escalar y Ctrl sin rejilla. */
 import { expect, test, type Page } from '@playwright/test';
-import { addImage, drag, expectSavedNames, listNames, onMm, openApp, savedBox, screenMap, selectRow } from './helpers';
+import { addImage, closeCards, drag, expectSavedNames, listNames, onMm, openApp, openTab, savedBox, screenMap, selectRow } from './helpers';
 
 /** Póster 2×1 A4 con una foto 3:2 ajustada: queda a 13,833 mm del borde de arriba (fuera de la rejilla). */
 async function setup(page: Page) {
   await openApp(page);
+  await openTab(page, 'sheets');
+  await page.locator('#presets [data-c="2"][data-r="1"]').click();
+  await closeCards(page);
   await addImage(page);
   await selectRow(page);
   return savedBox(page, (b) => Math.abs(b.y0 - 13.833) < 0.01);
@@ -27,6 +30,13 @@ test('Alt + arrastrar mueve una copia y la original se queda; un deshacer la qui
   await expectSavedNames(page, ['foto', 'foto (copia)']);
   const orig = await savedBox(page, () => true, 0);
   expect(orig.x0).toBeCloseTo(b.x0, 6);
+  const placed = await savedBox(page);
+  await page.keyboard.press('Control+d');
+  await expectSavedNames(page, ['foto', 'foto (copia)', 'foto (copia) (copia)']);
+  const repeated = await savedBox(page);
+  expect(repeated.x0 - placed.x0).toBeCloseTo(placed.x0 - orig.x0, 6);
+  expect(repeated.y0 - placed.y0).toBeCloseTo(placed.y0 - orig.y0, 6);
+  await page.locator('#undo').click();
   await page.locator('#undo').click();
   expect(await listNames(page)).toEqual(['foto*']);
 });

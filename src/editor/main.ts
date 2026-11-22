@@ -11,7 +11,7 @@ import { initPointer } from './input/pointer';
 import { dockMQ, isMac, MOD } from './platform';
 import { hydrateKeys } from './ui/keys';
 import { initRender, readColors } from './render';
-import { st, V } from './state';
+import { S, st, V } from './state';
 import { initContextBar, renderBar } from './ui/contextbar';
 import { initLayout } from './ui/layout';
 import { initMenu, pasteAny } from './ui/menu';
@@ -118,7 +118,7 @@ export function startEditor() {
   void (async () => {
     // se restaura sin preguntar: solo hay una versión del trabajo, no hay nada que elegir
     const restored = await restoreProject().catch((err) => { console.error(err); return null; });
-    if (restored && st.layers.length) {
+    if (restored && (st.layers.length || st.layoutGuides.length || S.posterSize)) {
       // si se tocó algo mientras se recuperaba, esos pasos de deshacer son de antes de que llegaran las imágenes
       clearHistory();
       syncExportUI();

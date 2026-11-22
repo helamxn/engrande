@@ -15,6 +15,8 @@ let pending: Snapshot | null = null;
 let changes = 0;
 let exportedAt = 0;
 export const markExported = () => { exportedAt = changes; };
+/** Cambia con cada paso guardado, deshecho o rehecho: sirve para saber si un gesto llegó a cambiar algo. */
+export const historyRevision = () => changes;
 export const hasUnexported = () => changes !== exportedAt && (st.layers.length > 0 || undoStack.length > 0);
 
 /** Lo que tiene que pasar después de deshacer o rehacer; lo registra main.ts para evitar dependencias circulares. */
@@ -27,6 +29,7 @@ export const setHistoryHooks = (h: Partial<typeof hooks>) => Object.assign(hooks
 
 export function takeSnap(): Snapshot {
   return {
+    layoutGuides: st.layoutGuides.slice(),
     layers: st.layers.slice(),
     sel: st.sel,
     group: st.group.slice(),
@@ -36,13 +39,15 @@ export function takeSnap(): Snapshot {
       name: l.name, locked: l.locked, opacity: l.opacity, gpath: clonePath(l.gpath), src: l.src,
     })),
     // la distribución de hojas también se deshace (cambiarla mueve y reajusta las imágenes)
-    layout: { paper: S.paper, orient: S.orient, cols: S.cols, rows: S.rows, margin: S.margin, overlap: S.overlap },
-    // resolución, marcas y guía: «Nuevo póster» los restablece y deshacerlo debe devolverlos
-    exp: { dpi: S.dpi, marks: S.marks, guide: S.guide },
+    layout: { paper: S.paper, orient: S.orient, cols: S.cols, rows: S.rows, margin: S.margin, overlap: S.overlap, posterSize: S.posterSize },
+    // resolución, marcas, guía y omitir en blanco: «Nuevo póster» los restablece y deshacerlo debe devolverlos (solo ese
+    // paso: ver restoreExport)
+    exp: { dpi: S.dpi, marks: S.marks, guide: S.guide, skipBlank: S.skipBlank },
     sheetsOn: st.sheetsOn,
   };
 }
 export function restoreSnap(s: Snapshot) {
+  st.layoutGuides = s.layoutGuides?.slice() ?? [];
   st.layers = s.layers.slice();
   for (const p of s.props) {
     Object.assign(p.l, {
@@ -51,7 +56,8 @@ export function restoreSnap(s: Snapshot) {
       name: p.name, locked: p.locked, opacity: p.opacity, gpath: clonePath(p.gpath), src: p.src,
     });
   }
-  Object.assign(S, s.layout, s.exp);
+  Object.assign(S, s.layout);
+  if (s.restoreExport) Object.assign(S, s.exp);
   if (s.sheetsOn !== undefined) st.sheetsOn = s.sheetsOn;
   st.sel = s.sel && st.layers.includes(s.sel) ? s.sel : null;
   const g = (s.group ?? []).filter((l) => st.layers.includes(l));
@@ -74,11 +80,21 @@ export function pushUndo(s: Snapshot) {
   hooks.changed();
 }
 export const snap = () => pushUndo(takeSnap());
+/** Paso que al deshacerse devuelve también los ajustes de descarga (ver restoreExport): el de «Nuevo póster». */
+export const snapWithExport = () => pushUndo({ ...takeSnap(), restoreExport: true });
+let series: { key: string; time: number; revision: number } | null = null;
+/** Repeticiones consecutivas de la misma orden. Deshacer o cualquier otra edición interrumpe la serie. */
+export function snapSeries(key: string, interval = 1000) {
+  const time = performance.now();
+  if (!series || series.key !== key || series.revision !== changes || time - series.time >= interval) snap();
+  series = { key, time, revision: changes };
+}
 /**
  * Vacía el historial. Al terminar de recuperar el póster guardado: un paso tomado mientras se recuperaba no conoce
  * las imágenes que llegaron después, y deshacerlo las quitaría todas.
  */
 export function clearHistory() {
+  series = null;
   const dropped = [...undoStack.splice(0), ...redoStack.splice(0)];
   pending = null;
   releaseUnused(dropped, liveRefs());
@@ -92,7 +108,7 @@ export function undo() {
   if (S.mode === 'crop') { hooks.cancelCrop(); return; }
   const s = undoStack.pop();
   if (!s) return;
-  redoStack.push(takeSnap());
+  redoStack.push({ ...takeSnap(), restoreExport: s.restoreExport });
   restoreSnap(s);
   changes++;
   sync();
@@ -102,7 +118,7 @@ export function redo() {
   if (S.mode === 'crop') return;
   const s = redoStack.pop();
   if (!s) return;
-  undoStack.push(takeSnap());
+  undoStack.push({ ...takeSnap(), restoreExport: s.restoreExport });
   restoreSnap(s);
   changes++;
   sync();

@@ -9,6 +9,7 @@ import { setInsets } from '../view';
 
 let free: HTMLElement;
 let panel: HTMLElement;
+let controls: HTMLElement[] = [];
 
 
 /**
@@ -40,8 +41,13 @@ function update() {
   setInsets(ins, fit);
   // la línea de estado (una caja de una línea), en la fila de la isla de vista: centrada con ella y sin llegar a ella
   const hint = $('#hint'), tools = $('#tools').getBoundingClientRect(), s = $('#stage').getBoundingClientRect();
-  hint.style.maxWidth = `${Math.max(0, Math.round(tools.left - s.left - 36))}px`;
-  hint.style.bottom = `${Math.round(s.bottom - tools.bottom + (tools.height - 30) / 2)}px`;
+  // el tamaño del póster va delante (a la izquierda), en la misma fila; la línea de estado, a su derecha
+  const size = $('#posterSize'), bottom = `${Math.round(s.bottom - tools.bottom + (tools.height - 30) / 2)}px`;
+  size.style.bottom = bottom;
+  const sr = size.getBoundingClientRect(), left = sr.width ? Math.round(sr.right - s.left + 8) : 12;
+  hint.style.left = `${left}px`;
+  hint.style.maxWidth = `${Math.max(0, Math.round(tools.left - s.left - left - 24))}px`;
+  hint.style.bottom = bottom;
 }
 
 /* ---------- escritorio: plegar el panel ---------- */
@@ -146,6 +152,7 @@ function syncSheetMode() {
 export function initLayout() {
   free = $('#free');
   panel = $('#panel');
+  controls = ['header', '#ctxbar', '#panelOpeners', '#tools', '#panel', '#posterCard', '#layersCard', '#pdfCard', '#hint', '#posterSize'].map(sel => $(sel));
   // el panel empieza oculto: aparece cuando hace falta (al seleccionar o al pedirlo)
   document.body.classList.add('panel-off');
   $('#panelHide').setAttribute('aria-expanded', 'false'); // su clic lo atiende panel.ts (deja de ser automático)
@@ -155,7 +162,7 @@ export function initLayout() {
 
   // las islas cambian de tamaño con la ventana, al plegar o deslizar el panel o cuando la lectura ocupa otra línea
   const ro = new ResizeObserver(update);
-  for (const sel of ['#stage', '#topbar', '#panel', '#panelOpeners', '#ctxbar', '#tools']) ro.observe($(sel));
+  for (const el of [$('#stage'), $('#topbar'), ...controls]) ro.observe(el);
   deskMQ?.addEventListener('change', () => { syncSheetMode(); update(); });
   dockMQ?.addEventListener('change', update); // la franja de la barra cambia de alto
   addEventListener('resize', () => { if (!deskMQ?.matches) openSheet(sheet); });

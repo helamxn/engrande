@@ -1,12 +1,12 @@
 /** Estado compartido del editor. Un único objeto mutable: lo leen el render, la interfaz y la entrada. */
-import { savedMargin } from './prefs';
+import { getPref, savedMargin } from './prefs';
 import { geo, type Box, type Dash, type Gap, type GuideSeg } from './geometry';
 import type { GroupRef } from './groups';
-import type { Layer, LayoutSettings, Pt, Settings, TextDraft } from './types';
+import type { Layer, LayoutGuide, LayoutSettings, Pt, Settings, TextDraft } from './types';
 
 /** Ajustes de un póster nuevo (los que se guardan y se restablecen con "Nuevo póster"). */
-export const DEFAULT_LAYOUT: LayoutSettings = { paper: 'A4', orient: 'portrait', cols: 2, rows: 1, margin: 6, overlap: 10 };
-export const DEFAULT_EXPORT: Pick<Settings, 'dpi' | 'marks' | 'guide'> = { dpi: 150, marks: true, guide: true };
+export const DEFAULT_LAYOUT: LayoutSettings = { paper: 'A4', orient: 'portrait', cols: 1, rows: 1, margin: 6, overlap: 10, posterSize: null };
+export const DEFAULT_EXPORT = { dpi: 150, marks: true, guide: true, skipBlank: false };
 
 /** Distribución de un póster nuevo: la de siempre, con el margen de la impresora si ya se eligió uno. */
 export const freshLayout = (): LayoutSettings => ({ ...DEFAULT_LAYOUT, margin: savedMargin() ?? DEFAULT_LAYOUT.margin });
@@ -17,6 +17,11 @@ export const S: Settings = {
 };
 
 export const st = {
+  layoutGuides: [] as LayoutGuide[],
+  guideDraft: null as (LayoutGuide & { original: LayoutGuide | null }) | null,
+  rulers: getPref('rulers') !== 'false',
+  showGuides: getPref('showGuides') !== 'false',
+  snapGuides: getPref('snapGuides') !== 'false',
   layers: [] as Layer[],
   sel: null as Layer | null,
   /**

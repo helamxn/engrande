@@ -82,8 +82,8 @@ export function initListDrag(ol: HTMLElement, layerOf: (li: Element) => Layer | 
     d.li.classList.remove('dragging');
     ol.classList.remove('reordering');
     // la lista va al revés que st.layers (arriba = al frente = último del póster)
-    const n = st.layers.length, i = st.layers.indexOf(d.l), j = n - 1 - d.to;
-    if (e.type === 'pointerup' && i >= 0 && j !== i) reorder(d.l, j - i);
+    const target = d.rows[d.to] && layerOf(d.rows[d.to]!);
+    if (e.type === 'pointerup' && target && target !== d.l) reorder(d.l, target);
   };
   ol.addEventListener('pointerup', end);
   ol.addEventListener('pointercancel', end);
