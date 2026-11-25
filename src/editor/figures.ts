@@ -1,6 +1,11 @@
 import type { ShapeSpec } from './types';
 
 export const figures = { rectangle: 'Rectángulo', ellipse: 'Elipse', triangle: 'Triángulo' } as const;
+/**
+ * Tecla de cada forma: U (la herramienta de formas de Photoshop) para el rectángulo, O (Figma, Excalidraw) para la
+ * elipse e Y, a su lado, para el triángulo. R no sirve: gira la imagen seleccionada.
+ */
+export const FIGURE_KEYS = { rectangle: 'u', ellipse: 'o', triangle: 'y' } as const;
 
 export function validFigure(spec: ShapeSpec | undefined): boolean {
   return !!spec && Object.hasOwn(figures, spec.figure) && /^#[0-9a-f]{6}$/i.test(spec.fill);

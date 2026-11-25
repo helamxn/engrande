@@ -9,7 +9,7 @@ import type { PDFDocumentProxy } from 'pdfjs-dist';
 import { BRAND } from '../../brand';
 import { makeCanvas, newLayer } from '../actions';
 import { toast } from '../dom';
-import { S, st } from '../state';
+import { committedFrame, S, st } from '../state';
 import { clonePath, nextGroupName, normalizeGroups, type GroupRef, type Groupable } from '../groups';
 import { loadImg } from './load';
 import { openPdf, renderPdfPage } from './pdf';
@@ -169,9 +169,10 @@ async function save() {
       used.add(key);
       edit = key;
     }
+    const f = committedFrame(l);
     layers.push({
-      name: l.name, cx: l.cx, cy: l.cy, w: l.w, h: l.h, rot: l.rot, flipX: l.flipX, flipY: l.flipY,
-      crop: { ...l.crop }, page: l.page, pages: l.pages, fit: l.fit && { ...l.fit }, hidden: l.hidden,
+      name: l.name, cx: f.cx, cy: f.cy, w: f.w, h: f.h, rot: l.rot, flipX: l.flipX, flipY: l.flipY,
+      crop: { ...f.crop }, page: l.page, pages: l.pages, fit: f.fit && { ...f.fit }, hidden: l.hidden,
       locked: l.locked, opacity: l.opacity, gpath: clonePath(l.gpath), src, edit,
     });
   }

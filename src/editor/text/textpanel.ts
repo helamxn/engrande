@@ -162,7 +162,7 @@ export function initTextPanel() {
 
   const size = $<HTMLInputElement>('#tSize');
   const applySize = () => {
-    const l = st.sel, value = parseNum(size.value);
+    const l = st.sel, value = parseNum(size.value, 'pt');
     if (!isText(l) || l.locked || !Number.isFinite(value) || value < 1) { syncTextPanel(); return; }
     if (Math.abs(value - fontSizePT(l)) < 0.005) return;
     snap(); setFontSizePT(l, value); rememberSize(fontSizePT(l)); afterChange();
@@ -171,14 +171,14 @@ export function initTextPanel() {
   size.addEventListener('keydown', e => {
     if (e.key === 'Enter') { e.preventDefault(); applySize(); size.select(); return; }
     if (!['ArrowUp', 'ArrowDown'].includes(e.key)) return;
-    const value = parseNum(size.value);
+    const value = parseNum(size.value, 'pt');
     if (!Number.isFinite(value)) return;
     e.preventDefault(); size.value = fmt1(Math.max(1, value + (e.key === 'ArrowUp' ? 1 : -1) * (e.shiftKey ? 10 : 1))); applySize();
   });
 
   const cap = $<HTMLInputElement>('#tCap');
   const applyCap = () => {
-    const l = st.sel, v = parseNum(cap.value);
+    const l = st.sel, v = parseNum(cap.value, 'cm');
     if (!isText(l) || l.locked || !Number.isFinite(v) || v <= 0) { syncTextPanel(); return; }
     if (Math.abs(v * 10 - capMM(l)) < 0.05) return;
     snap(); setCapMM(l, v * 10); rememberSize(fontSizePT(l)); afterChange();
@@ -187,7 +187,7 @@ export function initTextPanel() {
   cap.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); applyCap(); cap.select(); return; }
     if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
-    const v = parseNum(cap.value);
+    const v = parseNum(cap.value, 'cm');
     if (!Number.isFinite(v)) return;
     e.preventDefault();
     cap.value = fmt1(Math.max(0.1, v + (e.key === 'ArrowUp' ? 1 : -1) * (e.shiftKey ? 1 : 0.1)));

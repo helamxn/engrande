@@ -2,9 +2,8 @@ import { expect, test, type Page } from '@playwright/test';
 import { closeCards, drag, openApp, openTab, saved, savedBox, screenMap, showLayers, thumbColor } from './helpers';
 
 async function addFigure(page: Page) {
-  await page.locator('#ctxbar [data-act=add]').click();
-  await page.getByRole('menuitem', { name: 'Agregar forma' }).click();
-  await page.getByRole('menuitem', { name: 'Rectángulo', exact: true }).click();
+  await page.locator('#toolbar [data-tool=shape]').click();
+  await page.getByRole('menuitem', { name: /^Rectángulo/ }).click();
   await expect(page.locator('#selectionTitle')).toHaveText('Forma');
 }
 const count = async (page: Page) => (await saved(page))?.boxes.length ?? 0;

@@ -60,6 +60,10 @@ const icon = 'size-[17px]';
       <button type="button" id="scaleRef" class="max-sm:hidden" aria-pressed="false" title="Persona de 1,70 m junto al póster, para ver su tamaño real" aria-label="Persona de 1,70 m junto al póster" disabled>
         <Icon name="person" class={icon} />
       </button>
+      <!-- solape: mostrar u ocultar sus franjas en el lienzo (ver overlap.ts); en el teléfono, en el menú del lienzo vacío -->
+      <button type="button" id="overlapToggle" class="max-sm:hidden" aria-pressed="true" title="Mostrar u ocultar el solape entre hojas" aria-label="Mostrar el solape entre hojas" disabled>
+        <Icon name="overlap" class={icon} />
+      </button>
       <button type="button" data-shortcuts title="Atajos de teclado y gestos (?)" aria-label="Atajos de teclado y gestos">
         <span class="text-[.95rem] font-bold">?</span>
       </button>

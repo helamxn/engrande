@@ -1,7 +1,7 @@
 /** Panel lateral: pestañas, ajustes de hojas, propiedades de la imagen, lista de imágenes, exportación y lectura. */
 import { listRange, type GroupRef } from '../groups';
 import {
-  afterChange, applyCrop, canStretch, centerSel, commonRotation, setGroupFrame, fitSel, groupMembers, groupName, hideSelected, lockSelected, markManual, renameGroup, renameLayer,
+  afterChange, applyCrop, canStretch, centerSel, commonRotation, setGroupFrame, fitSel, groupMembers, groupName, markManual, renameGroup, renameLayer,
   reorder, select, selected, selectedGroup, selectMany, setOpacity, toggleGroupFlag, toggleHidden,
   toggleLocked, unstretchSel,
 } from '../actions';
@@ -220,7 +220,7 @@ function syncPresetIcons() {
 function syncWelcome() {
   const was = $('#empty').hidden;
   $('#empty').hidden = sheetsVisible();
-  if (was !== $('#empty').hidden) renderBar(); // la barra fija aparece cuando se va la bienvenida
+  if (was !== $('#empty').hidden) renderBar(); // las herramientas de la imagen se encienden cuando se va la bienvenida
 }
 
 /* ---------- propiedades de la imagen seleccionada ---------- */
@@ -271,11 +271,22 @@ export function syncSel() {
   followSelection();
   updateStats(); updateHint();
 }
+/**
+ * syncSel una vez por fotograma: al arrastrar, el ratón manda más movimientos que fotogramas (hasta 1000 por segundo)
+ * y rehacer el panel con cada uno no se ve y le quita tiempo al dibujo.
+ */
+let selQueued = false;
+export function syncSelSoon() {
+  if (selQueued) return;
+  selQueued = true;
+  requestAnimationFrame(() => { selQueued = false; syncSel(); });
+}
 /** Botones de «Mantener proporción» (imagen y conjunto). El del conjunto, fijo si no se puede estirar. */
 function syncRatioButtons() {
   const forced = st.group.length > 1 && !canStretch(st.group);
   for (const [id, on] of [['#pLock', S.lock], ['#gRatio', S.lock || forced]] as const) {
     const b = $<HTMLButtonElement>(id);
+    if (b.getAttribute('aria-pressed') === String(on) && b.firstElementChild) continue;
     b.setAttribute('aria-pressed', String(on));
     b.innerHTML = ICON[on ? 'ratioOn' : 'ratioOff']; // constante del código
   }
@@ -284,7 +295,7 @@ function syncRatioButtons() {
   g.title = forced ? 'Con textos o imágenes giradas en ángulo, el conjunto escala sin deformar' : 'Mantener proporción';
 }
 /** Lo que hace un campo numérico: si ahora se puede cambiar, cómo se aplica un valor y el paso de ↑ ↓ y del arrastre. */
-interface NumTarget { ok: () => boolean; apply: (v: number) => void; step?: number }
+interface NumTarget { ok: () => boolean; apply: (v: number) => void; unit?: 'cm' | '°'; step?: number }
 /**
  * Campo numérico (texto con coma decimal, no type=number, que mostraría «14.3» según el navegador), como en Figma:
  * - Enter o salir del campo aplica; admite operaciones («21/2», «14,3+2»; ver parseNum);
@@ -298,9 +309,9 @@ function numInput(id: string, t: NumTarget) {
   let applied: string | null = null;
   const run = () => {
     if (el.value === applied) return;
-    const v = parseNum(el.value);
+    const v = parseNum(el.value, t.unit ?? 'cm');
     if (!Number.isFinite(v) || !t.ok()) { showResult(el, syncSel); return; } // no vale: vuelve al que había
-    showResult(el, () => { snap(); t.apply(v); afterChange(); });
+    showResult(el, () => { applyCrop(); snap(); t.apply(v); afterChange(); });
     applied = el.value; // el resultado: al salir del campo no se vuelve a aplicar
   };
   el.addEventListener('focus', () => { applied = null; });
@@ -308,7 +319,7 @@ function numInput(id: string, t: NumTarget) {
   el.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); run(); el.select(); return; }
     if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-      const v = parseNum(el.value);
+      const v = parseNum(el.value, t.unit ?? 'cm');
       if (!Number.isFinite(v)) return;
       e.preventDefault();
       const d = (e.key === 'ArrowUp' ? 1 : -1) * step * (e.shiftKey ? 10 : 1);
@@ -326,11 +337,12 @@ function scrubLabel(el: HTMLInputElement, t: NumTarget, step: number) {
   let drag: { id: number; x: number; v0: number; moved: boolean } | null = null, swallowClick = false;
   label.addEventListener('pointerdown', (e) => {
     if (e.button !== 0 || e.pointerType === 'touch' || !t.ok()) return;
-    const v0 = parseNum(el.value);
+    const v0 = parseNum(el.value, t.unit ?? 'cm');
     if (!Number.isFinite(v0)) return;
     e.preventDefault(); // sin seleccionar texto ni enfocar todavía
     // con el campo enfocado, lo escrito se aplica antes y el campo deja de tapar el valor que va cambiando
     if (document.activeElement === el) el.blur();
+    applyCrop();
     label.setPointerCapture(e.pointerId);
     drag = { id: e.pointerId, x: e.clientX, v0, moved: false };
     setPending(takeSnap()); // el paso de deshacer se guarda solo si el valor llega a cambiar
@@ -358,8 +370,8 @@ function scrubLabel(el: HTMLInputElement, t: NumTarget, step: number) {
   label.addEventListener('pointerdown', () => { swallowClick = false; }, true);
 }
 /** Campo de la imagen seleccionada (no bloqueada). */
-const numField = (id: string, apply: (l: Layer, v: number) => void, step = 0.1) =>
-  numInput(id, { ok: () => !!st.sel && !st.sel.locked, apply: (v) => apply(st.sel!, v), step });
+const numField = (id: string, apply: (l: Layer, v: number) => void, unit: 'cm' | '°' = 'cm') =>
+  numInput(id, { ok: () => !!st.sel && !st.sel.locked, apply: (v) => apply(st.sel!, v), unit, step: unit === '°' ? 1 : 0.1 });
 
 /* ---------- lista de imágenes ---------- */
 /**
@@ -669,6 +681,7 @@ function syncPosterSize(g: Geo) {
   b.setAttribute('aria-label', `${full}. Abrir Póster`);
 }
 let countTimer = 0;
+let statsKey = '';
 export function updateStats() {
   clearTimeout(countTimer);
   const g = posterGeo(), n = g.cols * g.rows;
@@ -676,7 +689,11 @@ export function updateStats() {
   // las ocultas no se imprimen: no cuentan
   const rows = st.layers.filter((l) => !l.hidden).map((l) => { const ppp = pppOf(l, HI_AREA); return { l, ppp, q: qualityOf(ppp) }; });
   const bad = rows.filter((r) => r.q === 'bad'), warn = rows.filter((r) => r.q === 'warn');
-
+  // se llama con cada cambio de la selección (también al arrastrar): si el resumen no cambia, no se rehace
+  // (contar las hojas con contenido sí, cada vez: depende de dónde están las imágenes)
+  const key = [g.W, g.H, n, S.paper, S.orient, S.guide, S.dpi, st.layers.length, rows.length, bad.length, warn.length].join('|');
+  if (!S.skipBlank && key === statsKey) return;
+  statsKey = key;
 
   const box = $('#exportSummary');
   box.textContent = '';
@@ -736,6 +753,7 @@ export function updateStats() {
 }
 
 /* ---------- pista inferior ---------- */
+let hintText: string | null = null;
 export function updateHint() {
   const hint = document.querySelector('#hint');
   if (!hint) return;
@@ -750,10 +768,12 @@ export function updateHint() {
       : sel ? (t ? 'Pellizca sobre la imagen para escalar y girar' : '{shift}: deformar o girar de 15° en 15° · {alt}: desde el centro · {alt} sobre otra: distancias')
         : (t ? 'Mantén pulsado para más opciones' : 'Arrastra en el fondo para elegir varias · clic derecho: más opciones'),
     crop: t ? 'Pellizca para ampliar la imagen · bordes: tamaño del recorte' : 'Rueda: ampliar · {shift}: proporción · {alt}: desde el centro · {enter}: aplicar',
-    erase: S.brushMode === 'erase' ? 'Pinta para borrar' : 'Pinta para recuperar lo borrado',
-    wand: t ? 'Toca un color para borrarlo' : 'Clic en un color para borrarlo',
+    erase: (S.brushMode === 'erase' ? 'Pinta para borrar' : 'Pinta para recuperar lo borrado') + (t ? '' : ' · {alt} + arrastrar con clic derecho: pincel · {x}: borrar o restaurar'),
+    wand: t ? 'Toca un color para elegirlo; después, Supr o ⋮ para borrarlo'
+      : 'Clic: elegir un color · {shift}: sumar · {alt}: restar · {del}: borrar lo elegido · {esc}: quitarlo',
   };
-  hint.replaceChildren(rich(H[S.mode] ?? ''));
+  const text = H[S.mode] ?? '';
+  if (text !== hintText) { hintText = text; hint.replaceChildren(rich(text)); } // el mismo texto: no se rehace
   // con el póster vacío la pista sobra: la pantalla de inicio ya explica qué hacer
   hint.classList.toggle('invisible', !st.layers.length && !st.placingText);
 }
@@ -808,15 +828,15 @@ export function initPanel() {
       const mm = Math.round(cm * 100) / 10;
       showResult(field, () => { if (mm !== S.posterSize![key]) editLayout('posterSize', { ...S.posterSize!, [key]: mm }); else syncLayoutUI(); });
     };
-    field.onchange = () => apply(parseNum(field.value));
+    field.onchange = () => apply(parseNum(field.value, 'cm'));
     field.onkeydown = (e) => {
-      if (e.key === 'Enter') { e.preventDefault(); apply(parseNum(field.value)); field.select(); return; }
+      if (e.key === 'Enter') { e.preventDefault(); apply(parseNum(field.value, 'cm')); field.select(); return; }
       if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
-      const v = parseNum(field.value);
+      const v = parseNum(field.value, 'cm');
       if (!Number.isFinite(v)) return;
       e.preventDefault();
       field.value = fmtMeasure(Math.round((v + (e.key === 'ArrowUp' ? 1 : -1) * (e.shiftKey ? 1 : 0.1)) * 1000) / 1000);
-      apply(parseNum(field.value)); field.select();
+      apply(parseNum(field.value, 'cm')); field.select();
     };
   }
   const presets = $('#presets');
@@ -904,20 +924,18 @@ export function initPanel() {
   initListDrag($('#layers'), (li) => rowLayer.get(li));
   // el tamaño del póster (abajo a la izquierda) abre Póster, lo mismo que su botón
   $('#posterSize').addEventListener('click', () => $<HTMLButtonElement>('[data-open=sheets]').click());
-  $('#gHide').addEventListener('click', hideSelected);
-  $('#gLock').addEventListener('click', lockSelected);
   numField('#pW', (l, v) => { const f = Math.max(3, v * 10) / visW(l); if (S.lock || l.src?.kind === 'text') scaleLayer(l, f, cropCenter(l)); else keepCenter(l, (x) => { x.w *= f; }); markManual(l); });
   numField('#pH', (l, v) => { const f = Math.max(3, v * 10) / visH(l); if (S.lock || l.src?.kind === 'text') scaleLayer(l, f, cropCenter(l)); else keepCenter(l, (x) => { x.h *= f; }); markManual(l); });
   numField('#pX', (l, v) => { l.cx += v * 10 - bboxMM(l).x0; markManual(l); });
   numField('#pY', (l, v) => { l.cy += v * 10 - bboxMM(l).y0; markManual(l); });
-  numField('#pR', (l, v) => { rotateLayer(l, normDeg(v) - l.rot, cropCenter(l)); markManual(l); }, 1);
+  numField('#pR', (l, v) => { rotateLayer(l, normDeg(v) - l.rot, cropCenter(l)); markManual(l); }, '°');
   // la proporción fija es una sola preferencia: la de una imagen y la del conjunto van juntas
   for (const id of ['#pLock', '#gRatio']) $(id).addEventListener('click', () => { S.lock = !S.lock; syncRatioButtons(); });
   // varias: el marco común (con su proporción, como una sola). Si alguna está girada en ángulo o es un texto, no se
   // pueden estirar en un eje: ancho y alto van siempre juntos
   const groupOk = () => st.group.length > 1;
   const gField = (id: string, key: 'w' | 'h' | 'x' | 'y' | 'rot', k = 10) =>
-    numInput(id, { ok: groupOk, apply: (v) => setGroupFrame(st.group, { [key]: v * k }), step: key === 'rot' ? 1 : 0.1 });
+    numInput(id, { ok: groupOk, apply: (v) => setGroupFrame(st.group, { [key]: v * k }), unit: key === 'rot' ? '°' : 'cm', step: key === 'rot' ? 1 : 0.1 });
   gField('#gW', 'w'); gField('#gH', 'h'); gField('#gX', 'x'); gField('#gY', 'y'); gField('#gR', 'rot', 1);
   $('#unstretch').addEventListener('click', unstretchSel);
   $('#fitContain').addEventListener('click', fitSel('contain'));

@@ -2,9 +2,8 @@ import { expect, test, type Page } from '@playwright/test';
 import { closeCards, drag, listNames, openApp, saved, savedBox, screenMap, selectRow, showLayers } from './helpers';
 
 async function addFigure(page: Page, name = 'Rectángulo') {
-  await page.locator('#ctxbar [data-act=add]').click();
-  await page.getByRole('menuitem', { name: 'Agregar forma' }).click();
-  await page.getByRole('menuitem', { name, exact: true }).click();
+  await page.locator('#toolbar [data-tool=shape]').click();
+  await page.getByRole('menuitem', { name: new RegExp(`^${name}`) }).click(); // el nombre y su tecla
   await expect(page.locator('#selectionTitle')).toHaveText('Forma');
 }
 /** Teclas sobre el lienzo (sin foco en un campo ni en un botón). */

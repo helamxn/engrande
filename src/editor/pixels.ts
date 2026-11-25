@@ -8,7 +8,9 @@ export type RGB = readonly [number, number, number];
 /** Tarea que se manda al worker. */
 export type PixelJob =
   | { kind: 'wand'; seeds: number[]; ref: RGB; tol: number; contig: boolean }
-  | { kind: 'auto'; tol: number };
+  | { kind: 'auto'; tol: number }
+  /** Borrar lo elegido con la varita: mask, un valor por píxel (0 nada … 255 todo; ver colorMask). */
+  | { kind: 'mask'; mask: Uint8ClampedArray };
 
 export interface PixelResult {
   /** Píxeles que pasaron a ser transparentes. */
@@ -44,6 +46,67 @@ export function removeColorData(d: Uint8ClampedArray, w: number, h: number, seed
     if (x < w - 1 && !vis[i + 1]) { vis[i + 1] = 1; stack[sp++] = i + 1; }
     if (i >= w && !vis[i - w]) { vis[i - w] = 1; stack[sp++] = i - w; }
     if (i < w * h - w && !vis[i + w]) { vis[i + w] = 1; stack[sp++] = i + w; }
+  }
+  return removed;
+}
+
+/**
+ * Zona de la varita, sin borrar nada: por cada píxel, cuánto de él se borraría (0 nada … 255 todo). Los parecidos a
+ * ref (distancia RGB ≤ tol) valen 255 y el borde suave hasta 1,35 × tol, lo mismo que quitaría removeColorData. Los
+ * ya transparentes valen 0 (no queda nada que borrar), pero la zona los atraviesa.
+ * contig: solo la zona conectada a las semillas (relleno por inundación); si no, en toda la imagen.
+ */
+export function colorMask(d: Uint8ClampedArray, w: number, h: number, seeds: ArrayLike<number>, ref: RGB, tol: number, contig: boolean) {
+  const m = new Uint8ClampedArray(w * h);
+  const t2 = tol * tol, softT = tol * 1.35, soft2 = softT * softT;
+  const handle = (i: number) => {
+    const o = i * 4;
+    if (d[o + 3] === 0) return true;
+    const dr = d[o]! - ref[0], dg = d[o + 1]! - ref[1], db = d[o + 2]! - ref[2], q = dr * dr + dg * dg + db * db;
+    if (q <= t2) { m[i] = 255; return true; }
+    if (q < soft2) m[i] = Math.round(255 * (1 - (Math.sqrt(q) - tol) / (softT - tol)));
+    return false;
+  };
+  if (!contig) { for (let i = 0, n = w * h; i < n; i++) handle(i); return m; }
+  const vis = new Uint8Array(w * h), stack = new Int32Array(w * h);
+  let sp = 0;
+  for (let k = 0; k < seeds.length; k++) { const s = seeds[k]!; if (!vis[s]) { vis[s] = 1; stack[sp++] = s; } }
+  while (sp) {
+    const i = stack[--sp]!;
+    if (!handle(i)) continue;
+    const x = i % w;
+    if (x > 0 && !vis[i - 1]) { vis[i - 1] = 1; stack[sp++] = i - 1; }
+    if (x < w - 1 && !vis[i + 1]) { vis[i + 1] = 1; stack[sp++] = i + 1; }
+    if (i >= w && !vis[i - w]) { vis[i - w] = 1; stack[sp++] = i - w; }
+    if (i < w * h - w && !vis[i + w]) { vis[i + w] = 1; stack[sp++] = i + w; }
+  }
+  return m;
+}
+
+/** Cómo se junta una zona nueva con lo ya elegido: sustituye, suma (Shift) o resta (Alt), como en Photoshop. */
+export type MaskOp = 'new' | 'add' | 'sub';
+export function combineMasks(base: Uint8ClampedArray | null, m: Uint8ClampedArray, op: MaskOp) {
+  if (op === 'new' || !base) return op === 'sub' ? new Uint8ClampedArray(m.length) : m.slice();
+  const out = new Uint8ClampedArray(m.length);
+  for (let i = 0; i < m.length; i++) out[i] = op === 'add' ? Math.max(base[i]!, m[i]!) : Math.min(base[i]!, 255 - m[i]!);
+  return out;
+}
+/** Invierte lo elegido; lo ya transparente no cuenta (no hay nada que borrar). d: los datos RGBA de la imagen. */
+export function invertMask(mask: Uint8ClampedArray, d: Uint8ClampedArray) {
+  const out = new Uint8ClampedArray(mask.length);
+  for (let i = 0; i < mask.length; i++) out[i] = d[i * 4 + 3] ? 255 - mask[i]! : 0;
+  return out;
+}
+/** ¿Hay algo elegido que se pueda borrar? */
+export const maskHasAny = (mask: Uint8ClampedArray) => mask.some((v) => v > 0);
+/** Borra lo elegido: el alfa de cada píxel se reduce en la proporción de la máscara. Devuelve cuántos cambiaron. */
+export function eraseByMask(d: Uint8ClampedArray, mask: Uint8ClampedArray) {
+  let removed = 0;
+  for (let i = 0; i < mask.length; i++) {
+    const v = mask[i]!, o = i * 4 + 3, a = d[o]!;
+    if (!v || !a) continue;
+    const na = v === 255 ? 0 : Math.round((a * (255 - v)) / 255);
+    if (na !== a) { d[o] = na; removed++; }
   }
   return removed;
 }
@@ -96,6 +159,7 @@ export function editMaskData(img: Uint8ClampedArray, orig: Uint8ClampedArray) {
 /** Ejecuta una tarea sobre los datos (en el worker o, de respaldo, en la página). Modifica d. */
 export function runPixelJob(d: Uint8ClampedArray, w: number, h: number, job: PixelJob): PixelResult {
   if (job.kind === 'wand') return { removed: removeColorData(d, w, h, job.seeds, job.ref, job.tol, job.contig) };
+  if (job.kind === 'mask') return { removed: eraseByMask(d, job.mask) };
   const p = autoBackgroundParams(d, w, h, job.tol);
   if ('error' in p) return { removed: 0, error: p.error };
   return { removed: removeColorData(d, w, h, p.seeds, p.ref, job.tol, true) };

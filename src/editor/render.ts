@@ -3,7 +3,7 @@ import { findGroup, groupOf } from './groups';
 import { cm, cmGap, TOUCH_MM } from './format';
 import { isGesturing } from './input/pointer';
 import {
-  canStretch, gridLevels, HANDLES, bboxMM, cropCenter, cropPtsMM, displaySide, handleLocal, localToMM, pppOf, qualityOf, rad,
+  canStretch, gridLevels, HANDLES, bboxMM, boxInside, cropCenter, cropPtsMM, displaySide, handleLocal, localToMM, pppOf, qualityOf, rad,
   unionBox, visH, visW, type Quality,
 } from './geometry';
 import { canvasRevision } from './io/persist';
@@ -14,12 +14,13 @@ import { positionTextEditor } from './text/editor';
 import { isText } from './text/text';
 import { renderList } from './ui/panel';
 import { drawScaleRef, syncScaleRefButton } from './scaleref';
+import { overlapShown, syncOverlapButton } from './overlap';
+import { wandOverlay, wandSelection } from './wand';
 import { HI_AREA, isTouch } from './platform';
 import type { HandleId, Layer, Pt } from './types';
 
 let cv: HTMLCanvasElement;
 let ctx: CanvasRenderingContext2D;
-let checker: CanvasPattern | null = null;
 /** Rayado del margen sin imprimir (papel que no se imprime). */
 let hatch: CanvasPattern | null = null;
 let dirtyFlag = false;
@@ -37,16 +38,10 @@ export function dirty() {
   requestAnimationFrame(render);
 }
 
-/** Lee los colores del tema (cambian con el modo oscuro) y rehace el patrón de transparencia. */
+/** Lee los colores del tema (cambian con el modo oscuro) y rehace el rayado del margen. */
 export function readColors() {
   const cs = getComputedStyle(document.documentElement);
   for (const k of ['desk', 'grid', 'accent', 'mark', 'fg', 'muted', 'panel', 'chk1', 'chk2', 'line']) C[k] = cs.getPropertyValue('--' + k).trim();
-  const p = document.createElement('canvas');
-  p.width = p.height = 16;
-  const x = p.getContext('2d')!;
-  x.fillStyle = C.chk1!; x.fillRect(0, 0, 16, 16);
-  x.fillStyle = C.chk2!; x.fillRect(0, 0, 8, 8); x.fillRect(8, 8, 8, 8);
-  checker = ctx.createPattern(p, 'repeat');
   const h = document.createElement('canvas');
   h.width = h.height = 8;
   const y = h.getContext('2d')!;
@@ -68,7 +63,7 @@ function drawGrid() {
   const levels = gridLevels(V.k);
   if (!levels.length) return;
   const { dpr } = view, W = cv.width, H = cv.height;
-  const a = { x: -V.ox / V.k, y: -V.oy / V.k }, b = { x: (view.CW - V.ox) / V.k, y: (view.CH - V.oy) / V.k };
+  const a = { x: -V.ox / V.k, y: -V.oy / V.k };
   const lw = Math.max(1, Math.floor(dpr)), off = lw % 2 ? 0.5 : 0;
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -78,12 +73,16 @@ function drawGrid() {
     const ratio = next ? Math.round(next.step / step) : 0; // las múltiplos del nivel siguiente las pinta ese nivel
     ctx.globalAlpha = alpha;
     ctx.beginPath();
-    for (let i = Math.ceil(a.x / step), e = Math.floor(b.x / step); i <= e; i++) {
+    const firstX = Math.ceil(a.x / step), firstY = Math.ceil(a.y / step);
+    const cols = Math.ceil(view.CW / (step * V.k)), rows = Math.ceil(view.CH / (step * V.k));
+    for (let n = 0; n <= cols; n++) {
+      const i = firstX + n;
       if (ratio && i % ratio === 0) continue;
       const X = Math.round((i * step * V.k + V.ox) * dpr) + off;
       ctx.moveTo(X, 0); ctx.lineTo(X, H);
     }
-    for (let i = Math.ceil(a.y / step), e = Math.floor(b.y / step); i <= e; i++) {
+    for (let n = 0; n <= rows; n++) {
+      const i = firstY + n;
       if (ratio && i % ratio === 0) continue;
       const Y = Math.round((i * step * V.k + V.oy) * dpr) + off;
       ctx.moveTo(0, Y); ctx.lineTo(W, Y);
@@ -120,6 +119,8 @@ interface DisplayCopy {
   c: HTMLCanvasElement; rev: number; side: number;
   /** Lado mayor pedido en el fotograma actual y en el anterior (los duplicados comparten copia y se ven a otro tamaño). */
   frame: number; want: number; wantPrev: number;
+  /** Puesta al día a trozos por el borrador (ver patchDisplay). */
+  patched?: boolean;
 }
 const copies = new WeakMap<HTMLCanvasElement, DisplayCopy>(); // por lienzo: los duplicados la comparten
 /** Fotograma actual (lo cuenta render): para saber qué tamaño pidieron todas las capas que comparten una copia. */
@@ -127,8 +128,8 @@ let frameNo = 0;
 export function displaySource(l: Layer): CanvasImageSource {
   if (st.textColorPreview?.layer === l) return st.textColorPreview.canvas;
   const img = l.img, long = Math.max(img.width, img.height);
-  // con el borrador la imagen cambia en cada movimiento: se dibuja directamente para no rehacer la copia cada vez
-  if (S.mode === 'erase' && l === st.sel) return img;
+  // con el borrador la imagen cambia en cada movimiento: la copia no se rehace, se pone al día solo lo pintado
+  // (patchDisplay). Dibujar la imagen de trabajo entera la subía a la tarjeta gráfica en cada fotograma (~30 ms)
   const side = displaySide(Math.max(l.w, l.h) * V.k * view.dpr, long);
   if (!side) return img;
   const rev = canvasRevision(img);
@@ -152,6 +153,56 @@ export function displaySource(l: Layer): CanvasImageSource {
     copies.set(img, d);
   }
   return d.c;
+}
+
+/**
+ * El borrador cambió solo un rectángulo de img (px de img, ya pintado): la copia reducida se pone al día solo ahí, si
+ * estaba al día justo antes (prevRev); si no, se rehará entera al dibujarla. Los bordes del parche se calculan sin
+ * los píxeles vecinos: al acabar el trazo, settleDisplay la rehace entera.
+ */
+export function patchDisplay(img: HTMLCanvasElement, r: { x0: number; y0: number; x1: number; y1: number }, prevRev: number) {
+  const d = copies.get(img);
+  if (!d || d.rev !== prevRev) return;
+  const sx = d.c.width / img.width, sy = d.c.height / img.height;
+  const X0 = Math.max(0, Math.floor(r.x0 * sx) - 1), Y0 = Math.max(0, Math.floor(r.y0 * sy) - 1);
+  const X1 = Math.min(d.c.width, Math.ceil(r.x1 * sx) + 1), Y1 = Math.min(d.c.height, Math.ceil(r.y1 * sy) + 1);
+  d.rev = canvasRevision(img);
+  if (X1 <= X0 || Y1 <= Y0) return;
+  // la imagen de trabajo vive en memoria (se leen sus píxeles a menudo): dibujarla, aunque sea un trozo, la sube
+  // entera a la tarjeta gráfica. Se leen solo los píxeles del trozo y se pasan por un lienzo pequeño
+  const ix0 = Math.max(0, Math.floor(X0 / sx)), iy0 = Math.max(0, Math.floor(Y0 / sy));
+  const ix1 = Math.min(img.width, Math.ceil(X1 / sx)), iy1 = Math.min(img.height, Math.ceil(Y1 / sy));
+  const iw = ix1 - ix0, ih = iy1 - iy0;
+  if (iw <= 0 || ih <= 0) return;
+  const data = img.getContext('2d', { willReadFrequently: true })!.getImageData(ix0, iy0, iw, ih);
+  if (!patchScratch) patchScratch = document.createElement('canvas');
+  if (patchScratch.width < iw) patchScratch.width = iw;
+  if (patchScratch.height < ih) patchScratch.height = ih;
+  patchScratch.getContext('2d')!.putImageData(data, 0, 0);
+  const x = d.c.getContext('2d')!;
+  x.imageSmoothingEnabled = true; x.imageSmoothingQuality = 'high';
+  x.clearRect(X0, Y0, X1 - X0, Y1 - Y0);
+  x.drawImage(patchScratch, X0 / sx - ix0, Y0 / sy - iy0, (X1 - X0) / sx, (Y1 - Y0) / sy, X0, Y0, X1 - X0, Y1 - Y0);
+  d.patched = true;
+}
+/** Lienzo pequeño para pasar los píxeles de un parche (crece según haga falta). */
+let patchScratch: HTMLCanvasElement | null = null;
+/** Acabó un trazo: si la copia se puso al día a trozos, se rehace entera (sin las juntas de los parches). */
+export function settleDisplay(img: HTMLCanvasElement) {
+  const d = copies.get(img);
+  if (d?.patched) { d.rev = -1; dirty(); }
+}
+/**
+ * Un retoque empieza sobre una copia de la imagen (ver beginPixelEdit): la copia nueva parte de la reducida de la
+ * anterior (es igual), en vez de rehacerla desde la imagen de trabajo. La anterior queda intacta para deshacer.
+ */
+export function inheritDisplay(from: HTMLCanvasElement, to: HTMLCanvasElement) {
+  const d = copies.get(from);
+  if (!d || d.rev !== canvasRevision(from) || copies.has(to)) return;
+  const c = document.createElement('canvas');
+  c.width = d.c.width; c.height = d.c.height;
+  c.getContext('2d')!.drawImage(d.c, 0, 0);
+  copies.set(to, { ...d, c, rev: canvasRevision(to), patched: false });
 }
 
 /* ---------- tiradores ---------- */
@@ -386,6 +437,7 @@ export function render() {
   // la persona de referencia, detrás del papel y de las imágenes
   drawScaleRef(ctx);
   syncScaleRefButton();
+  syncOverlapButton();
   // el papel y las hojas solo cuando el usuario ya hizo algo (cargar una imagen o elegir la distribución):
   // antes, un tamaño que nadie eligió sobra; solo se ven la mesa de puntos y la pantalla de inicio
   if (sheetsVisible()) {
@@ -400,38 +452,54 @@ export function render() {
       ctx.fillStyle = hatch; ctx.fillRect(pt.x, pt.y, pwS + 2 * mS, phS + 2 * mS);
       ctx.fillStyle = '#ffffff'; ctx.fillRect(tl.x, tl.y, pwS, phS);
     }
-    if (editing && checker) { ctx.save(); ctx.translate(tl.x, tl.y); ctx.fillStyle = checker; ctx.fillRect(0, 0, pwS, phS); ctx.restore(); }
+    // borrando no se pinta un cuadriculado de transparencia: el blanco es el papel, y lo borrado deja ver lo que se
+    // imprimirá (lo de debajo o el papel). Lo elegido con la varita se ve teñido (ver wand.ts)
 
     // imágenes: atenuadas fuera del póster, completas dentro
     ctx.setTransform(dpr * V.k, 0, 0, dpr * V.k, dpr * V.ox, dpr * V.oy);
+    const page = { x0: 0, y0: 0, x1: g.W, y1: g.H };
+    const x0 = -V.ox / V.k, y0 = -V.oy / V.k, x1 = x0 + view.CW / V.k, y1 = y0 + view.CH / V.k;
+    const visible: { layer: Layer; source: CanvasImageSource }[] = [];
+    for (const layer of st.layers) {
+      if (layer.hidden || layer === st.editingText) continue;
+      const box = bboxMM(layer), preview = cropping && layer === sel;
+      if (!preview && (box.x1 < x0 || box.x0 > x1 || box.y1 < y0 || box.y0 > y1)) continue;
+      const source = displaySource(layer);
+      if (!editing && !boxInside(box, page)) {
+        ctx.globalAlpha = 0.25; drawLayer(ctx, layer, true, source);
+      }
+      if (preview || (box.x1 >= 0 && box.x0 <= g.W && box.y1 >= 0 && box.y0 <= g.H)) visible.push({ layer, source });
+    }
     if (!editing) {
-      ctx.globalAlpha = 0.25; drawAll(ctx, displaySource);
       if (cropping) { ctx.globalAlpha = 0.35; drawLayer(ctx, sel, false, displaySource(sel)); }
       ctx.globalAlpha = 1;
     }
     ctx.save(); ctx.beginPath(); ctx.rect(0, 0, g.W, g.H); ctx.clip();
     if (!editing) { ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, g.W, g.H); }
-    for (const l of st.layers) {
-      if (l.hidden || l === st.editingText) continue;
-      const src = displaySource(l);
+    for (const { layer: l, source: src } of visible) {
       if (cropping && l === sel) { ctx.globalAlpha = 0.35; drawLayer(ctx, l, false, src); ctx.globalAlpha = 1; }
       drawLayer(ctx, l, true, src);
     }
+    // lo elegido con la varita, teñido encima de su imagen
+    const ws = wandSelection();
+    if (ws) drawLayer(ctx, ws.layer, true, wandOverlay(ws));
     ctx.restore();
 
-    // franjas de solape y líneas discontinuas
+    // franjas de solape y líneas discontinuas (se pueden ocultar; al ajustar el margen o el solape, siempre)
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.fillStyle = C.mark!; ctx.globalAlpha = 0.13;
-    for (let c = 1; c < g.cols; c++) { const a = mm2s({ x: c * (g.tw - g.ov), y: 0 }); ctx.fillRect(a.x, a.y, g.ov * V.k, phS); }
-    for (let r = 1; r < g.rows; r++) { const a = mm2s({ x: 0, y: r * (g.th - g.ov) }); ctx.fillRect(a.x, a.y, pwS, g.ov * V.k); }
-    ctx.globalAlpha = 1; ctx.strokeStyle = C.mark!; ctx.lineWidth = 1; ctx.setLineDash([5, 4]); ctx.beginPath();
-    for (let c = 1; c < g.cols; c++) for (const x of [c * (g.tw - g.ov), c * (g.tw - g.ov) + g.ov]) {
-      const X = Math.round(mm2s({ x, y: 0 }).x) + 0.5; ctx.moveTo(X, tl.y); ctx.lineTo(X, tl.y + phS);
+    if (overlapShown()) {
+      ctx.fillStyle = C.mark!; ctx.globalAlpha = 0.13;
+      for (let c = 1; c < g.cols; c++) { const a = mm2s({ x: c * (g.tw - g.ov), y: 0 }); ctx.fillRect(a.x, a.y, g.ov * V.k, phS); }
+      for (let r = 1; r < g.rows; r++) { const a = mm2s({ x: 0, y: r * (g.th - g.ov) }); ctx.fillRect(a.x, a.y, pwS, g.ov * V.k); }
+      ctx.globalAlpha = 1; ctx.strokeStyle = C.mark!; ctx.lineWidth = 1; ctx.setLineDash([5, 4]); ctx.beginPath();
+      for (let c = 1; c < g.cols; c++) for (const x of [c * (g.tw - g.ov), c * (g.tw - g.ov) + g.ov]) {
+        const X = Math.round(mm2s({ x, y: 0 }).x) + 0.5; ctx.moveTo(X, tl.y); ctx.lineTo(X, tl.y + phS);
+      }
+      for (let r = 1; r < g.rows; r++) for (const y of [r * (g.th - g.ov), r * (g.th - g.ov) + g.ov]) {
+        const Y = Math.round(mm2s({ x: 0, y }).y) + 0.5; ctx.moveTo(tl.x, Y); ctx.lineTo(tl.x + pwS, Y);
+      }
+      ctx.stroke(); ctx.setLineDash([]);
     }
-    for (let r = 1; r < g.rows; r++) for (const y of [r * (g.th - g.ov), r * (g.th - g.ov) + g.ov]) {
-      const Y = Math.round(mm2s({ x: 0, y }).y) + 0.5; ctx.moveTo(tl.x, Y); ctx.lineTo(tl.x + pwS, Y);
-    }
-    ctx.stroke(); ctx.setLineDash([]);
 
     // al ajustar el margen o el solape: el papel entero de cada hoja, para ver cómo encajan y cuánto se pierde.
     // En gris, no en rosa: el rosa es la franja de solape (lo que se imprime dos veces); esto es el borde del papel.
@@ -520,6 +588,7 @@ export function render() {
     ctx.lineWidth = 1; ctx.strokeStyle = '#fff'; ctx.beginPath(); ctx.arc(h.x, h.y, S.brush, 0, Math.PI * 2); ctx.stroke();
   }
   drawBandTip();
+  drawAdjustTip();
   positionBar();
   positionTextEditor();
 }
@@ -531,7 +600,19 @@ export function render() {
  */
 function drawBandTip() {
   if (!st.hoverBand || !st.hover || !sheetsVisible()) return;
-  const t = `Margen sin imprimir · ${Math.round(posterGeo().m)} mm · se recorta`;
+  drawTip(`Margen · ${Math.round(posterGeo().m)} mm`, st.hover, 14);
+}
+
+/** Ajustando el pincel o la tolerancia (Alt + clic derecho y arrastrar): su valor, junto al punto (fuera del círculo). */
+function drawAdjustTip() {
+  const a = st.adjust;
+  if (!a) return;
+  if (a.what === 'brush') drawTip(`Pincel · ${S.brush} px`, a.at, S.brush + 10);
+  else drawTip(`Tolerancia · ${S.tol}`, a.at, 14);
+}
+
+/** Etiqueta junto a un punto (px de pantalla), dx a su derecha y algo por debajo (o encima, si no cabe). */
+function drawTip(t: string, at: Pt, dx: number) {
   ctx.save();
   ctx.setTransform(view.dpr, 0, 0, view.dpr, 0, 0);
   ctx.font = '500 11px "IBM Plex Mono", ui-monospace, monospace';
@@ -539,8 +620,8 @@ function drawBandTip() {
   const w = ctx.measureText(t).width + 14, h = 22;
   // dentro de lo que se ve: sin meterse bajo el panel, la cabecera ni la isla de vista
   const { ins } = view, right = view.CW - ins.r - 6, bottom = view.CH - ins.b - 6;
-  const x = Math.max(ins.l + 6, Math.min(st.hover.x + 14, right - w));
-  const below = st.hover.y + 20, y = below + h <= bottom ? below : Math.max(ins.t + 6, st.hover.y - 12 - h);
+  const x = Math.max(ins.l + 6, Math.min(at.x + dx, right - w));
+  const below = at.y + 20, y = below + h <= bottom ? below : Math.max(ins.t + 6, at.y - 12 - h);
   ctx.fillStyle = C.panel!; ctx.beginPath(); ctx.roundRect(x, y, w, h, 6); ctx.fill();
   ctx.strokeStyle = C.line!; ctx.lineWidth = 1; ctx.stroke();
   ctx.fillStyle = C.fg!; ctx.fillText(t, x + 7, y + h / 2 + 0.5);

@@ -1,6 +1,6 @@
 /**
  * Diseño en todos los tamaños: teléfono (320 y 390), teléfono girado, tableta y escritorio (960 y 1920). Con una
- * imagen seleccionada nada se sale de la pantalla ni se monta sobre otra isla, la barra no esconde botones y las
+ * imagen seleccionada nada se sale de la pantalla ni se monta sobre otra isla, las barras no esconden botones y las
  * ventanas (PDF, Póster, Capas) caben y se abren bajo la cabecera.
  */
 import { expect, test, type Page } from '@playwright/test';
@@ -14,7 +14,7 @@ const SIZES = [
   { name: 'escritorio 960', width: 960, height: 700, touch: false },
   { name: 'escritorio 1920', width: 1920, height: 1080, touch: false },
 ];
-const ISLANDS = ['header', '#tools', '#panelOpeners', '#ctxbar', '#panel'];
+const ISLANDS = ['header', '#tools', '#panelOpeners', '#toolbar', '#ctxbar', '#panel'];
 
 /** Cajas de las islas visibles, si la página tiene scroll horizontal y cuánto desborda la barra. */
 const layout = (page: Page) => page.evaluate((ids) => {
@@ -25,8 +25,8 @@ const layout = (page: Page) => page.evaluate((ids) => {
     const r = e.getBoundingClientRect();
     if (r.width > 1 && r.height > 1) boxes[id] = { x: r.x, y: r.y, r: r.right, b: r.bottom };
   }
-  const bar = document.querySelector<HTMLElement>('#ctxbar')!;
-  return { boxes, hscroll: document.documentElement.scrollWidth > innerWidth, barOverflow: bar.scrollWidth - bar.clientWidth };
+  const over = (id: string) => { const b = document.querySelector<HTMLElement>(id)!; return b.scrollWidth - b.clientWidth; };
+  return { boxes, hscroll: document.documentElement.scrollWidth > innerWidth, barOverflow: Math.max(over('#ctxbar'), over('#toolbar')) };
 }, ISLANDS);
 
 for (const s of SIZES) {

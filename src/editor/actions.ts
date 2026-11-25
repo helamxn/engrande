@@ -2,7 +2,7 @@
 import { MAX_SIDE } from './constants';
 import { figureCanvas, figures } from './figures';
 import { discardTextDraft } from './text/editor';
-import { $, hideToast, toast } from './dom';
+import { $, toast } from './dom';
 import {
   alignShifts, applyFit, bboxMM, conformCrop, cropCenter, distributeShifts, flipOnScreen, keepCenter, mmToLocal,
   canStretch, natRatio, normDeg, rotateLayer, scaleLayer, stretchLayer, unionBox, unstretch, visH, visW, type AlignEdge,
@@ -15,7 +15,7 @@ import { pushUndo, snap, snapSeries, snapWithExport, takeSnap, undo } from './hi
 import { canvasRevision, markCanvasChanged, scheduleSave } from './io/persist';
 import { runJob } from './pixeljobs';
 import type { PixelJob, PixelResult } from './pixels';
-import { dirty } from './render';
+import { dirty, inheritDisplay, patchDisplay } from './render';
 import { DEFAULT_EXPORT, freshLayout, isFreshPoster, posterGeo, S, st, V } from './state';
 import { freeArea, s2mm } from './view';
 import { rich } from './ui/keys';
@@ -50,8 +50,18 @@ export function newLayer(img: HTMLCanvasElement, name: string, extra: Partial<La
     pdf: null, page: 1, pages: 1, src: null as Source | null, fit: null, hidden: false, locked: false, opacity: 1, gpath: [], ...extra,
   };
 }
+/**
+ * Algo nuevo entra en el póster (pegar, cargar, duplicar): se vuelve a Mover, para colocarlo. Seguir con la
+ * herramienta (varita, borrador, recorte) sobre lo nuevo sorprendía: lo elegido se perdía y el siguiente clic editaba
+ * la imagen recién llegada.
+ */
+function leaveTool() {
+  if (S.mode === 'crop') applyCrop();
+  if (S.mode !== 'move') setMode('move');
+}
 /** Coloca una imagen nueva ajustada al póster. Si va desplazada (varias a la vez), queda como colocada a mano. */
 export function addLayer(l: Layer, { factor = 1, offset = 0 } = {}) {
+  leaveTool();
   st.layers.push(l);
   st.sheetsOn = true;
   const fit = { mode: 'contain' as const, scale: factor };
@@ -152,6 +162,7 @@ export function setOpacity(l: Layer | Layer[], v: number) {
 export function hideSelected() {
   const ls = selected();
   if (!ls.length) return;
+  applyCrop();
   snap();
   for (const l of ls) l.hidden = true;
   select(null); scheduleSave();
@@ -161,6 +172,7 @@ export function hideSelected() {
 export function lockSelected() {
   const ls = selected();
   if (!ls.length) return;
+  applyCrop();
   snap();
   for (const l of ls) l.locked = true;
   select(null); scheduleSave();
@@ -170,6 +182,7 @@ export function lockSelected() {
 export function select(l: Layer | null) {
   if (st.sel !== l || st.group.length) duplicateRun = null;
   if (S.mode === 'crop' && l !== st.sel) applyCrop();
+  if (l !== st.sel) st.wandSel = null;
   st.sel = l;
   st.group = [];
   st.hoverL = null;
@@ -296,6 +309,7 @@ export function leaveGroup(l: Layer) {
 export function toggleGroupFlag(gid: number, flag: 'hidden' | 'locked') {
   const ls = groupMembers(gid);
   if (!ls.length) return;
+  if (st.sel && ls.includes(st.sel)) applyCrop();
   snap();
   const on = !ls.every((l) => l[flag]);
   for (const l of ls) l[flag] = on;
@@ -303,7 +317,10 @@ export function toggleGroupFlag(gid: number, flag: 'hidden' | 'locked') {
   afterChange();
   toast(flag === 'hidden' ? (on ? 'Grupo oculto: no se imprimirá' : 'Grupo visible de nuevo') : (on ? 'Grupo bloqueado' : 'Grupo desbloqueado'));
 }
-export const selectAll = () => selectMany(st.layers);
+export function selectAll() {
+  const scope = currentScope();
+  selectMany(scope === null ? st.layers : groupMembers(scope));
+}
 
 /** Desplaza todas las seleccionadas (ya con su paso de deshacer tomado). */
 export function shiftSelected(dx: number, dy: number) {
@@ -374,6 +391,7 @@ function cloneLayers(ls: Layer[], offset: Pt) {
 }
 export function duplicateSelected(ls = copySelection()) {
   if (!ls.length) return;
+  leaveTool();
   snap();
   cloneLayers(ls, duplicateOffset(ls));
   scheduleSave();
@@ -455,19 +473,20 @@ export function setGroupFrame(ls: Layer[], change: { w?: number; h?: number; x?:
 
 /** Un grupo entero se alinea con el póster. Varias unidades se alinean entre sí. */
 export function alignSelected(edge: AlignEdge) {
-  const units = compositionUnits();
-  if (!units.length || st.sel?.locked) return;
+  if (!selected().length || st.sel?.locked || st.sel?.hidden) return;
+  applyCrop();
+  const units = st.alignToPoster ? [selected()] : compositionUnits();
   const boxes = units.map((ls) => unionBox(ls.map(bboxMM)));
   const g = posterGeo();
   const target = units.length === 1 ? { x0: 0, y0: 0, x1: g.W, y1: g.H } : undefined;
   if (!placeUnits(units, alignShifts(boxes, edge, target))) toast('La selección ya está alineada');
 }
 /** Reparte las seleccionadas (3 o más) con el mismo espacio entre ellas. */
-export function distributeSelected(axis: 'x' | 'y') {
+export function distributeSelected(axis: 'x' | 'y', gap?: number) {
   const units = compositionUnits();
-  if (units.length < 3) return;
+  if (units.length < (gap === undefined ? 3 : 2)) return;
   const boxes = units.map((ls) => unionBox(ls.map(bboxMM)));
-  if (!placeUnits(units, distributeShifts(boxes, axis))) toast('La separación ya es uniforme');
+  if (!placeUnits(units, distributeShifts(boxes, axis, gap))) toast('La separación ya es uniforme');
 }
 
 /**
@@ -499,7 +518,7 @@ export function newPoster() {
 }
 export function afterHistory() {
   duplicateRun = null;
-  if (!st.sel && S.mode !== 'move') setMode('move');
+  if (S.mode !== 'move' && (!st.sel || st.sel.hidden || st.sel.locked || isTextLayer(st.sel))) setMode('move');
   layoutRestored();
   syncExportUI();
   renderList(); syncSel(); renderBar(); dirty();
@@ -542,6 +561,7 @@ export function copyLayer(l: Layer) { toClip([l]); st.clipN = 0; toast(`«${l.na
 export function pasteLayer(inPlace = false) {
   const clip = st.clip;
   if (!clip?.length) return false;
+  leaveTool();
   snap();
   const n = inPlace ? 0 : ++st.clipN;
   const scope = pathExists(st.layers, st.clipScope) ? st.clipScope : [];
@@ -576,21 +596,37 @@ export const tx = (fn: (l: Layer) => void) => () => {
   const l = st.sel;
   if (!l) return;
   if (l.locked) { toast(LOCKED_MSG); return; }
-  snap(); fn(l); afterChange();
+  applyCrop(); snap(); fn(l); afterChange();
 };
-export const rotate90 = (dir: 1 | -1) => tx((l) => { rotateLayer(l, 90 * dir, cropCenter(l)); markManual(l); });
+function aroundSelection(fn: (layer: Layer, pivot: Pt) => void) {
+  return () => {
+    const layers = selected();
+    if (!layers.length || layers.some(l => l.hidden)) return;
+    if (layers.some(l => l.locked)) { toast(LOCKED_MSG); return; }
+    applyCrop();
+    const box = unionBox(layers.map(bboxMM));
+    const pivot = { x: (box.x0 + box.x1) / 2, y: (box.y0 + box.y1) / 2 };
+    snap();
+    for (const l of layers) fn(l, pivot);
+    afterChange();
+  };
+}
+export const rotate90 = (dir: 1 | -1) => aroundSelection((l, pivot) => { rotateLayer(l, 90 * dir, pivot); markManual(l); });
 /** Espejo horizontal o vertical tal como se ve en pantalla (también con la imagen girada). */
-export const flip = (axis: 'x' | 'y') => tx((l) => flipOnScreen(l, axis));
+export const flip = (axis: 'x' | 'y') => aroundSelection((l, pivot) => {
+  flipOnScreen(l, axis, pivot);
+  if (st.group.length) markManual(l);
+});
 export const fitSel = (mode: FitMode) => tx((l) => { l.fit = { mode, scale: 1 }; applyFit(l, l.fit, posterGeo()); });
 export const centerSel = tx((l) => { const g = posterGeo(), c = cropCenter(l); l.cx += g.W / 2 - c.x; l.cy += g.H / 2 - c.y; });
 export const unstretchSel = tx((l) => { unstretch(l); markManual(l); });
 
 /* ---------- modos ---------- */
 const cropGeometry = (l: Layer) => ({ crop: { ...l.crop }, cx: l.cx, cy: l.cy, w: l.w, h: l.h, fit: l.fit && { ...l.fit } });
-let cropSession: { layer: Layer; before: ReturnType<typeof cropGeometry> } | null = null;
 const cursorFor = (m: Mode) => (m === 'wand' ? 'crosshair' : m === 'erase' ? 'none' : 'default');
 
 export function setMode(m: Mode) {
+  st.wandSel = null;
   if (S.mode === 'crop' && m !== 'crop') applyCrop();
   if (m === 'crop') { enterCrop(); return; }
   if (m !== 'move' && !st.sel) { toast('Primero selecciona una imagen'); return; }
@@ -602,33 +638,36 @@ export function setMode(m: Mode) {
   st.hoverL = null;
   renderBar(); dirty();
 }
+/** Borrar o restaurar con el pincel del borrador; sin argumento, cambia al otro (tecla X). */
+export function setBrushMode(m: 'erase' | 'restore' = S.brushMode === 'erase' ? 'restore' : 'erase') {
+  S.brushMode = m;
+  renderBar(); dirty();
+}
 export function enterCrop() {
   if (!st.sel || S.mode === 'crop') return;
   if (st.sel.hidden) { toast('La imagen está oculta. Muéstrala para recortarla.'); return; }
   if (st.sel.locked) { toast(LOCKED_MSG); return; }
   if (isTextLayer(st.sel)) { toast(TEXT_NO_PIXELS); return; }
   S.cropRatio = null; S.cropRatioKey = 'null'; cropRef = null;
-  cropSession = { layer: st.sel, before: cropGeometry(st.sel) };
+  st.cropSession = { layer: st.sel, before: cropGeometry(st.sel) };
   S.mode = 'crop';
   $('#cv').style.cursor = 'default';
   renderBar(); dirty();
 }
 export function applyCrop() {
   if (S.mode !== 'crop') return;
-  const s = cropSession, sel = st.sel;
-  cropSession = null; S.mode = 'move';
+  const s = st.cropSession, sel = st.sel;
   if (s && sel === s.layer && JSON.stringify(s.before) !== JSON.stringify(cropGeometry(sel))) {
-    const snapshot = takeSnap();
-    Object.assign(snapshot.props.find((p) => p.l === sel)!, s.before);
-    pushUndo(snapshot);
+    snap();
     markManual(sel);
   }
+  st.cropSession = null; S.mode = 'move';
   renderBar(); afterChange();
 }
 export function cancelCrop() {
   if (S.mode !== 'crop') return;
-  if (cropSession) Object.assign(cropSession.layer, cropSession.before);
-  cropSession = null; S.mode = 'move';
+  if (st.cropSession) Object.assign(st.cropSession.layer, st.cropSession.before);
+  st.cropSession = null; S.mode = 'move';
   renderBar(); afterChange();
 }
 /**
@@ -649,12 +688,12 @@ export function setCropRatio(key: string) {
 }
 
 /* ---------- edición de píxeles ---------- */
-const mmToPx = (l: Layer, m: Pt) => {
+export const mmToPx = (l: Layer, m: Pt) => {
   const q = mmToLocal(l, m);
   return { x: q.u * l.img.width, y: q.v * l.img.height };
 };
 /** Guarda el paso de deshacer y trabaja sobre una copia del lienzo (el anterior queda en el historial). */
-export function beginPixelEdit(l: Layer) { snap(); l.img = cloneCanvas(l.img); }
+export function beginPixelEdit(l: Layer) { snap(); const prev = l.img; l.img = cloneCanvas(prev); inheritDisplay(prev, l.img); }
 
 /** Trazo circular en pantalla incluso si se estiró una sola dimensión de la capa. */
 function brushStroke(c: CanvasRenderingContext2D, a: Pt, b: Pt, radius: Pt) {
@@ -692,7 +731,13 @@ export function paint(l: Layer, a: Pt, b: Pt) {
     restoreStroke(l, c, pa, pb, radius);
   }
   c.restore();
+  // solo cambió lo que toca el pincel: la copia de pantalla se pone al día solo ahí
+  const rev = canvasRevision(l.img);
   markCanvasChanged(l.img);
+  patchDisplay(l.img, {
+    x0: Math.min(pa.x, pb.x) - radius.x - 2, y0: Math.min(pa.y, pb.y) - radius.y - 2,
+    x1: Math.max(pa.x, pb.x) + radius.x + 2, y1: Math.max(pa.y, pb.y) + radius.y + 2,
+  }, rev);
   dirty();
 }
 
@@ -721,13 +766,15 @@ function restoreStroke(l: Layer, c: CanvasRenderingContext2D, pa: Pt, pb: Pt, r:
   if (bw <= 0 || bh <= 0) return;
   // máscara: los círculos del pincel a lo largo del segmento (con borde suave)
   maskCanvas = scratchCanvas(maskCanvas, bw, bh);
-  const m = maskCanvas.getContext('2d')!;
+  // en memoria, como la imagen de trabajo: mezclar un lienzo de la tarjeta gráfica con ella obligaba a leerlo de vuelta
+  // en cada movimiento (~30 ms)
+  const m = maskCanvas.getContext('2d', { willReadFrequently: true })!;
   m.globalCompositeOperation = 'source-over';
   m.clearRect(0, 0, bw, bh);
   brushStroke(m, { x: pa.x - x0, y: pa.y - y0 }, { x: pb.x - x0, y: pb.y - y0 }, r);
   // original × cobertura
   origCanvas = scratchCanvas(origCanvas, bw, bh);
-  const o = origCanvas.getContext('2d')!;
+  const o = origCanvas.getContext('2d', { willReadFrequently: true })!;
   o.globalCompositeOperation = 'copy';
   o.drawImage(l.orig, x0, y0, bw, bh, 0, 0, bw, bh);
   o.globalCompositeOperation = 'destination-in';
@@ -747,7 +794,7 @@ let pixelBusy = false;
  * Ejecuta la tarea en el worker y, si borró algo, la aplica como un paso de deshacer sobre un lienzo nuevo
  * (el anterior queda en el historial). Si mientras tanto la imagen cambió, el resultado se descarta.
  */
-async function applyPixelJob(l: Layer, job: PixelJob, busyMsg: string): Promise<PixelResult | null> {
+export async function applyPixelJob(l: Layer, job: PixelJob, busyMsg: string): Promise<PixelResult | null> {
   if (l.locked || l.hidden || isTextLayer(l)) return null;
   if (pixelBusy) { toast('Espera a que termine el proceso anterior…'); return null; }
   pixelBusy = true;
@@ -784,17 +831,6 @@ async function applyPixelJob(l: Layer, job: PixelJob, busyMsg: string): Promise<
     cv.removeAttribute('aria-busy');
   }
 }
-export async function wandAt(p: Pt) {
-  const l = st.sel;
-  if (!l) return;
-  const q = mmToPx(l, s2mm(p)), x = Math.floor(q.x), y = Math.floor(q.y), w = l.img.width;
-  if (x < 0 || y < 0 || x >= w || y >= l.img.height) { toast('Elige un punto dentro de la imagen seleccionada'); return; }
-  const px = l.img.getContext('2d', { willReadFrequently: true })!.getImageData(x, y, 1, 1).data;
-  if (px[3] === 0) { toast('Esa zona ya está vacía'); return; }
-  const r = await applyPixelJob(l, { kind: 'wand', seeds: [y * w + x], ref: [px[0]!, px[1]!, px[2]!], tol: S.tol, contig: S.contig }, 'Borrando color…');
-  if (r && !r.removed) toast('Nada que borrar con esta tolerancia. Súbela un poco.');
-  else if (r) hideToast();
-}
 /** Quita el fondo uniforme tomando como referencia el color mediano de las cuatro esquinas. */
 export async function autoBackground() {
   const l = st.sel;
@@ -809,10 +845,12 @@ export async function autoBackground() {
 export function resetOriginal(l: Layer) {
   if (l.locked) { toast(LOCKED_MSG); return; }
   if (isTextLayer(l)) return;
-  beginPixelEdit(l);
-  const c = l.img.getContext('2d')!;
-  c.clearRect(0, 0, l.img.width, l.img.height); c.drawImage(l.orig, 0, 0);
-  markCanvasChanged(l.img);
+  applyCrop();
+  const k = l.crop;
+  if (l.img === l.orig && !l.flipX && !l.flipY && k.x0 === 0 && k.y0 === 0 && k.x1 === 1 && k.y1 === 1 &&
+      Math.abs(l.h - l.w * natRatio(l)) < 1e-6) { toast('La imagen ya está en su estado original'); return; }
+  snap();
+  l.img = l.orig;
   keepCenter(l, (x) => { x.crop = { x0: 0, y0: 0, x1: 1, y1: 1 }; x.h = x.w * natRatio(x); x.flipX = false; x.flipY = false; });
   markManual(l);
   afterChange();

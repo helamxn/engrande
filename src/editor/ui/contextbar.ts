@@ -1,207 +1,256 @@
 /**
- * Barra de acciones fija arriba a la izquierda, bajo la cabecera, solo con iconos (su nombre, en el título). Siempre
- * empieza con «＋ Agregar ▾» en el mismo punto (imagen o PDF, texto, pegar); a su lado, las órdenes de lo seleccionado
- * (una capa o varias) o los controles de la herramienta activa (recorte, borrador, varita, colocar un texto).
- * Las propiedades (tamaño, giro, opacidad, alinear…) están en la pestaña Selección del panel.
- * Nada se desplaza escondido: en pantallas estrechas, lo que no cabe va al menú «Más».
+ * Las dos barras de abajo, solo con iconos (su nombre, en el título):
+ * - la de herramientas (#toolbar, en Workspace.astro), abajo en el centro y siempre en el mismo sitio: Mover,
+ *   Texto y Forma; Recortar, Borrador, Varita y Quitar fondo, que se apagan sin una imagen seleccionada; y al final
+ *   «Opciones del póster» (⋮), las de la página, haya algo seleccionado o no;
+ * - la de opciones (#ctxbar), justo encima y solo cuando hace falta: los controles de la herramienta activa
+ *   (recorte, borrador, varita, colocar un texto) o «Editar texto».
+ * Las propiedades (tamaño, giro, opacidad, alinear…) y las órdenes de lo seleccionado (orden de capas, duplicar,
+ * agrupar, eliminar) están en el panel de la selección.
+ * Nada se desplaza escondido: en pantallas estrechas, lo que no cabe va al menú de la imagen.
  */
-import {
-  applyCrop, autoBackground, cancelCrop, duplicateSelected, enterCrop, groupSelected, removeLayer, removeSelected,
-  selectedGroup, setCropRatio, setMode, toggleLocked, ungroupSelected,
-} from '../actions';
+import { applyCrop, autoBackground, cancelCrop, setBrushMode, setCropRatio, setMode, toggleLocked } from '../actions';
 import { RATIOS } from '../constants';
-import { $ } from '../dom';
-import { DELK, deskMQ, dockMQ, isTouch, MOD, SHIFT } from '../platform';
+import { $, $$ } from '../dom';
+import { deskMQ, dockMQ, isTouch } from '../platform';
 import { dirty } from '../render';
 import { S, st, view } from '../state';
 import { ICON, type IconName } from './icons';
-import { addMenu, groupMenu, layerMenu, openMenu, ratioMenu } from './menu';
+import { emptyMenu, openMenu, ratioMenu, shapeMenu } from './menu';
+import { placeStatusRow, sheetPeek } from './layout';
 import { updateHint } from './panel';
-import { cancelTextPlacement, editText } from '../text/editor';
+import { cancelTextPlacement, editText, startTextPlacement } from '../text/editor';
 import { isText } from '../text/text';
+import type { Mode } from '../types';
+import type { MaskOp } from '../pixels';
+import { invertWandSelection, retuneWand, wandSelection } from '../wand';
 
 let bar: HTMLElement;
+let tools: HTMLElement;
 
-/** Botón de la barra. opt: la etiqueta solo se ve en la barra acoplada (móvil). cls «dw»: solo si la barra acoplada tiene sitio. */
+/** Botón de la barra. opt: la etiqueta solo se ve en la barra acoplada (móvil). */
 function tb(icon: IconName | null, label: string, act: string, title = label, cls = '', opt = false) {
   const lab = label ? `<span${opt ? ' class="opt"' : ''}>${label}</span>` : '';
   return `<button type="button" class="tb ${cls}" data-act="${act}" title="${title}" aria-label="${title}">${icon ? ICON[icon] : ''}${lab}</button>`;
 }
 const SEP = '<span class="sep"></span>';
-/** Separador que solo se ve junto a botones «dw» (barra acoplada con sitio). */
-const SEP_DW = '<span class="sep dw"></span>';
 
-/**
- * «＋ Agregar ▾»: siempre el primero, en el mismo punto. Con una herramienta activa se apaga (no se mueve); mientras
- * se elige dónde poner un texto, se ve marcado.
- */
-const addBtn = () =>
-  `<button type="button" class="tb" data-act="add" aria-haspopup="menu" title="Agregar imagen, PDF, texto o forma, o pegar" aria-label="Agregar"`
-  + `${st.placingText ? ' aria-pressed="true"' : ''}${S.mode !== 'move' ? ' disabled' : ''}>`
-  + `${ICON.plus}<span>Agregar</span>${ICON.chevronDown.replace('class="', 'class="chev ')}</button>`;
+/* ---------- barra de herramientas ---------- */
 
-/** Eligiendo dónde va un texto: en el móvil (sin pista) lo dice la barra; Cancelar en los dos. */
-const placingBar = (docked: boolean) =>
-  (docked ? `<span class="mini">${isTouch() ? 'Toca' : 'Haz clic'} donde quieras el texto</span>` : '')
-  + tb('x', 'Cancelar', 'cancelText', 'Cancelar (Esc)');
+/** Las herramientas de píxeles (recortar, borrador, varita) necesitan una sola imagen a la vista, sin bloquear. */
+const editable = () => !!st.sel && st.group.length < 2 && !st.sel.hidden && !st.sel.locked && !isText(st.sel);
 
-/** Varias capas: las órdenes (agrupar, duplicar, quitar); alinear, repartir, ocultar y bloquear son propiedades del panel. */
-function groupBar(docked: boolean) {
-  const whole = selectedGroup() != null;
-  return tb(whole ? 'ungroup' : 'group', whole ? 'Desagrupar' : 'Agrupar', 'groupToggle', whole ? `Desagrupar (${MOD}${SHIFT}G)` : `Agrupar (${MOD}G)`)
-    + tb('dup', 'Duplicar', 'dupSel', `Duplicar (${MOD}D)`)
-    + SEP + tb('more', 'Más', 'moreGroup', docked ? 'Más opciones: alinear, quitar…' : 'Más opciones (clic derecho)', '', true)
-    + (docked ? '' : tb('del', 'Quitar', 'delSel', `Quitar del póster (${DELK})`, 'danger', true));
-}
-
-/**
- * Barra acoplada abajo (móvil o táctil): no cabe todo en un teléfono. Se queda lo principal a la vista y el resto
- * pasa al menú «Más» (que incluye Quitar, lejos del pulgar); la Varita, solo si hay sitio (clase dw, ver global.css;
- * si no, está en Más › Borrar zonas).
- */
-function dockBar(): string {
-  if (st.sel?.locked) return `<span class="mini">${ICON.lock} Bloqueada</span>${SEP}` + tb('lockOpen', 'Desbloquear', 'unlock') + tb('more', 'Más', 'more', 'Más opciones');
-  switch (S.mode) {
-    case 'move':
-      return (isText(st.sel) ? tb('text', 'Editar texto', 'editText')
-        : tb('crop', 'Recortar', 'crop') + tb('bg', 'Quitar fondo', 'autobg') + tb('erase', 'Borrador', 'erase') + tb('wand', 'Varita', 'wand', 'Varita', 'dw'))
-        + SEP + tb('more', 'Más', 'more', 'Más opciones: girar, voltear, duplicar, quitar…');
-    case 'crop': {
-      const cur = RATIOS.find(([, r]) => String(r) === S.cropRatioKey)?.[0] ?? 'Libre';
-      return tb('crop', cur, 'ratioMenu', 'Proporción del recorte') + SEP
-        + tb('x', 'Cancelar', 'cancelCrop') + tb('check', 'Aplicar', 'applyCrop', 'Aplicar', 'primary');
-    }
-    case 'erase':
-      return `<button type="button" class="tb" data-act="bm" data-m="erase" aria-pressed="${S.brushMode === 'erase'}">${ICON.erase}<span>Borrar</span></button>`
-        + `<button type="button" class="tb" data-act="bm" data-m="restore" aria-pressed="${S.brushMode === 'restore'}">${ICON.restore}<span>Restaurar</span></button>`
-        + `${SEP}<label class="mini"><input type="range" id="bBrush" aria-label="Tamaño del pincel" min="${BRUSH_MIN}" max="${BRUSH_MAX}" value="${S.brush}"><output id="bBrushOut">${S.brush} px</output></label>`
-        + SEP + tb('check', 'Listo', 'done', 'Listo', 'primary');
-    case 'wand':
-      return `<label class="mini"><input type="range" id="bTol" aria-label="Tolerancia" min="5" max="140" value="${S.tol}"><output id="bTolOut">${S.tol}</output></label>`
-        + `<label class="mini"><input type="checkbox" id="bContig" ${S.contig ? 'checked' : ''}> Solo zona</label>`
-        + SEP_DW + tb('bg', 'Quitar fondo', 'autobg', 'Quitar el fondo', 'dw') + SEP + tb('check', 'Listo', 'done', 'Listo', 'primary');
+/** Marca la herramienta activa y apaga las que no se pueden usar ahora. */
+function syncToolbar() {
+  const can = editable();
+  for (const b of $$<HTMLButtonElement>('#toolbar [data-tool]')) {
+    const t = b.dataset.tool!;
+    if (t === 'bg') { b.disabled = !can || S.mode === 'crop'; continue; }
+    if (t === 'shape' || t === 'more') continue;
+    const on = t === 'move' ? S.mode === 'move' && !st.placingText : t === 'text' ? st.placingText : S.mode === t;
+    b.setAttribute('aria-pressed', String(on));
+    if (t === 'crop' || t === 'erase' || t === 'wand') b.disabled = !can && !on;
   }
 }
 
-/** Escritorio: una capa seleccionada (o su herramienta activa). */
-function deskBar(): string {
+/** Pulsar una herramienta: la activa; pulsar la que ya está activa vuelve a Mover (como «Listo»). */
+function pickTool(b: HTMLButtonElement) {
+  const t = b.dataset.tool!;
+  const y = tools.getBoundingClientRect().top - 6, x = b.getBoundingClientRect().left; // los menús, hacia arriba
+  // «Opciones del póster»: las de la página (las del clic derecho en el fondo), no las de lo seleccionado
+  if (t === 'more') {
+    if (S.mode === 'crop') applyCrop();
+    openMenu(x, y, emptyMenu());
+    return;
+  }
+  if (t === 'shape') {
+    if (S.mode !== 'move') setMode('move');
+    cancelTextPlacement();
+    openMenu(x, y, shapeMenu());
+    return;
+  }
+  if (t === 'text') { startTextPlacement(); return; } // si ya se estaba colocando, lo cancela
+  if (t === 'bg') { cancelTextPlacement(); void autoBackground(); return; }
+  cancelTextPlacement();
+  setMode(t === 'move' || S.mode === t ? 'move' : (t as Mode));
+}
+
+/* ---------- barra de opciones ---------- */
+
+/**
+ * Eligiendo dónde va un texto: en el móvil (sin pista) lo dice la barra; en escritorio, la línea de estado. Sin
+ * Cancelar: Texto queda marcado en la barra de herramientas y pulsarlo otra vez (o Esc) lo cancela.
+ */
+const placingBar = (docked: boolean) =>
+  docked ? `<span class="mini">${isTouch() ? 'Toca' : 'Haz clic'} donde quieras el texto</span>` : '';
+
+/** Botones Borrar y Restaurar del borrador (X cambia entre los dos). */
+const brushModes = () =>
+  `<button type="button" class="tb" data-act="bm" data-m="erase" title="Borrar (X: cambiar a Restaurar)" aria-pressed="${S.brushMode === 'erase'}">${ICON.erase}<span>Borrar</span></button>`
+  + `<button type="button" class="tb" data-act="bm" data-m="restore" title="Restaurar lo borrado (X: cambiar a Borrar)" aria-pressed="${S.brushMode === 'restore'}">${ICON.restore}<span>Restaurar</span></button>`;
+
+/**
+ * Una capa seleccionada (o su herramienta activa); lo demás, en su menú (clic derecho, pulsación larga o «Más
+ * opciones» de su fila en Capas). Acoplada (móvil o táctil): los deslizadores llevan su nombre solo para lectores de
+ * pantalla.
+ */
+function layerBar(docked: boolean): string {
   // bloqueada: nada se puede editar; solo desbloquear o el menú
   if (st.sel?.locked) {
-    return `<span class="mini">${ICON.lock} Bloqueada</span>` + SEP + tb('lockOpen', 'Desbloquear', 'unlock')
-      + tb('more', 'Más', 'more', 'Más opciones (clic derecho)', '', true);
+    return `<span class="mini">${ICON.lock} Bloqueada</span>` + SEP + tb('lockOpen', 'Desbloquear', 'unlock');
   }
+  const done = tb('check', 'Listo', 'done', docked ? 'Listo' : 'Listo (Esc)', 'primary');
   switch (S.mode) {
     case 'move':
-      // girar y voltear están junto a la rotación, en la pestaña Selección (y en Más, R y H)
-      return (isText(st.sel) ? tb('text', 'Editar texto', 'editText', 'Editar el texto (doble clic o Enter)')
-        : tb('crop', 'Recortar', 'crop', 'Recortar (doble clic)') + tb('bg', 'Quitar fondo', 'autobg', 'Quitar el fondo (si es de un color)')
-        + tb('erase', 'Borrador', 'erase', 'Borrador: borra o recupera a mano (E)') + tb('wand', 'Varita', 'wand', 'Varita: borra un color (W)'))
-        + SEP + tb('more', 'Más', 'more', 'Más opciones (clic derecho)', '', true) + tb('del', 'Quitar', 'delete', `Quitar del póster (${DELK})`, 'danger', true);
-    case 'crop':
+      // las herramientas están en la barra de abajo; girar y voltear, junto a la rotación (pestaña Selección, Más, R y H)
+      // Quitar fondo está en la barra de herramientas, con las otras herramientas de la imagen
+      // duplicar, agrupar, eliminar y el orden están en la fila de acciones del panel de la selección
+      return isText(st.sel) ? tb('text', 'Editar texto', 'editText', docked ? 'Editar texto' : 'Editar el texto (doble clic o Enter)') : '';
+    case 'crop': {
+      if (docked) {
+        const cur = RATIOS.find(([, r]) => String(r) === S.cropRatioKey)?.[0] ?? 'Libre';
+        return tb('crop', cur, 'ratioMenu', 'Proporción del recorte') + SEP
+          + tb('x', 'Cancelar', 'cancelCrop') + tb('check', 'Aplicar', 'applyCrop', 'Aplicar', 'primary');
+      }
       return RATIOS.map(([t, r]) => `<button type="button" class="tb ratio" data-act="ratio" data-r="${String(r)}" aria-pressed="${S.cropRatioKey === String(r)}">${t}</button>`).join('')
         + SEP + tb('x', 'Cancelar', 'cancelCrop', 'Cancelar (Esc)') + tb('check', 'Aplicar', 'applyCrop', 'Aplicar (Enter)', 'primary');
+    }
     case 'erase':
-      return `<button type="button" class="tb" data-act="bm" data-m="erase" aria-pressed="${S.brushMode === 'erase'}">${ICON.erase}<span>Borrar</span></button>`
-        + `<button type="button" class="tb" data-act="bm" data-m="restore" aria-pressed="${S.brushMode === 'restore'}">${ICON.restore}<span>Restaurar</span></button>`
-        + `${SEP}<label class="mini">Pincel <input type="range" id="bBrush" min="${BRUSH_MIN}" max="${BRUSH_MAX}" value="${S.brush}"><output id="bBrushOut">${S.brush} px</output></label>`
-        + SEP + tb('check', 'Listo', 'done', 'Listo (Esc)', 'primary');
-    case 'wand':
-      return `<label class="mini">Tolerancia <input type="range" id="bTol" min="5" max="140" value="${S.tol}"><output id="bTolOut">${S.tol}</output></label>`
-        + `<label class="mini"><input type="checkbox" id="bContig" ${S.contig ? 'checked' : ''}> Solo zona tocada</label>`
-        + SEP + tb('bg', 'Quitar fondo', 'autobg', 'Quitar el fondo (si es de un color)') + tb('check', 'Listo', 'done', 'Listo (Esc)', 'primary');
+      return brushModes()
+        + `${SEP}<label class="mini" title="Tamaño del pincel: Alt + arrastrar con clic derecho, o [ ] , .">${docked ? '' : 'Pincel '}<input type="range" id="bBrush" aria-label="Tamaño del pincel" min="${BRUSH_MIN}" max="${BRUSH_MAX}" value="${S.brush}"><output id="bBrushOut">${S.brush} px</output></label>`
+        + SEP + done;
+    case 'wand': {
+      // cómo se junta cada clic con lo elegido (en escritorio también con Shift y Alt) y, con algo elegido, qué hacer
+      const op = (m: MaskOp, icon: IconName, label: string, keys: string) =>
+        `<button type="button" class="tb" data-act="wop" data-op="${m}" title="${label}${docked ? '' : ` (${keys})`}" aria-label="${label}" aria-pressed="${st.wandOp === m}">${ICON[icon]}<span>${label}</span></button>`;
+      const has = !!wandSelection();
+      return `<label class="mini" title="Tolerancia: Alt + arrastrar con clic derecho, o [ ] , .">${docked ? '' : 'Tolerancia '}<input type="range" id="bTol" aria-label="Tolerancia" min="${TOL_MIN}" max="${TOL_MAX}" value="${S.tol}"><output id="bTolOut">${S.tol}</output></label>`
+        + `<label class="mini"><input type="checkbox" id="bContig" ${S.contig ? 'checked' : ''}> ${docked ? 'Solo zona' : 'Solo zona tocada'}</label>`
+        + SEP + op('new', 'selNew', 'Nueva zona', 'clic') + op('add', 'selAdd', 'Sumar zona', 'Shift + clic') + op('sub', 'selSub', 'Restar zona', 'Alt + clic')
+        + (has ? SEP + tb('invert', 'Invertir', 'wInvert', 'Invertir lo elegido') : '')
+        + SEP + done;
+    }
   }
 }
 
 export function renderBar() {
   const docked = !!dockMQ?.matches;
-  const group = st.group.length > 1 && S.mode === 'move';
-  const one = !group && !!st.sel && !st.sel.hidden;
-  const ctx = st.placingText ? placingBar(docked) : group ? groupBar(docked) : one ? (docked ? dockBar() : deskBar()) : '';
-  bar.innerHTML = addBtn() + (ctx ? SEP + ctx : ''); // solo constantes y números: sin datos del usuario
-  bar.hidden = false;
+  // varias seleccionadas: sus órdenes están en el panel de la selección (sin barra)
+  const one = st.group.length < 2 && !!st.sel && !st.sel.hidden;
+  const ctx = st.placingText ? placingBar(docked) : one ? layerBar(docked) : '';
+  bar.innerHTML = ctx; // solo constantes y números: sin datos del usuario
+  bar.hidden = !ctx;
   bar.querySelector<HTMLInputElement>('#bBrush')?.addEventListener('input', (e) => {
     setBrush(+(e.target as HTMLInputElement).value);
     st.hover = { x: view.CW / 2, y: view.CH / 2 };
   });
-  bar.querySelector<HTMLInputElement>('#bTol')?.addEventListener('input', (e) => {
-    S.tol = +(e.target as HTMLInputElement).value;
-    $('#bTolOut').textContent = String(S.tol);
-  });
-  bar.querySelector<HTMLInputElement>('#bContig')?.addEventListener('change', (e) => { S.contig = (e.target as HTMLInputElement).checked; });
+  bar.querySelector<HTMLInputElement>('#bTol')?.addEventListener('input', (e) => setTol(+(e.target as HTMLInputElement).value));
+  bar.querySelector<HTMLInputElement>('#bContig')?.addEventListener('change', (e) => { S.contig = (e.target as HTMLInputElement).checked; retuneWand(); });
+  syncToolbar();
   updateHint();
-  fitKey = ''; // contenido nuevo: se vuelve a medir
+  posKey = ''; // contenido nuevo: se vuelve a medir
   positionBar();
 }
 
-/** Lo que decide cómo encaja la fila de abajo: si cambia, se vuelve a medir (ver fitBar). */
-let fitKey = '';
-/** Coloca la barra (corre en cada fotograma: solo mide si cambió el sitio o el contenido). */
-export function positionBar() {
-  if (!bar || bar.hidden) return;
-  const docked = !!dockMQ?.matches;
-  if (bar.classList.contains('dock') !== docked) bar.classList.toggle('dock', docked);
-  // el ancho del lienzo y del panel
-  const key = `${view.CW}|${view.ins.r}|${docked}`;
-  if (key !== fitKey) { fitKey = key; fitBar(); }
-  // la línea de estado: solo con ratón y con la isla de vista abajo (escritorio)
-  $('#hint').hidden = docked || !deskMQ?.matches;
-  // fija arriba a la izquierda, bajo la cabecera y alineada con ella, siempre en el mismo punto
-  bar.style.left = `${Math.round($('#topbar').getBoundingClientRect().left)}px`;
-  bar.style.top = `${barTop()}px`;
-  bar.style.bottom = '';
-}
-/** La barra va 8 px por debajo de la cabecera (en coordenadas del lienzo). */
-export const barTop = () => Math.round($('#topbar').getBoundingClientRect().bottom - $('#stage').getBoundingClientRect().top + 8);
+/* ---------- posición ---------- */
 
-/** Que la barra no pase bajo el panel de la selección (se mide al cambiar la ventana o el panel). */
-export function fitBar() {
-  if (!bar || bar.hidden || !view.CW) return;
-  bar.style.maxWidth = `${Math.max(120, view.CW - view.ins.r - 2 * EDGE)}px`;
-}
-/** Margen de la barra con el borde de la ventana, el mismo que el de la cabecera (left-3). */
+/** Margen de las barras con el borde de la ventana, el mismo que el de la cabecera (left-3). */
 const EDGE = 12;
+/** Lo que decide dónde van las barras: si cambia, se vuelve a medir. */
+let posKey = '';
+
+/**
+ * Coloca las dos barras (corre en cada fotograma: solo mide si cambió el sitio o el contenido).
+ * - Herramientas: centrada abajo, a la altura de la isla de vista (escritorio) o sobre el panel inferior (móvil):
+ *   sube con él cuando se abre a media altura; abierto del todo, las tapa. En escritorio no pisa el tamaño del póster
+ *   (a la izquierda) ni la isla de vista (a la derecha): si centrada los tocaría, se corre hacia el hueco libre.
+ * - Opciones: centrada encima, sin pasar bajo el panel de la selección.
+ */
+export function positionBar() {
+  if (!bar || !tools) return;
+  const docked = !!dockMQ?.matches, desk = !!deskMQ?.matches;
+  if (bar.classList.contains('dock') !== docked) bar.classList.toggle('dock', docked);
+  // la línea de estado: solo con ratón y con la isla de vista abajo (escritorio)
+  $('#hint').hidden = docked || !desk;
+  // alto del panel inferior (móvil): el que va a tener, para que las barras suban a la vez que él
+  const sheetH = desk ? 0 : parseFloat(document.documentElement.style.getPropertyValue('--sheet-h')) || 0;
+  const size = $('#posterSize');
+  const key = `${view.CW}|${view.CH}|${view.ins.r}|${docked}|${desk}|${bar.hidden}|${sheetH}|${size.hidden}|${size.textContent}`;
+  if (key === posKey) return;
+  posKey = key;
+  const s = $('#stage').getBoundingClientRect(), tw = tools.offsetWidth, th = tools.offsetHeight;
+  let bottom = EDGE, left = Math.round((s.width - tw) / 2);
+  if (desk) {
+    const max = Math.round($('#tools').getBoundingClientRect().left - s.left - 8 - tw);
+    const sr = size.getBoundingClientRect(), min = sr.width ? Math.round(sr.right - s.left + 8) : EDGE;
+    left = Math.min(Math.max(left, min), max);
+  } else {
+    const peek = sheetPeek(), above = Math.max(peek, sheetH) + 8;
+    // si encima del panel no caben las dos barras bajo la cabecera, se quedan sobre sus pestañas (el panel las tapa)
+    const need = th + (bar.hidden ? 0 : 8 + bar.offsetHeight);
+    bottom = above + need <= s.height - view.fit.t - 8 ? above : peek + 8;
+  }
+  left = tw <= s.width - 2 * EDGE ? Math.max(EDGE, left) : Math.max(0, Math.round((s.width - tw) / 2));
+  tools.style.left = `${left}px`;
+  tools.style.bottom = `${bottom}px`;
+  placeStatusRow(); // el tamaño del póster y la línea de estado, a la izquierda de la barra
+  // los avisos (toast) salen encima de las barras, sin taparlas
+  const above = (h: number) => document.documentElement.style.setProperty('--above-bars', `${h + 10}px`);
+  if (bar.hidden) { above(bottom + th); return; }
+  const room = s.width - view.ins.r - 2 * EDGE;
+  bar.style.maxWidth = `${Math.max(120, room)}px`;
+  // se mide desde el borde izquierdo: en su sitio anterior (más a la derecha) se encogería para caber y mediría de menos
+  bar.style.left = `${EDGE}px`;
+  const bw = bar.offsetWidth, center = left + tw / 2;
+  bar.style.left = `${Math.round(Math.max(EDGE, Math.min(center - bw / 2, EDGE + room - bw)))}px`;
+  bar.style.bottom = `${bottom + th + 8}px`;
+  above(bottom + th + 8 + bar.offsetHeight);
+}
 
 export function initContextBar() {
   bar = $('#ctxbar');
-  bar.addEventListener('pointerdown', (e) => e.stopPropagation());
-  bar.addEventListener('contextmenu', (e) => e.preventDefault());
+  tools = $('#toolbar');
+  for (const el of [bar, tools]) {
+    el.addEventListener('pointerdown', (e) => e.stopPropagation());
+    el.addEventListener('contextmenu', (e) => e.preventDefault());
+  }
+  tools.addEventListener('click', (e) => {
+    const b = (e.target as Element).closest<HTMLButtonElement>('[data-tool]');
+    if (b && !b.disabled) pickTool(b);
+  });
   bar.addEventListener('click', (e) => {
     const b = (e.target as Element).closest<HTMLElement>('[data-act]');
     const sel = st.sel;
     if (!b) return;
-    const r = b.getBoundingClientRect();
-    // los menús se abren hacia el lienzo: debajo con la barra arriba (escritorio), encima con la barra abajo
-    // (el menú se pone encima solo si debajo no cabe)
-    const br = bar.getBoundingClientRect(), y = br.top < innerHeight / 2 ? br.bottom + 4 : br.top - 4;
-    // lo que no depende de una capa: agregar, colocar un texto y varias seleccionadas
-    switch (b.dataset.act) {
-      case 'add': openMenu(r.left, y, addMenu()); return;
-      case 'cancelText': cancelTextPlacement(); return;
-      case 'groupToggle': if (selectedGroup() != null) ungroupSelected(); else groupSelected(); return;
-      case 'dupSel': duplicateSelected(); return;
-      case 'moreGroup': openMenu(r.left, y, groupMenu()); return;
-      case 'delSel': removeSelected(); return;
-    }
+    // los menús se abren hacia arriba, sobre el lienzo (si arriba no cabe, debajo)
+    const r = b.getBoundingClientRect(), y = bar.getBoundingClientRect().top - 6;
     if (!sel) return;
     switch (b.dataset.act) {
       case 'unlock': toggleLocked(sel); break;
-      case 'crop': enterCrop(); break;
       case 'editText': if (isText(sel)) editText(sel); break;
       case 'autobg': autoBackground(); break;
-      case 'erase': setMode('erase'); break;
-      case 'wand': setMode('wand'); break;
-      case 'more': openMenu(r.left, y, layerMenu(sel)); break;
-      case 'delete': removeLayer(sel); break;
       case 'ratio': setCropRatio(b.dataset.r ?? 'null'); break;
       case 'ratioMenu': openMenu(r.left, y, ratioMenu(RATIOS, S.cropRatioKey, setCropRatio)); break;
       case 'cancelCrop': cancelCrop(); break;
       case 'applyCrop': applyCrop(); break;
-      case 'bm': S.brushMode = b.dataset.m === 'restore' ? 'restore' : 'erase'; renderBar(); break;
+      case 'bm': setBrushMode(b.dataset.m === 'restore' ? 'restore' : 'erase'); break;
+      case 'wop': st.wandOp = (b.dataset.op as MaskOp) ?? 'new'; renderBar(); break;
+      case 'wInvert': invertWandSelection(); break;
       case 'done': setMode('move'); break;
     }
   });
   dockMQ?.addEventListener('change', () => renderBar());
+}
 
+/** Límites de la tolerancia de la varita, los de su deslizador. */
+export const TOL_MIN = 5, TOL_MAX = 140;
+/** Cambia la tolerancia de la varita (deslizador, o [ ] y , .) y la refleja en la barra. */
+export function setTol(v: number) {
+  S.tol = Math.round(Math.min(TOL_MAX, Math.max(TOL_MIN, v)));
+  const input = document.querySelector<HTMLInputElement>('#bTol'), out = document.querySelector('#bTolOut');
+  if (input) input.value = String(S.tol);
+  if (out) out.textContent = String(S.tol);
+  retuneWand(); // lo elegido con la varita se rehace con la tolerancia nueva
 }
 
 /** Límites del pincel (px de pantalla), los del deslizador de la barra. */

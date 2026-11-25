@@ -161,8 +161,11 @@ export function cropPtsMM(l: LayerGeom): Pt[] {
   return ([[k.x0, k.y0], [k.x1, k.y0], [k.x1, k.y1], [k.x0, k.y1]] as const).map(([u, v]) => localToMM(l, u, v));
 }
 export function bboxMM(l: LayerGeom): Box {
-  const p = cropPtsMM(l), xs = p.map((q) => q.x), ys = p.map((q) => q.y);
-  return { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) };
+  const center = cropCenter(l), a = rad(l.rot);
+  const cos = Math.abs(Math.cos(a)), sin = Math.abs(Math.sin(a));
+  const halfW = (visW(l) * cos + visH(l) * sin) / 2;
+  const halfH = (visW(l) * sin + visH(l) * cos) / 2;
+  return { x0: center.x - halfW, y0: center.y - halfH, x1: center.x + halfW, y1: center.y + halfH };
 }
 
 /* ---------- rejilla del fondo ---------- */
@@ -480,16 +483,16 @@ export function alignShifts(bs: Box[], edge: AlignEdge, to: Box = unionBox(bs)):
 
 /**
  * Reparte las cajas con el mismo espacio entre una y la siguiente (en x o en y). La primera y la última no se mueven;
- * el orden es el de su posición. Con menos de tres no hay nada que repartir.
+ * el orden es el de su posición. Con distancia explícita solo se fija la primera y bastan dos.
  */
-export function distributeShifts(bs: Box[], axis: 'x' | 'y'): Pt[] {
+export function distributeShifts(bs: Box[], axis: 'x' | 'y', distance?: number): Pt[] {
   const out = bs.map(() => ({ x: 0, y: 0 }));
-  if (bs.length < 3) return out;
+  if (bs.length < (distance === undefined ? 3 : 2)) return out;
   const a0 = axis === 'x' ? 'x0' : 'y0', a1 = axis === 'x' ? 'x1' : 'y1';
   const order = bs.map((_, i) => i).sort((i, j) => bs[i]![a0] - bs[j]![a0] || bs[i]![a1] - bs[j]![a1]);
   const first = bs[order[0]!]!, last = bs[order.at(-1)!]!, span = last[a1] - first[a0];
   const sizes = bs.reduce((s, b) => s + (b[a1] - b[a0]), 0);
-  const gap = (span - sizes) / (bs.length - 1);
+  const gap = distance ?? (span - sizes) / (bs.length - 1);
   let pos = first[a0];
   for (const i of order) {
     const b = bs[i]!, d = pos - b[a0];
@@ -756,11 +759,10 @@ export function displaySide(needPx: number, longPx: number): number | null {
  * (M·R(θ) = R(−θ)·M). Antes solo se volteaba en sus ejes: con un giro de ±90° el espejo horizontal
  * se veía vertical, y con otros ángulos salía en diagonal. El centro de la zona visible no se mueve.
  */
-export function flipOnScreen(l: LayerGeom, axis: 'x' | 'y') {
-  keepCenter(l, (x) => {
-    if (axis === 'x') x.flipX = !x.flipX; else x.flipY = !x.flipY;
-    x.rot = normDeg(-x.rot);
-  });
+export function flipOnScreen(l: LayerGeom, axis: 'x' | 'y', pivot = cropCenter(l)) {
+  if (axis === 'x') { l.cx = 2 * pivot.x - l.cx; l.flipX = !l.flipX; }
+  else { l.cy = 2 * pivot.y - l.cy; l.flipY = !l.flipY; }
+  l.rot = normDeg(-l.rot);
 }
 
 /* ---------- escala de referencia (persona junto al póster) ---------- */

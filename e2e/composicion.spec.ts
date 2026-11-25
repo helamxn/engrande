@@ -1,10 +1,33 @@
 import { expect, test, type Page } from '@playwright/test';
 import { addImage, closeCards, drag, expectSavedNames, listNames, openApp, openTab, saved, savedBox, screenMap, selectRow, startText, thumbColor } from './helpers';
 
+test('repartir tres elementos y alinear el conjunto con el póster conserva las separaciones al recargar', async ({ page }, info) => {
+  await openApp(page);
+  await addFigure(page, 'Rectángulo');
+  await page.locator('#cv').focus();
+  await page.keyboard.press('Control+d');
+  // la tercera (copia de la copia), más lejos: separaciones distintas
+  await page.keyboard.press('Control+d');
+  for (let i = 0; i < 4; i++) await page.keyboard.press('Shift+ArrowRight');
+  await page.keyboard.press('Control+a');
+  const horizontal = page.locator('#gDist [data-a=x]');
+  await expect(horizontal).toBeEnabled();
+  await expect(page.locator('#gGap')).toHaveCount(0); // sin campo de separación: se reparte el hueco que hay
+  await horizontal.click();
+  await page.locator('#gAlignTarget').selectOption('poster');
+  await page.locator('#gAlign [data-e=left]').click();
+  await savedBox(page, b => Math.abs(b.x0) < 1e-6, 0);
+  const boxes = (await saved(page))!.boxes.slice().sort((p, q) => p.x0 - q.x0);
+  expect(boxes[1]!.x0 - boxes[0]!.x1).toBeCloseTo(boxes[2]!.x0 - boxes[1]!.x1);
+  await page.screenshot({ path: info.outputPath('reparto.png') });
+  await page.reload();
+  await expect(page.locator('#layers li.layer')).toHaveCount(3);
+  expect((await saved(page))!.boxes.slice().sort((p, q) => p.x0 - q.x0)).toEqual(boxes);
+});
+
 async function addFigure(page: Page, name: string) {
-  await page.locator('#ctxbar [data-act=add]').click();
-  await page.getByRole('menuitem', { name: 'Agregar forma' }).click();
-  await page.getByRole('menuitem', { name, exact: true }).click();
+  await page.locator('#toolbar [data-tool=shape]').click();
+  await page.getByRole('menuitem', { name: new RegExp(`^${name}`) }).click(); // el nombre y su tecla
   await expect(page.locator('#selectionTitle')).toHaveText('Forma');
 }
 
@@ -13,6 +36,43 @@ async function guides(page: Page) {
   const summary = page.getByText('Reglas y guías', { exact: true });
   if (!(await page.locator('#rulers').isVisible())) await summary.click();
 }
+
+test('elegir una capa tapada permite seleccionar y transformar solo su grupo', async ({ page }) => {
+  await openApp(page);
+  await addFigure(page, 'Rectángulo');
+  const b = await savedBox(page), map = await screenMap(page, b);
+  await page.locator('#cv').focus();
+  await page.keyboard.press('Control+d');
+  await page.keyboard.press('Control+a');
+  await page.keyboard.press('Control+g');
+  await addFigure(page, 'Elipse');
+  const mid = map.toScreen(b.x0 + b.w / 2, b.y0 + b.h / 2);
+  await page.mouse.click(mid.x, mid.y, { button: 'right' });
+  await page.getByRole('menuitem', { name: 'Seleccionar capa', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Grupo 1 › Rectángulo', exact: true }).click();
+  await expect(page.locator('#pName')).toHaveValue('Rectángulo');
+  const start = map.toScreen(b.x0 - 12, b.y0 - 12), end = map.toScreen(b.x1 + 19, b.y1 + 19);
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down();
+  await page.mouse.move(end.x, end.y, { steps: 6 });
+  await expect(page.locator('#selectionTitle')).toContainText('Grupo 1');
+  await page.keyboard.press('Escape');
+  await page.mouse.up();
+  await expect(page.locator('#pName')).toHaveValue('Rectángulo');
+  await page.keyboard.press('Control+a');
+  await expect(page.locator('#selectionTitle')).toHaveText('Grupo 1 · 2 capas');
+  await page.keyboard.press('r');
+  await expect(page.locator('#gR')).toHaveValue('90');
+  await page.keyboard.press('h');
+  await page.keyboard.press('Control+z');
+  await expect(page.locator('#gR')).toHaveValue('90');
+  await page.keyboard.press('Control+z');
+  await expect(page.locator('#gR')).toHaveValue('0');
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#pName')).toHaveValue('Rectángulo (copia)');
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#selectionTitle')).toHaveText('Grupo 1 · 2 capas');
+});
 
 test('una plantilla de guías sin capas se recupera y quitar una guía se puede deshacer', async ({ page }) => {
   await openApp(page);
@@ -43,7 +103,7 @@ test('el relleno de una forma y su máscara sobreviven al historial, a la recarg
   await page.locator('#zoomSelection').click();
   await expect(page.locator('#zoomPct')).not.toHaveText(before!);
   const area = (await page.locator('#free').boundingBox())!;
-  await page.locator('#ctxbar [data-act=erase]').click();
+  await page.locator('#toolbar [data-tool=erase]').click();
   await page.mouse.click(area.x + area.width / 2, area.y + area.height / 2);
   await page.locator('#ctxbar [data-act=done]').click();
   const erased = await thumbColor(page);
@@ -100,7 +160,7 @@ test('cambiar de la varita a una capa de texto desactiva la edición de píxeles
   await page.locator('.text-editor').fill('Título');
   await page.keyboard.press('Escape');
   await addImage(page);
-  await page.locator('#ctxbar [data-act=wand]').click();
+  await page.locator('#toolbar [data-tool=wand]').click();
   await openTab(page, 'image');
   await page.locator('#layers .layer-main').last().click();
   await closeCards(page);

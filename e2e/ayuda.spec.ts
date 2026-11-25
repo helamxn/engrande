@@ -32,9 +32,9 @@ test('las teclas se ven igual en el menú que en la ayuda: una tecla por <kbd>',
   await openApp(page);
   await addImage(page);
   await selectRow(page);
-  await page.locator('#ctxbar').getByRole('button', { name: /Más opciones/ }).click();
-  const copy = page.locator('#menu').getByRole('menuitem', { name: /Copiar/ });
-  await expect(copy.locator('.keys kbd')).toHaveText(['Ctrl', 'C']);
+  await page.locator('#toolbar').getByRole('button', { name: 'Opciones del póster' }).click();
+  const paste = page.locator('#menu').getByRole('menuitem', { name: /Pegar/ });
+  await expect(paste.locator('.keys kbd')).toHaveText(['Ctrl', 'V']);
   await page.keyboard.press('Escape');
   // la nota de la lista, escrita en el marcado, también
   await expect(page.locator('#pane-image [data-keys] kbd')).toHaveText(['Alt', '↑', 'Alt', '↓']);

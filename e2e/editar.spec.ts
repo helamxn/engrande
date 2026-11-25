@@ -5,6 +5,50 @@ import { addImage, listNames, openApp, openPdfCard, openTab, pdfCardButton, save
 
 test.beforeEach(async ({ page }) => { await openApp(page); });
 
+test('restaurar el original quita la máscara guardada y permite recuperar el retoque con deshacer', async ({ page }) => {
+  await addImage(page);
+  await selectRow(page);
+  const editKey = () => page.evaluate(async () => {
+    const db = await new Promise<IDBDatabase>(resolve => {
+      const req = indexedDB.open('pliego'); req.onsuccess = () => resolve(req.result);
+    });
+    try {
+      const req = db.transaction('project').objectStore('project').get('current');
+      return await new Promise<string | null | undefined>(resolve => { req.onsuccess = () => resolve(req.result?.layers[0]?.edit); });
+    } finally { db.close(); }
+  });
+  await page.locator('#toolbar [data-tool=bg]').click();
+  await expect.poll(editKey).toMatch(/^px-/);
+  const restore = async () => {
+    // el menú de la imagen, desde su fila en Capas (la barra de opciones ya no tiene «Más»)
+    await openTab(page, 'image');
+    await page.locator('#layers li.layer .act[data-ic=more]').first().click();
+    await page.getByRole('menuitem', { name: 'Volver a la imagen original' }).click();
+  };
+  await restore();
+  await expect.poll(editKey).toBeNull();
+  await restore();
+  await page.locator('#undo').click();
+  await expect.poll(editKey).toMatch(/^px-/);
+});
+
+test('el autoguardado conserva el marco confirmado durante la vista previa y deshacer devuelve ese marco', async ({ page }) => {
+  await addImage(page);
+  await selectRow(page);
+  const original = await savedBox(page);
+  await page.keyboard.press('c');
+  await page.locator('#ctxbar [data-act=ratio][data-r="1"]').click();
+  await openPdfCard(page);
+  await page.locator('[data-dpi="300"]').click();
+  await expect.poll(async () => (await saved(page))?.dpi).toBe(300);
+  expect((await saved(page))!.boxes[0]).toEqual(original);
+  await page.keyboard.press('Escape');
+  await page.locator('#ctxbar [data-act=applyCrop]').click();
+  await savedBox(page, b => Math.abs(b.w - b.h) < 1e-6);
+  await page.locator('#undo').click();
+  await expect.poll(async () => (await saved(page))?.boxes[0]).toEqual(original);
+});
+
 test('Ctrl+C en engrande pisa el portapapeles: Ctrl+V pega la copia, no una imagen vieja de otra app', async ({ page, context, baseURL }) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: baseURL });
   await addImage(page);

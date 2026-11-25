@@ -6,6 +6,7 @@
 import { $ } from '../dom';
 import { deskMQ, dockMQ } from '../platform';
 import { setInsets } from '../view';
+import { dirty } from '../render';
 
 let free: HTMLElement;
 let panel: HTMLElement;
@@ -14,22 +15,26 @@ let controls: HTMLElement[] = [];
 
 /**
  * Márgenes en px desde cada borde del lienzo:
- * - ins: lo que tapan ahora las islas y los paneles (la pista, la etiqueta de tamaño y la barra se quedan a la vista);
+ * - ins: lo que tapan ahora las islas y los paneles (la pista, la etiqueta de tamaño y la barra de opciones se quedan
+ *   a la vista);
  * - fit: solo lo fijo, con lo que se encaja el póster. El panel de la selección (escritorio) y el panel inferior
  *   abierto (móvil) van encima del lienzo: aparecer o irse no lo mueve.
  */
 function measure() {
   const s = $('#stage').getBoundingClientRect();
   const p = panel.getBoundingClientRect();
-  // arriba: la fila de la cabecera (en móvil, también la vista) y la barra de acciones, fija bajo ella
-  const bar = $('#ctxbar');
-  const t = Math.round((bar.hidden ? $('#topbar').getBoundingClientRect().bottom : bar.getBoundingClientRect().bottom) - s.top);
-  // móvil: abajo, el panel inferior a la altura que tenga; para encajar, solo sus pestañas (lo que siempre se ve)
+  // arriba: la fila de la cabecera (en móvil, también la vista)
+  const t = Math.round($('#topbar').getBoundingClientRect().bottom - s.top);
+  // la barra de herramientas, abajo en el centro (sobre las pestañas del panel inferior en móvil)
+  const th = Math.round($('#toolbar').getBoundingClientRect().height);
+  // móvil: abajo, el panel inferior a la altura que tenga y la barra encima; para encajar, solo sus pestañas (lo que
+  // siempre se ve) y la barra
   if (!deskMQ?.matches) {
-    return { ins: { t, r: 0, b: Math.round(s.bottom - p.top), l: 0 }, fit: { t, r: 0, b: sheetHeights().peek, l: 0 } };
+    const fitB = sheetPeek() + 8 + th;
+    return { ins: { t, r: 0, b: Math.max(fitB, Math.round(s.bottom - p.top)), l: 0 }, fit: { t, r: 0, b: fitB, l: 0 } };
   }
-  // abajo: la isla de vista (12 px de margen + su alto)
-  const b = Math.round(s.bottom - $('#tools').getBoundingClientRect().top);
+  // abajo: la isla de vista y la barra de herramientas, en la misma fila (12 px de margen + su alto)
+  const b = Math.max(Math.round(s.bottom - $('#tools').getBoundingClientRect().top), 12 + th);
   return { ins: { t, r: p.width ? Math.round(s.right - p.left) : 0, b, l: 0 }, fit: { t, r: 0, b, l: 0 } };
 }
 
@@ -39,15 +44,30 @@ function update() {
   const { ins, fit } = measure();
   free.style.inset = `${ins.t}px ${ins.r}px ${ins.b}px ${ins.l}px`;
   setInsets(ins, fit);
-  // la línea de estado (una caja de una línea), en la fila de la isla de vista: centrada con ella y sin llegar a ella
-  const hint = $('#hint'), tools = $('#tools').getBoundingClientRect(), s = $('#stage').getBoundingClientRect();
-  // el tamaño del póster va delante (a la izquierda), en la misma fila; la línea de estado, a su derecha
-  const size = $('#posterSize'), bottom = `${Math.round(s.bottom - tools.bottom + (tools.height - 30) / 2)}px`;
-  size.style.bottom = bottom;
-  const sr = size.getBoundingClientRect(), left = sr.width ? Math.round(sr.right - s.left + 8) : 12;
-  hint.style.left = `${left}px`;
-  hint.style.maxWidth = `${Math.max(0, Math.round(tools.left - s.left - left - 24))}px`;
-  hint.style.bottom = bottom;
+  placeStatusRow();
+}
+
+/**
+ * Las etiquetas de estado (escritorio):
+ * - el tamaño del póster, abajo a la izquierda, centrado con la isla de vista y sin llegar a la barra de herramientas;
+ *   si la barra no le deja sitio (ventana estrecha), se oculta (está también en Póster);
+ * - la línea de estado, arriba en el centro de la fila de la cabecera: entre ella y los botones de Póster y Capas,
+ *   centrada en ese hueco. Si le quedan menos de 80 px, se oculta.
+ */
+export function placeStatusRow() {
+  const hint = $('#hint'), size = $('#posterSize'), s = $('#stage').getBoundingClientRect();
+  const tools = $('#tools').getBoundingClientRect(), bar = $('#toolbar').getBoundingClientRect();
+  const until = deskMQ?.matches ? Math.min(tools.left, bar.left) : tools.left;
+  size.style.bottom = `${Math.round(s.bottom - tools.bottom + (tools.height - 30) / 2)}px`;
+  const sr = size.getBoundingClientRect();
+  size.style.visibility = sr.width && sr.right + 8 > until ? 'hidden' : '';
+  // arriba: de la cabecera a los botones de Póster y Capas (sin ellos, hasta el borde)
+  const head = $('header').getBoundingClientRect(), op = $('#panelOpeners').getBoundingClientRect();
+  const from = head.right + 12, to = (op.width ? op.left : s.right) - 12, room = Math.round(to - from);
+  hint.style.left = `${Math.round((from + to) / 2 - s.left)}px`;
+  hint.style.top = `${Math.round(head.top - s.top + (head.height - 30) / 2)}px`;
+  hint.style.maxWidth = `${Math.max(0, room)}px`;
+  hint.style.visibility = room < 80 ? 'hidden' : '';
 }
 
 /* ---------- escritorio: plegar el panel ---------- */
@@ -76,12 +96,15 @@ let sheet: SheetState = 'peek';
 /** El panel inferior (móvil) está abierto a media altura o completo. */
 export const isSheetOpen = () => sheet !== 'peek';
 
-/** Alturas (px): solo asa y pestañas; media pantalla; hasta debajo de las herramientas. */
-function sheetHeights() {
+/** Alto del panel inferior recogido (px): el asa y las pestañas. */
+export function sheetPeek() {
   const tabs = $('#sheetTabs');
-  const peek = Math.round(tabs.offsetTop + tabs.offsetHeight);
-  // completo, llega hasta debajo de la barra de acciones (o de la cabecera, si aún no está)
-  const bar = $('#ctxbar'), top = (bar.hidden ? $('#topbar') : bar).getBoundingClientRect().bottom + 8;
+  return Math.round(tabs.offsetTop + tabs.offsetHeight);
+}
+/** Alturas (px): solo asa y pestañas; media pantalla; hasta debajo de la cabecera. */
+function sheetHeights() {
+  const peek = sheetPeek();
+  const top = $('#topbar').getBoundingClientRect().bottom + 8;
   const full = Math.max(peek, Math.round(innerHeight - top));
   const half = Math.min(full, Math.max(peek + 160, Math.round(innerHeight * 0.5)));
   return { peek, half, full };
@@ -93,6 +116,7 @@ function sheetHeights() {
  */
 function applySheetHeight(h: number) {
   document.documentElement.style.setProperty('--sheet-h', `${h}px`);
+  dirty(); // las barras de abajo suben o bajan con el panel (ver positionBar)
 }
 
 /** Abre el panel inferior a una altura (en escritorio no hace nada). */
@@ -152,7 +176,7 @@ function syncSheetMode() {
 export function initLayout() {
   free = $('#free');
   panel = $('#panel');
-  controls = ['header', '#ctxbar', '#panelOpeners', '#tools', '#panel', '#posterCard', '#layersCard', '#pdfCard', '#hint', '#posterSize'].map(sel => $(sel));
+  controls = ['header', '#toolbar', '#panelOpeners', '#tools', '#panel', '#posterCard', '#layersCard', '#pdfCard', '#hint', '#posterSize'].map(sel => $(sel));
   // el panel empieza oculto: aparece cuando hace falta (al seleccionar o al pedirlo)
   document.body.classList.add('panel-off');
   $('#panelHide').setAttribute('aria-expanded', 'false'); // su clic lo atiende panel.ts (deja de ser automático)

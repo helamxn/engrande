@@ -2,7 +2,13 @@
  * Pestaña Selección: muestra solo los controles de lo seleccionado (texto, imagen o varias) y, sin nada, una nota.
  * Qué pestaña se abre al seleccionar o deseleccionar lo decide panel.ts (followSelection).
  */
-import { alignSelected, compositionUnits, distributeSelected, flip, groupName, rotate90, select, selectedGroup, setFigureFill } from '../actions';
+import {
+  alignSelected, compositionUnits, distributeSelected, duplicateSelected, flip, groupName, groupSelected, hideSelected,
+  lockSelected, removeSelected, reorder, rotate90, select, selected, selectedGroup, setFigureFill, toggleHidden, toggleLocked,
+  ungroupSelected,
+} from '../actions';
+import { stackPeers } from '../groups';
+import { ICON } from './icons';
 import type { AlignEdge } from '../geometry';
 import { $ } from '../dom';
 import { st } from '../state';
@@ -12,6 +18,11 @@ import { fitSelection } from '../view';
 import { isText } from '../text/text';
 import { normalizeColor } from '../text/values';
 
+/** Repartir deja la misma separación entre los bordes, con los dos extremos en su sitio: hacen falta tres o más. */
+function syncDistribution(count: number) {
+  $('#gDistField').hidden = count < 3;
+}
+
 /** Lo que hay seleccionado (una capa, el primero de varios o nada): cambia cuando se elige otra cosa. */
 export const selectionKey = () => st.sel ?? (st.group.length > 1 ? st.group[0]! : null);
 
@@ -20,7 +31,9 @@ export function syncSelectionCard(): boolean {
   const sel = st.sel, n = st.group.length, key = selectionKey(), has = key != null;
   $('#selEmpty').hidden = has;
   $('#selectionHead').hidden = !has;
+  $('#selectionActions').hidden = !has;
   $<HTMLButtonElement>('#zoomSelection').disabled = !has || !!sel?.hidden;
+  syncLayerActions();
   const gid = n > 1 ? selectedGroup() : null;
   $('#selectionTitle').textContent = n > 1 ? (gid != null ? `${groupName(gid)} · ${n} capas` : `${n} capas seleccionadas`)
     : isText(sel) ? 'Texto' : sel?.src?.kind === 'shape' ? 'Forma' : 'Imagen';
@@ -34,13 +47,51 @@ export function syncSelectionCard(): boolean {
     }
   }
   if (n > 1) {
-    // con varias: repartir pide 3 o más
     const count = compositionUnits().length;
-    $('#lblGAlign').textContent = count === 1 ? 'Alinear con el póster' : 'Alinear entre sí';
-    for (const b of document.querySelectorAll<HTMLButtonElement>('#gDist button')) b.disabled = count < 3;
-    $('#gDistNote').textContent = count < 3 ? '3 elementos o más' : '';
+    $('#lblGAlign').textContent = count === 1 ? 'Alinear con el póster' : 'Alinear';
+    $('#gAlignTargetField').hidden = count < 2;
+    $<HTMLSelectElement>('#gAlignTarget').value = st.alignToPoster ? 'poster' : 'selection';
+    syncDistribution(count);
   }
   return has;
+}
+
+/**
+ * Lo que se ordena (la capa o el grupo entero seleccionado; con varias sueltas, nada) y dónde está en su nivel.
+ * Subir = hacia el frente, como arriba en la lista de Capas.
+ */
+function orderTarget() {
+  const item = st.sel ?? (st.group.length > 1 ? selectedGroup() : null);
+  if (item == null) return null;
+  const { peers, index } = stackPeers(st.layers, item);
+  return index < 0 ? null : { item, top: index === peers.length - 1, bottom: index === 0 };
+}
+/**
+ * La fila de acciones (orden, duplicar, agrupar, eliminar) y ocultar y bloquear de la cabecera: activos según lo
+ * seleccionado; agrupar, solo con varias (con un grupo entero, desagrupar); ocultar y bloquear, con su estado.
+ */
+let groupWhole: boolean | null = null;
+function syncLayerActions() {
+  const o = orderTarget(), sel = st.sel, many = st.group.length > 1;
+  $<HTMLButtonElement>('#selFront').disabled = $<HTMLButtonElement>('#selUp').disabled = !o || o.top;
+  $<HTMLButtonElement>('#selBack').disabled = $<HTMLButtonElement>('#selDown').disabled = !o || o.bottom;
+  const del = $<HTMLButtonElement>('#selDelete'), dup = $<HTMLButtonElement>('#selDup');
+  dup.disabled = !sel && !many;
+  del.disabled = !sel && !many;
+  const grp = $<HTMLButtonElement>('#selGroup'), whole = many && selectedGroup() != null;
+  grp.hidden = !many;
+  if (many && whole !== groupWhole) {
+    groupWhole = whole;
+    grp.innerHTML = ICON[whole ? 'ungroup' : 'group'];
+    grp.setAttribute('aria-label', whole ? 'Desagrupar' : 'Agrupar');
+    grp.title = whole ? 'Desagrupar (Ctrl + Mayús + G)' : 'Agrupar (Ctrl + G)';
+  }
+  const lock = $<HTMLButtonElement>('#selLock'), locked = !!sel?.locked;
+  if (lock.getAttribute('aria-pressed') === String(locked)) return; // el icono solo se rehace si cambia
+  lock.innerHTML = ICON[locked ? 'lock' : 'lockOpen'];
+  lock.setAttribute('aria-pressed', String(locked));
+  lock.setAttribute('aria-label', locked ? 'Desbloquear' : 'Bloquear');
+  lock.title = `${locked ? 'Desbloquear' : 'Bloquear'} (Ctrl + Mayús + L)`;
 }
 
 /**
@@ -80,6 +131,19 @@ export function initSelectionCard() {
     if (e.key === 'Enter') hex.blur();
   });
   $('#zoomSelection').addEventListener('click', fitSelection);
+  const order = (to: 'front' | 'back' | number) => () => { const o = orderTarget(); if (o) reorder(o.item, to); };
+  $('#selFront').addEventListener('click', order('front'));
+  $('#selUp').addEventListener('click', order(1));
+  $('#selDown').addEventListener('click', order(-1));
+  $('#selBack').addEventListener('click', order('back'));
+  $('#selDup').addEventListener('click', () => duplicateSelected());
+  $('#selGroup').addEventListener('click', () => { if (selectedGroup() != null) ungroupSelected(); else groupSelected(); });
+  $('#selDelete').addEventListener('click', () => { if (selected().length) removeSelected(); });
+  // ocultar deselecciona (en el lienzo ya no habría nada que tocar); se vuelve a mostrar desde Capas
+  $('#selHide').addEventListener('click', () => { if (st.sel) toggleHidden(st.sel); else hideSelected(); });
+  $('#selLock').addEventListener('click', () => { if (st.sel) toggleLocked(st.sel); else lockSelected(); });
+  const target = $<HTMLSelectElement>('#gAlignTarget');
+  target.addEventListener('change', () => { st.alignToPoster = target.value === 'poster'; });
   for (const b of document.querySelectorAll<HTMLButtonElement>('#gAlign [data-e]')) b.addEventListener('click', () => alignSelected(b.dataset.e as AlignEdge));
   for (const b of document.querySelectorAll<HTMLButtonElement>('#gDist [data-a]')) b.addEventListener('click', () => distributeSelected(b.dataset.a === 'y' ? 'y' : 'x'));
   $('#pRot90').addEventListener('click', rotate90(1));

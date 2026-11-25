@@ -4,7 +4,8 @@ import { BRAND } from '../brand';
 /**
  * Mesa de trabajo: el lienzo con las hojas, la bienvenida y la barra de abajo.
  * El lienzo ocupa toda la ventana (es el fondo de la app) y lo demás flota encima como «islas»: arriba la cabecera
- * y la vista (Header.astro), abajo a la izquierda la barra (contextbar.ts) y el panel. El tamaño del póster se
+ * y la vista (Header.astro), abajo en el centro la barra de herramientas y, encima de ella cuando hace falta, la de
+ * opciones (contextbar.ts), y el panel. El tamaño del póster se
  * dibuja junto a él y la calidad, en la etiqueta de la imagen seleccionada (ver render.ts).
  */
 ---
@@ -47,7 +48,27 @@ import { BRAND } from '../brand';
         </div>
       </div>
     </div>
-    <div id="ctxbar" class="ctxbar" role="toolbar" aria-label="Barra de acciones" hidden></div>
+    <!--
+      barra de herramientas, abajo en el centro y siempre en el mismo sitio (como en Excalidraw o Figma): solo iconos,
+      su nombre en el título. Las que trabajan sobre una imagen se apagan sin una seleccionada (ver contextbar.ts).
+      Al final, «Opciones del póster» (⋮): siempre las de la página, haya algo seleccionado o no (agregar imágenes y
+      PDF, pegar, vista, solape…); las de una imagen, en su clic derecho o en su fila de Capas. En un teléfono no cabe
+      todo: sin Forma (sus formas tienen tecla: U, O, Y) y, en uno muy estrecho, sin Mover (con el dedo no hace falta)
+    -->
+    <div id="toolbar" class="toolbar island" role="toolbar" aria-label="Herramientas">
+      <button type="button" class="tb n2" data-tool="move" title="Mover y seleccionar (V)" aria-label="Mover" aria-pressed="true"><Icon name="pointer" /></button>
+      <button type="button" class="tb" data-tool="text" title="Texto (T)" aria-label="Texto" aria-pressed="false"><Icon name="text" /></button>
+      <button type="button" class="tb nw" data-tool="shape" aria-haspopup="menu" title="Forma: rectángulo (U), elipse (O) o triángulo (Y)" aria-label="Forma"><Icon name="shapes" /></button>
+      <span class="sep" aria-hidden="true"></span>
+      <button type="button" class="tb" data-tool="crop" title="Recortar (C)" aria-label="Recortar" aria-pressed="false" disabled><Icon name="crop" /></button>
+      <button type="button" class="tb" data-tool="erase" title="Borrador: borra o recupera a mano (B)" aria-label="Borrador" aria-pressed="false" disabled><Icon name="erase" /></button>
+      <button type="button" class="tb" data-tool="wand" title="Varita: elige un color para borrarlo (W)" aria-label="Varita" aria-pressed="false" disabled><Icon name="wand" /></button>
+      <button type="button" class="tb" data-tool="bg" title="Quitar fondo (si es de un color)" aria-label="Quitar fondo" disabled><Icon name="bg" /></button>
+      <span class="sep" aria-hidden="true"></span>
+      <button type="button" class="tb" data-tool="more" aria-haspopup="menu" title="Opciones del póster: agregar, pegar, vista, solape…" aria-label="Opciones del póster"><Icon name="moreV" /></button>
+    </div>
+    <!-- opciones de la herramienta activa o acciones de lo seleccionado: encima de la barra de herramientas -->
+    <div id="ctxbar" class="ctxbar" role="toolbar" aria-label="Opciones" hidden></div>
     <!--
       tamaño del póster y sus hojas, abajo a la izquierda, como el tamaño del documento en la barra de estado de
       Photoshop o Photopea: fuera del papel no tapa nada ni se mueve con la vista. Al pulsarlo se abre Póster. Sin
@@ -61,12 +82,12 @@ import { BRAND } from '../brand';
       hidden
     ></button>
     <!--
-      línea de estado (escritorio, con ratón): qué hacer en el estado actual, abajo a la izquierda, en la fila de la
-      isla de vista (a la derecha). Una caja de una línea; su ancho y su altura en la fila los pone layout.ts.
+      línea de estado (escritorio, con ratón): qué hacer en el estado actual, arriba en el centro, en la fila de la
+      cabecera, entre ella y los botones de Póster y Capas. Una caja de una línea; su sitio y su ancho los pone layout.ts.
     -->
     <div
       id="hint"
-      class="pointer-events-none absolute bottom-3 left-3 overflow-hidden rounded-xl border border-line bg-panel/90 h-[30px] px-3 py-1 text-ellipsis whitespace-nowrap text-[.78rem] leading-5 text-muted"
+      class="pointer-events-none absolute top-3 left-1/2 -translate-x-1/2 overflow-hidden rounded-xl border border-line bg-panel/90 h-[30px] px-3 py-1 text-ellipsis whitespace-nowrap text-[.78rem] leading-5 text-muted"
       aria-live="polite"
     ></div>
     <div

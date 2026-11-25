@@ -90,7 +90,9 @@
     #panel { height: max(var(--sheet-h, 76px), 64px); transition: height .22s cubic-bezier(.2, .8, .2, 1); }
     #panel.sheet-drag { transition: none; }
   }
-  @media (prefers-reduced-motion: reduce) { #panel { transition: none !important; } }
+  @media (prefers-reduced-motion: reduce) { #panel, .toolbar, .ctxbar { transition: none !important; } }
+  /* arrastrando el asa del panel, las barras lo siguen sin retraso */
+  body:has(#panel.sheet-drag) :is(.toolbar, .ctxbar) { transition: none; }
   /* mientras el worker quita el fondo o aplica la varita */
   body.busy #cv { cursor: progress !important; }
 }
@@ -321,6 +323,15 @@
   .selection-panel { @apply flex min-h-0 flex-1 flex-col gap-3 overflow-x-hidden overflow-y-auto overscroll-contain p-4; &[hidden] { display: none; } }
   .selection-head { @apply -my-1.5 -mr-2 flex flex-none items-center gap-2; &[hidden] { display: none; } }
   .selection-body { @apply flex flex-col gap-4; }
+  /* fila de acciones bajo la cabecera: orden de capas | duplicar, agrupar y eliminar (iconos a partes iguales) */
+  .selection-actions {
+    /* en un teléfono muy estrecho, con varias seleccionadas (siete botones de 44 px), lo que no cabe pasa abajo */
+    @apply flex-none flex-wrap; &[hidden] { display: none; }
+    & button { @apply min-w-0 flex-1 px-0; &[hidden] { display: none; } }
+    & button svg { @apply size-[17px]; }
+    & .danger { @apply text-bad; &:hover:not(:disabled) { @apply text-bad; } }
+    & .sep { @apply mx-0.5 my-1 w-px flex-none self-stretch bg-line; }
+  }
   .selection-close { @apply grid size-8 flex-none cursor-pointer place-items-center rounded-md border-0 bg-transparent text-muted hover:bg-accent-soft hover:text-fg; & svg { @apply size-4; } }
   .text-color-field {
     @apply items-center gap-2 pl-2;
@@ -396,16 +407,26 @@
   }
 
   /*
-   * barra de acciones (contextbar.ts): fija arriba, bajo la cabecera, solo con iconos (su nombre va en el título y
-   * para lectores de pantalla). Con ratón, botones de 34 px; en táctil, de 44 (bloque pointer: coarse).
+   * barras de abajo (contextbar.ts), solo con iconos (su nombre va en el título y para lectores de pantalla). Con
+   * ratón, botones de 34 px; en táctil, de 44 (bloque pointer: coarse).
+   * - .toolbar: las herramientas, abajo en el centro, siempre en el mismo sitio (la posición la pone el editor);
+   * - .ctxbar: las opciones de la herramienta o de lo seleccionado, encima de ella y solo cuando hace falta.
+   * En móvil suben y bajan con el panel inferior, al mismo paso.
    */
+  .toolbar {
+    @apply absolute bottom-3 left-1/2 z-[5] flex items-center gap-0.5 p-1;
+    transition: bottom .22s cubic-bezier(.2, .8, .2, 1);
+    & .tb { @apply min-w-[34px] justify-center px-2; @media (pointer: coarse) { @apply min-w-11; } }
+    & .sep { @apply mx-[3px] my-1 w-px flex-none self-stretch bg-line; }
+    /* en un teléfono no cabe todo: sin Forma (tiene teclas); en uno muy estrecho, sin Mover (con el dedo no hace falta) */
+    @media (width < 26rem) { & .nw { @apply hidden; } }
+    @media (width < 22.5rem) { & .n2 { @apply hidden; } }
+  }
   .ctxbar {
-    @apply absolute z-[5] flex max-w-[calc(100%-16px)] items-center gap-0.5 rounded-[10px] border border-line bg-panel p-1 shadow-pop transition-opacity duration-100;
-    &.ghost { @apply pointer-events-none opacity-0; }
+    @apply absolute z-[5] flex max-w-[calc(100%-16px)] flex-wrap items-center justify-center gap-0.5 rounded-[10px] border border-line bg-panel p-1 shadow-pop;
+    transition: bottom .22s cubic-bezier(.2, .8, .2, 1);
     & .tb > svg + span { @apply sr-only; }
     & .tb:has(> svg) { @apply min-w-[34px] justify-center px-2; @media (pointer: coarse) { @apply min-w-11; } }
-    /* flecha de «＋ Agregar»: avisa de que abre un menú */
-    & .tb .chev { @apply -ml-1 size-3.5 opacity-60; }
     & .sep { @apply mx-[3px] my-1 w-px flex-none self-stretch bg-line; }
     & .mini {
       @apply flex flex-none items-center gap-1.5 whitespace-nowrap px-1.5 text-[.8rem] text-muted;
@@ -414,11 +435,10 @@
     }
     & input[type="range"] { @apply h-6 w-[104px]; }
     & input[type="checkbox"] { @apply size-4; accent-color: var(--accent); }
-    /* táctil o estrecha: deslizadores más cortos y, en un teléfono muy estrecho, la Varita va a «Más» */
+    /* táctil o estrecha: deslizadores más cortos */
     &.dock {
       & input[type="range"] { @apply w-[72px]; }
       & .mini output { @apply min-w-[2.6em]; }
-      @media (width < 22.5rem) { & .dw { @apply hidden; } }
     }
   }
   .tb {

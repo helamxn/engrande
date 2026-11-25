@@ -16,6 +16,8 @@ import scissors from 'lucide-static/icons/scissors.svg?raw';
 import selectBox from 'lucide-static/icons/square-dashed-mouse-pointer.svg?raw';
 import arrowDown from 'lucide-static/icons/arrow-down.svg?raw';
 import arrowUp from 'lucide-static/icons/arrow-up.svg?raw';
+import arrowUpToLine from 'lucide-static/icons/arrow-up-to-line.svg?raw';
+import arrowDownToLine from 'lucide-static/icons/arrow-down-to-line.svg?raw';
 import check from 'lucide-static/icons/check.svg?raw';
 import chevronLeft from 'lucide-static/icons/chevron-left.svg?raw';
 import chevronRight from 'lucide-static/icons/chevron-right.svg?raw';
@@ -72,6 +74,13 @@ import textCenter from 'lucide-static/icons/text-align-center.svg?raw';
 import textEnd from 'lucide-static/icons/text-align-end.svg?raw';
 import layoutGrid from 'lucide-static/icons/layout-grid.svg?raw';
 import shapes from 'lucide-static/icons/shapes.svg?raw';
+import foldHorizontal from 'lucide-static/icons/fold-horizontal.svg?raw';
+import mousePointer from 'lucide-static/icons/mouse-pointer-2.svg?raw';
+import ellipsisVertical from 'lucide-static/icons/ellipsis-vertical.svg?raw';
+import squareDashed from 'lucide-static/icons/square-dashed.svg?raw';
+import squaresUnite from 'lucide-static/icons/squares-unite.svg?raw';
+import squaresSubtract from 'lucide-static/icons/squares-subtract.svg?raw';
+import contrast from 'lucide-static/icons/contrast.svg?raw';
 
 /** Quita el comentario de licencia y marca el icono como decorativo (el texto accesible va en el botón). */
 const clean = (svg: string) =>
@@ -82,11 +91,13 @@ const RAW = {
   crop, bg: sparkles, erase: eraser, wand, rot: rotateCw, flip, more: ellipsis, del: trash,
   // recorte y borrador
   check, x, restore: paintbrush,
+  // varita: zona nueva, sumar, restar e invertir
+  selNew: squareDashed, selAdd: squaresUnite, selSub: squaresSubtract, invert: contrast,
   // lista de imágenes
-  up: arrowUp, down: arrowDown, dup: copyPlus, eye, eyeOff,
+  up: arrowUp, down: arrowDown, toFront: arrowUpToLine, toBack: arrowDownToLine, dup: copyPlus, eye, eyeOff,
   // cabecera y herramientas
   newPoster: filePlus, addImage: imagePlus, download, undo, redo, lock, lockOpen, printer,
-  plus, minus, keyboard, person: personStanding, panelClose: panelRightClose, panelOpen: panelRightOpen, layoutGrid,
+  plus, minus, keyboard, person: personStanding, overlap: foldHorizontal, pointer: mousePointer, moreV: ellipsisVertical, panelClose: panelRightClose, panelOpen: panelRightOpen, layoutGrid,
   // menú contextual (flechas de submenú e iconos de las opciones principales)
   chevronRight, chevronLeft, copy, cut: scissors, paste: clipboardPaste, layers, scaling, history, fitAll: maximize,
   zoomInLens, zoomOutLens, shapes,

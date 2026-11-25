@@ -99,9 +99,9 @@ export function dragWidth(l: TextLayer, L0: Transform, side: 'e' | 'w', m: Pt) {
 /** Ancho automático (cada línea mide lo que ocupa) o fijo al ancho de ahora. Hace falta la fuente. */
 export async function setWidthMode(l: TextLayer, fixed: boolean) {
   const s = specOf(l);
-  if (!!s.width === fixed) return;
+  if (l.locked || !!s.width === fixed) return;
   const f = await fontFor(l, 'cambiar el ancho');
-  if (!f || !st.layers.includes(l)) return;
+  if (!f || l.locked || st.sel !== l || specOf(l) !== s || !st.layers.includes(l)) return;
   const b = s.shape.lineBox ?? s.shape.box;
   snap();
   relayout(l, f, { width: fixed ? b.x1 - b.x0 : null });

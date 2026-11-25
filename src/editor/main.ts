@@ -19,6 +19,7 @@ import { initShortcuts } from './ui/shortcuts';
 import { initPanel, layoutRestored, renderList, syncExportButtons, syncExportUI, syncSel, updateHint } from './ui/panel';
 import { fitView, resize } from './view';
 import { initScaleRef, toggleScaleRef } from './scaleref';
+import { initOverlap, toggleOverlap } from './overlap';
 import { initTextPanel } from './text/textpanel';
 import { onPlacingChange } from './text/editor';
 import { restoreTextDraft } from './text/editor';
@@ -72,6 +73,7 @@ export function startEditor() {
   initShortcuts();
   initLayout();
   initScaleRef();
+  initOverlap();
 
   setHistoryHooks({
     afterHistory,
@@ -84,6 +86,7 @@ export function startEditor() {
   $('#redo').addEventListener('click', redo);
   $('#zoomFit').addEventListener('click', fitView);
   $('#scaleRef').addEventListener('click', () => toggleScaleRef());
+  $('#overlapToggle').addEventListener('click', () => toggleOverlap());
   $('#quickExport').addEventListener('click', () => void exportTiles());
   initPdfCard();
   $('#newPoster').addEventListener('click', newPoster);
@@ -113,7 +116,7 @@ export function startEditor() {
   // el guardado del navegador responda, que puede tardar o no estar disponible
   renderList();
   syncSel();
-  renderBar(); // «＋ Agregar» ya con la bienvenida
+  renderBar(); // la barra de herramientas, ya con la bienvenida
 
   void (async () => {
     // se restaura sin preguntar: solo hay una versión del trabajo, no hay nada que elegir

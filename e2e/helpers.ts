@@ -6,15 +6,14 @@ export interface SavedBox { x0: number; y0: number; x1: number; y1: number; w: n
 export interface Saved { names: string[]; boxes: SavedBox[]; layout: Record<string, unknown>; guides: { axis: 'x' | 'y'; at: number }[]; dpi: number }
 
 /**
- * «Agregar texto» y elegir dónde: el de la bienvenida o el de «＋ Agregar» en la barra, y un clic en el lienzo, que
+ * «Agregar texto» y elegir dónde: el de la bienvenida o Texto en la barra de herramientas, y un clic en el lienzo, que
  * es donde empieza el texto. Devuelve con el cuadro de escritura listo.
  */
 export async function startText(page: Page, at = { x: 220, y: 260 }) {
   const welcome = page.locator('#empty [data-addtext]');
   if (await welcome.isVisible()) await welcome.click();
   else {
-    await page.locator('#ctxbar [data-act=add]').click();
-    await page.locator('#menu').getByRole('menuitem', { name: /Agregar texto/ }).click();
+    await page.locator('#toolbar [data-tool=text]').click();
   }
   await page.locator('#cv').click({ position: at });
   await expect(page.locator('.text-editor')).toBeFocused();

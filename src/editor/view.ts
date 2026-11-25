@@ -61,7 +61,7 @@ export function fitView() {
 function limitZoom(scale: number) {
   const b = content(), a = area(view.fit);
   const base = Math.max(0.01, Math.min((a.w - 36) / (b.x1 - b.x0), (a.h - 36) / (b.y1 - b.y0)));
-  return clamp(scale, base * 0.3, base * 25);
+  return clamp(scale, Math.min(REAL_K, base * 0.3), Math.max(REAL_K, base * 25));
 }
 
 /** Encuadra también las capas giradas o recortadas en el espacio libre del inspector. */

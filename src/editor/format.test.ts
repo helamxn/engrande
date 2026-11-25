@@ -14,6 +14,12 @@ describe('formato de números (coma decimal)', () => {
   });
   it('acepta la unidad al final y operaciones, como en Figma', () => {
     expect(parseNum('14 cm')).toBe(14);
+    expect(parseNum('105 mm', 'cm')).toBe(10.5);
+    expect(parseNum('(10+5)/2 cm', 'mm')).toBe(75);
+    expect(parseNum('25,4 mm', 'pt')).toBeCloseTo(72, 10);
+    expect(parseNum('36 pt', 'cm')).toBeCloseTo(1.27, 10);
+    expect(parseNum('12 cm', '°')).toBeNaN();
+    expect(parseNum('90°', 'cm')).toBeNaN();
     expect(parseNum('30°')).toBe(30);
     expect(parseNum('21/2')).toBe(10.5);
     expect(parseNum('14,3+2')).toBeCloseTo(16.3);

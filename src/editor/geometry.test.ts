@@ -417,6 +417,21 @@ describe('alinear y distribuir varias imágenes', () => {
   it('con menos de tres no reparte nada', () => {
     expect(distributeShifts(boxes.slice(0, 2), 'x')).toEqual([{ x: 0, y: 0 }, { x: 0, y: 0 }]);
   });
+  it('una separación explícita conserva el primer borde y respeta el orden espacial en ambos ejes', () => {
+    const pair = [boxes[1]!, boxes[0]!];
+    expect(apply(pair, distributeShifts(pair, 'x', 2.5))).toEqual([B(32.5, 40, 42.5, 80), pair[1]]);
+    expect(apply(pair, distributeShifts(pair, 'y', 0))).toEqual([B(50, 20, 60, 60), pair[1]]);
+  });
+  it('la caja proyectada coincide con las esquinas del recorte girado y reflejado', () => {
+    for (const rot of [-123, 0, 45, 90]) for (const flipX of [true, false]) for (const flipY of [true, false]) {
+      const l = layer({ rot, flipX, flipY, crop: { x0: 0.18, y0: 0.4, x1: 0.8, y1: 1 } });
+      const pts = cropPtsMM(l), b = bboxMM(l);
+      for (const axis of ['x', 'y'] as const) {
+        expect(b[`${axis}0`]).toBeCloseTo(Math.min(...pts.map(p => p[axis])), 10);
+        expect(b[`${axis}1`]).toBeCloseTo(Math.max(...pts.map(p => p[axis])), 10);
+      }
+    }
+  });
 });
 
 describe('rejilla del fondo (gridLevels)', () => {

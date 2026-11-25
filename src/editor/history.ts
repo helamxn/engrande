@@ -2,7 +2,7 @@
 import { UNDO_MAX } from './constants';
 import { PIX_BUDGET } from './platform';
 import { clonePath } from './groups';
-import { S, st } from './state';
+import { committedFrame, S, st } from './state';
 import type { Snapshot } from './types';
 
 const undoStack: Snapshot[] = [];
@@ -33,17 +33,21 @@ export function takeSnap(): Snapshot {
     layers: st.layers.slice(),
     sel: st.sel,
     group: st.group.slice(),
-    props: st.layers.map((l) => ({
-      l, cx: l.cx, cy: l.cy, w: l.w, h: l.h, rot: l.rot, flipX: l.flipX, flipY: l.flipY,
-      crop: { ...l.crop }, img: l.img, orig: l.orig, page: l.page, fit: l.fit && { ...l.fit }, hidden: l.hidden,
-      name: l.name, locked: l.locked, opacity: l.opacity, gpath: clonePath(l.gpath), src: l.src,
-    })),
+    props: st.layers.map((l) => {
+      const f = committedFrame(l);
+      return {
+        l, cx: f.cx, cy: f.cy, w: f.w, h: f.h, rot: l.rot, flipX: l.flipX, flipY: l.flipY,
+        crop: { ...f.crop }, img: l.img, orig: l.orig, page: l.page, fit: f.fit && { ...f.fit }, hidden: l.hidden,
+        name: l.name, locked: l.locked, opacity: l.opacity, gpath: clonePath(l.gpath), src: l.src,
+      };
+    }),
     // la distribución de hojas también se deshace (cambiarla mueve y reajusta las imágenes)
     layout: { paper: S.paper, orient: S.orient, cols: S.cols, rows: S.rows, margin: S.margin, overlap: S.overlap, posterSize: S.posterSize },
     // resolución, marcas, guía y omitir en blanco: «Nuevo póster» los restablece y deshacerlo debe devolverlos (solo ese
     // paso: ver restoreExport)
     exp: { dpi: S.dpi, marks: S.marks, guide: S.guide, skipBlank: S.skipBlank },
     sheetsOn: st.sheetsOn,
+    wandSel: st.wandSel,
   };
 }
 export function restoreSnap(s: Snapshot) {
@@ -59,6 +63,7 @@ export function restoreSnap(s: Snapshot) {
   Object.assign(S, s.layout);
   if (s.restoreExport) Object.assign(S, s.exp);
   if (s.sheetsOn !== undefined) st.sheetsOn = s.sheetsOn;
+  st.wandSel = s.wandSel ?? null;
   st.sel = s.sel && st.layers.includes(s.sel) ? s.sel : null;
   const g = (s.group ?? []).filter((l) => st.layers.includes(l));
   st.group = g.length > 1 ? g : [];
@@ -74,7 +79,7 @@ export function pushUndo(s: Snapshot) {
   dropped.push(...redoStack.splice(0)); // un cambio nuevo invalida lo que se podía rehacer
   const live = new Set<object>(st.layers.flatMap((l) => [l.img, l.orig]));
   dropped.push(...trimStack(undoStack, live, PIX_BUDGET));
-  releaseUnused(dropped, liveRefs());
+  if (dropped.length) releaseUnused(dropped, liveRefs());
   sync();
   // todo cambio del póster pasa por aquí (snap, commitPending, pixel jobs): así ninguno se queda sin guardar
   hooks.changed();
@@ -134,17 +139,16 @@ export function trimStack<T extends { props: { img: { width: number; height: num
   live: Set<object>,
   budget: number,
 ): T[] {
-  const dropped: T[] = [];
-  while (stack.length > 1) {
-    const seen = new Set<object>();
-    let bytes = 0;
-    for (const s of stack) for (const p of s.props) for (const c of [p.img, p.orig]) {
+  const seen = new Set<object>();
+  let bytes = 0;
+  // El sufijo más reciente que cabe. Un lienzo compartido por varios pasos solo se cuenta una vez.
+  for (let i = stack.length - 1; i >= 0; i--) {
+    for (const p of stack[i]!.props) for (const c of [p.img, p.orig]) {
       if (!live.has(c) && !seen.has(c)) { seen.add(c); bytes += c.width * c.height * 4; }
     }
-    if (bytes <= budget) break;
-    dropped.push(stack.shift()!);
+    if (bytes > budget) return stack.splice(0, Math.min(i + 1, stack.length - 1));
   }
-  return dropped;
+  return [];
 }
 
 /* ---------- liberar memoria ---------- */

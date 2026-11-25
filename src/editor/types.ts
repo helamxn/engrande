@@ -1,3 +1,4 @@
+import type { WandSelection } from './wand';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import type { GroupRef } from './groups';
 
@@ -193,6 +194,8 @@ export interface Snapshot {
   restoreExport?: boolean;
   /** Se veían las hojas (en un póster sin imágenes, solo si se eligió la distribución). */
   sheetsOn?: boolean;
+  /** Lo elegido con la varita: elegir, sumar, restar, invertir o quitarlo son pasos de deshacer, como en Photoshop. */
+  wandSel?: WandSelection | null;
 }
 
 export interface ScaleDrag { t: 'scale'; id: HandleId; L0: Transform; k0: Crop }

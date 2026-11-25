@@ -24,8 +24,17 @@ export const fmtMeasure = (v: number) => String(Math.round(v * 1000) / 1000).rep
  * «30°») y operaciones, como en Figma: «21/2», «14,3+2», «(10+5)*2», «-3». Así se puede partir una medida o sumar un
  * margen sin calculadora. Sin eval: solo números, + − × ÷ y paréntesis. Lo que no se entiende da NaN.
  */
-export function parseNum(s: string): number {
-  const src = s.trim().replace(/\s+/g, '').replace(/(cm|mm|pt|°|%)$/i, '').replace(/,/g, '.')
+const lengthMM = { cm: 10, mm: 1, pt: 25.4 / 72 };
+type MeasureUnit = keyof typeof lengthMM | '°' | '%';
+export function parseNum(s: string, target?: MeasureUnit): number {
+  if (s.length > 512) return NaN;
+  const value = s.trim(), unit = value.match(/(cm|mm|pt|°|%)$/i)?.[0].toLowerCase() as MeasureUnit | undefined;
+  let factorToTarget = 1;
+  if (target && unit && unit !== target) {
+    if (target === '°' || target === '%' || unit === '°' || unit === '%') return NaN;
+    factorToTarget = lengthMM[unit] / lengthMM[target];
+  }
+  const src = (unit ? value.slice(0, -unit.length) : value).replace(/\s+/g, '').replace(/,/g, '.')
     .replace(/[×x]/g, '*').replace(/÷/g, '/').replace(/[−–]/g, '-');
   let i = 0;
   const peek = () => src[i];
@@ -50,8 +59,8 @@ export function parseNum(s: string): number {
     return parseFloat(m[0]);
   };
   if (!src) return NaN;
-  const v = expr();
-  return i === src.length && Number.isFinite(v) ? v : NaN;
+  const v = expr() * factorToTarget;
+  return i === src.length && Math.abs(v) <= Number.MAX_SAFE_INTEGER / 1000 ? v : NaN;
 }
 
 /** Números de hoja en pocas palabras: [1, 2, 3, 5] → «1–3 y 5»; [4] → «4». */

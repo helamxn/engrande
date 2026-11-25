@@ -20,6 +20,7 @@ const GROUPS: Group[] = [
     ['Ver esta ayuda', ['?']],
     ['Agregar imagen o PDF', [C, 'O']],
     ['Agregar texto', ['T']],
+    ['Agregar rectángulo · elipse · triángulo', ['U'], ['O'], ['Y']],
     ['Deshacer', [C, 'Z']],
     ['Rehacer', [C, 'Y'], [C, S, 'Z']],
     [`Pegar (una imagen o lo copiado en ${BRAND.name})`, [C, 'V']],
@@ -40,8 +41,13 @@ const GROUPS: Group[] = [
   { title: 'Herramientas', rows: [
     ['Mover', ['V']],
     ['Recortar', ['C'], [t('Doble clic')]],
-    ['Borrador', ['E']],
-    ['Pincel más pequeño · más grande', ['['], [']']],
+    ['Borrador', ['B'], ['E']],
+    ['Borrador: cambiar entre borrar y restaurar', ['X']],
+    ['Borrador: tamaño del pincel', [A, t('clic derecho y arrastrar')], ['['], [']'], [','], ['.']],
+    ['Varita: tolerancia', [A, t('clic derecho y arrastrar')], ['['], [']'], [','], ['.']],
+    ['Varita: elegir un color', [t('Clic')]],
+    ['Varita: sumar · restar una zona', [S, t('clic')], [A, t('clic')]],
+    ['Varita: borrar lo elegido · quitarlo sin borrar', [DELK], ['Esc']],
     ['Varita', ['W']],
   ] },
   { title: 'Texto', rows: [
@@ -49,7 +55,7 @@ const GROUPS: Group[] = [
     ['Nueva línea', ['Enter']],
     ['Terminar de escribir', ['Esc'], [C, 'Enter']],
   ] },
-  { title: 'Imagen seleccionada', rows: [
+  { title: 'Transformar y organizar la selección', rows: [
     ['Mover 1 mm', [ARROWS]],
     ['Mover 10 mm', [S, ARROWS]],
     ['Mover midiendo las distancias', [A, ARROWS]],
@@ -72,10 +78,11 @@ const GROUPS: Group[] = [
     ['Agregar o quitar de la selección', [S, t('clic')], [C, t('clic')]],
     ['En la lista de capas: elegir un tramo', [S, t('clic')]],
     ['Seleccionar con un recuadro', [t('Arrastrar en el fondo')]],
-    ['Seleccionar todas', [C, 'A']],
+    ['Cancelar el recuadro en curso', ['Esc']],
+    ['Seleccionar todas en el nivel actual', [C, 'A']],
     ['Agrupar (también grupos)', [C, 'G']],
     ['Desagrupar un nivel', [C, S, 'G']],
-    ['Entrar en un grupo', [t('Doble clic')]],
+    ['Entrar en un grupo', ['Enter'], [t('Doble clic')]],
   ] },
   { title: 'Con el ratón', rows: [
     ['Escalar sin deformar', [t('Arrastrar una esquina')]],

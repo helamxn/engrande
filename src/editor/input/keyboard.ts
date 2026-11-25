@@ -1,22 +1,24 @@
 /** Atajos de teclado. */
 import {
-  afterChange, alignSelected, applyCrop, hideSelected, lockSelected, pasteLayer, toggleHidden, toggleLocked, cancelCrop, copySelected, cutSelected, duplicateSelected, enterCrop, exitGroup, flip, groupSelected,
-  removeSelected, reorder, rotate90, selectAll, selected, selectedGroup, setMode, shiftSelected, ungroupSelected,
+  addFigure, afterChange, alignSelected, applyCrop, hideSelected, lockSelected, pasteLayer, toggleHidden, toggleLocked, cancelCrop, copySelected, cutSelected, duplicateSelected, enterCrop, exitGroup, flip, groupSelected,
+  enterGroup, removeSelected, reorder, rotate90, selectAll, selected, selectedGroup, setBrushMode, setMode, shiftSelected, ungroupSelected,
 } from '../actions';
 import { redo, snapSeries, undo } from '../history';
 import { S, st } from '../state';
 import { fitSelection, fitView, zoomCenter, zoomReal } from '../view';
-import { setBrush } from '../ui/contextbar';
+import { setBrush, setTol } from '../ui/contextbar';
 import type { AlignEdge } from '../geometry';
 import { isMenuOpen } from '../ui/menu';
 import { toggleLayersCard } from '../ui/panel';
 import { isShortcutsOpen, openShortcuts } from '../ui/shortcuts';
-import { cancelGuideDrag, isGesturing, setSpaceDown } from './pointer';
+import { cancelSelectionGesture, isGesturing, setSpaceDown } from './pointer';
 import { measureCtx, stopMeasure } from '../measure';
 import { bboxMM, gridStep, stepToLines, unionBox } from '../geometry';
 import { altChangedDuringDrag, refreshMeasure } from './pointer';
 import { cancelTextPlacement, editText, startTextPlacement } from '../text/editor';
 import { isText } from '../text/text';
+import { FIGURE_KEYS } from '../figures';
+import { clearWandSelection, deleteWandSelection, wandSelection } from '../wand';
 
 /**
  * Botón que tiene el foco porque se pulsó con el ratón o el dedo (no con el teclado). No sirve :focus-visible: el
@@ -28,6 +30,9 @@ function spaceTarget(t: EventTarget | null) {
   if (t === document.body || t instanceof HTMLCanvasElement) return true;
   return t instanceof HTMLButtonElement && t === pointerFocused && !t.closest('#menu, .menu, dialog');
 }
+
+/** Paso de la tolerancia de la varita con [ ] o , . */
+const TOL_STEP = 5;
 
 /** Alt + tecla para alinear (por posición física: igual en cualquier distribución de teclado). */
 const ALIGN_KEYS: Record<string, AlignEdge> = {
@@ -51,7 +56,7 @@ export function initKeyboard() {
   document.addEventListener('keydown', (e) => {
     if (isMenuOpen() || isShortcutsOpen()) return;
     if (isGesturing() && e.target instanceof HTMLCanvasElement) {
-      if (e.key === 'Escape') cancelGuideDrag();
+      if (e.key === 'Escape') cancelSelectionGesture();
       if (e.key !== 'Tab') e.preventDefault();
       return;
     }
@@ -70,10 +75,13 @@ export function initKeyboard() {
     if (!mod && !e.altKey && e.shiftKey && e.code === 'Digit1') { e.preventDefault(); fitView(); return; }
     if (!mod && !e.altKey && e.shiftKey && e.code === 'Digit2') { e.preventDefault(); fitSelection(); return; }
     if (!mod && !e.altKey && e.shiftKey && e.code === 'Digit0') { e.preventDefault(); zoomReal(); return; }
-    // [ y ] cambian el pincel, como en Photoshop (en teclado español se escriben con AltGr, que llega como Ctrl + Alt)
-    if ((e.key === '[' || e.key === ']') && S.mode === 'erase' && (!mod || e.getModifierState('AltGraph'))) {
+    // [ y ] cambian el pincel del borrador, como en Photoshop, y la tolerancia de la varita (en teclado español se
+    // escriben con AltGr, que llega como Ctrl + Alt). , y . hacen lo mismo sin AltGr, en cualquier teclado
+    const step = e.key === '[' || e.key === ',' ? -1 : e.key === ']' || e.key === '.' ? 1 : 0;
+    if (step && (S.mode === 'erase' || S.mode === 'wand') && (!mod || e.getModifierState('AltGraph'))) {
       e.preventDefault();
-      setBrush(e.key === ']' ? Math.max(S.brush + 1, S.brush * 1.2) : Math.min(S.brush - 1, S.brush / 1.2));
+      if (S.mode === 'wand') setTol(S.tol + step * TOL_STEP);
+      else setBrush(step > 0 ? Math.max(S.brush + 1, S.brush * 1.2) : Math.min(S.brush - 1, S.brush / 1.2));
       return;
     }
     // Ctrl+\ como en Figma (en teclado español, la tecla ç ocupa esa posición)
@@ -105,9 +113,15 @@ export function initKeyboard() {
       return;
     }
     if (e.key === 'Enter' && S.mode === 'crop') { e.preventDefault(); applyCrop(); return; }
+    if (e.key === 'Enter' && !mod && !e.altKey && !e.shiftKey && S.mode === 'move' && selectedGroup() !== null &&
+        (e.target === document.body || e.target instanceof HTMLCanvasElement)) {
+      e.preventDefault(); enterGroup(st.group.at(-1)!); return;
+    }
     // Enter con un texto seleccionado: escribir (si el foco está en un botón, Enter es pulsarlo)
     if (e.key === 'Enter' && !mod && isText(sel) && !(e.target instanceof HTMLButtonElement)) { e.preventDefault(); editText(sel); return; }
     if (e.key === 'Escape' && st.placingText) { cancelTextPlacement(); return; }
+    // con algo elegido con la varita, Esc lo quita (sin borrar) antes que salir de la herramienta
+    if (e.key === 'Escape' && S.mode === 'wand' && wandSelection()) { clearWandSelection(); return; }
     if (e.key === 'Escape') {
       // en un grupo abierto, Esc sale un nivel (selecciona el grupo); en el póster, deselecciona
       if (S.mode === 'crop') cancelCrop(); else if (S.mode !== 'move') setMode('move'); else exitGroup();
@@ -121,6 +135,8 @@ export function initKeyboard() {
     const edge = e.altKey && !mod && !e.shiftKey ? ALIGN_KEYS[e.code] : undefined;
     if (edge) { e.preventDefault(); if (any) alignSelected(edge); return; }
     if (mod || (e.altKey && !arrow)) return;
+    // Supr con algo elegido con la varita: borra lo elegido (no la imagen)
+    if ((e.key === 'Delete' || e.key === 'Backspace') && S.mode === 'wand' && wandSelection()) { e.preventDefault(); void deleteWandSelection(); return; }
     if ((e.key === 'Delete' || e.key === 'Backspace') && any) { e.preventDefault(); removeSelected(); return; }
     if (any && !sel?.locked && arrow && S.mode === 'move') {
       e.preventDefault();
@@ -148,13 +164,17 @@ export function initKeyboard() {
     // si no, Espacio lo volvería a pulsar (p. ej. «Acercar»). Con el foco puesto con el teclado, Espacio pulsa el botón.
     if (e.code === 'Space' && spaceTarget(e.target)) { if (!e.repeat) setSpaceDown(true); e.preventDefault(); return; }
     if (k === 't' && !e.shiftKey) { e.preventDefault(); startTextPlacement(); return; }
+    // formas: U rectángulo, O elipse, Y triángulo (ver figures.ts)
+    const figure = !e.shiftKey ? (Object.keys(FIGURE_KEYS) as (keyof typeof FIGURE_KEYS)[]).find((f) => FIGURE_KEYS[f] === k) : undefined;
+    if (figure) { e.preventDefault(); addFigure(figure); return; }
+    if (any && k === 'r') { rotate90(e.shiftKey ? -1 : 1)(); return; }
+    if (any && k === 'h') { flip(e.shiftKey ? 'y' : 'x')(); return; }
     if (!sel) return;
     if (k === 'c') enterCrop();
-    else if (k === 'e') setMode('erase');
+    else if (k === 'b' || k === 'e') setMode('erase');
+    else if (k === 'x' && S.mode === 'erase') setBrushMode();
     else if (k === 'w') setMode('wand');
     else if (k === 'v') setMode('move');
-    else if (k === 'r') rotate90(e.shiftKey ? -1 : 1)();
-    else if (k === 'h') flip(e.shiftKey ? 'y' : 'x')();
   });
   document.addEventListener('keyup', (e) => { if (e.code === 'Space') { if (spaceTarget(e.target)) e.preventDefault(); setSpaceDown(false); } });
   addEventListener('blur', () => setSpaceDown(false));

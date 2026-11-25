@@ -14,7 +14,7 @@ import {
 } from '../actions';
 import { focusGroupName, focusName } from './panel';
 import { stackPeers } from '../groups';
-import { figures } from '../figures';
+import { FIGURE_KEYS, figures } from '../figures';
 import type { ShapeSpec } from '../types';
 import { $, toast } from '../dom';
 import { isStretched } from '../geometry';
@@ -22,9 +22,10 @@ import { isTouch } from '../platform';
 import { isFreshPoster, sheetsVisible, st } from '../state';
 import { fitView, zoomCenter } from '../view';
 import { toggleScaleRef } from '../scaleref';
+import { canToggleOverlap, toggleOverlap } from '../overlap';
 import { loadFiles } from '../io/load';
 import { ICON, type IconName } from './icons';
-import { addText, editText, startTextPlacement } from '../text/editor';
+import { addText, editText } from '../text/editor';
 import { isText } from '../text/text';
 import { gesture, k, keysEl, rich, type Part } from './keys';
 import { openShortcuts } from './shortcuts';
@@ -70,6 +71,15 @@ function orderMenu(item: Layer | number): MenuItem[] {
   ] }];
 }
 
+const transformMenu = (disabled = false): SubmenuItem => ({
+  label: 'Girar y voltear', icon: 'rot', disabled, submenu: [
+    { label: 'Girar 90° a la derecha', kbd: k('r'), fn: rotate90(1) },
+    { label: 'Girar 90° a la izquierda', kbd: k('shift+r'), fn: rotate90(-1) },
+    { label: 'Voltear en horizontal', kbd: k('h'), fn: flip('x') },
+    { label: 'Voltear en vertical', kbd: k('shift+h'), fn: flip('y') },
+  ],
+});
+
 export function layerMenu(l: Layer, prev: Layer[] = []): MenuItem[] {
   const locked = l.hidden || l.locked; // oculta o bloqueada: no se puede editar hasta mostrarla o desbloquearla
   // en táctil no hay Shift ni Ctrl: mantener pulsada otra imagen ofrece sumarla a lo que estaba seleccionado
@@ -87,7 +97,7 @@ export function layerMenu(l: Layer, prev: Layer[] = []): MenuItem[] {
       { label: 'Quitar fondo', icon: 'bg', fn: () => { select(l); autoBackground(); }, disabled: locked } satisfies ActionItem,
       {
         label: 'Borrar zonas', icon: 'erase', disabled: locked, submenu: [
-          { label: 'Borrador', kbd: k('e'), fn: () => { select(l); setMode('erase'); } },
+          { label: 'Borrador', kbd: k('b'), fn: () => { select(l); setMode('erase'); } },
           { label: 'Varita', kbd: k('w'), fn: () => { select(l); setMode('wand'); } },
         ],
       } satisfies SubmenuItem,
@@ -106,14 +116,7 @@ export function layerMenu(l: Layer, prev: Layer[] = []): MenuItem[] {
     ] : []),
     '-',
     ...orderMenu(l),
-    {
-      label: 'Girar y voltear', icon: 'rot', disabled: l.locked, submenu: [
-        { label: 'Girar 90° a la derecha', kbd: k('r'), fn: rotate90(1) },
-        { label: 'Girar 90° a la izquierda', kbd: k('shift+r'), fn: rotate90(-1) },
-        { label: 'Voltear en horizontal', kbd: k('h'), fn: flip('x') },
-        { label: 'Voltear en vertical', kbd: k('shift+h'), fn: flip('y') },
-      ],
-    },
+    transformMenu(locked),
     {
       label: 'Tamaño y posición', icon: 'scaling', disabled: l.locked, submenu: [
         { label: 'Ajustar al póster', fn: fitSel('contain') },
@@ -159,9 +162,10 @@ export function groupMenu(): MenuItem[] {
       : { label: 'Agrupar', icon: 'group', kbd: k('mod+g'), fn: groupSelected },
     ...(whole != null ? [{ label: 'Renombrar grupo…', icon: 'rename', fn: () => focusGroupName(whole) } satisfies ActionItem] : []),
     ...(whole != null ? orderMenu(whole) : []),
+    transformMenu(),
     '-',
-    { label: whole != null ? 'Alinear con el póster' : 'Alinear', icon: 'alignLeft', submenu: alignMenu() },
-    { label: 'Repartir', icon: 'distributeH', disabled: compositionUnits().length < 3, submenu: distributeMenu() },
+    { label: whole != null || st.alignToPoster ? 'Alinear con el póster' : 'Alinear entre sí', icon: 'alignLeft', submenu: alignMenu() },
+    { label: 'Repartir entre los extremos', icon: 'distributeH', disabled: compositionUnits().length < 3, submenu: distributeMenu() },
     '-',
     { label: 'Ocultar las ' + n, icon: 'eyeOff', kbd: k('mod+shift+h'), fn: hideSelected },
     { label: 'Bloquear las ' + n, icon: 'lock', kbd: k('mod+shift+l'), fn: lockSelected },
@@ -182,15 +186,10 @@ export function groupRowMenu(gid: number): MenuItem[] {
     ...orderMenu(gid),
   ];
 }
-/** «＋ Agregar» de la barra: lo que crea capas nuevas (con los mismos nombres que la bienvenida). */
-export const addMenu = (): MenuItem[] => [
-  { label: 'Agregar imagen o PDF…', icon: 'addImage', kbd: k('mod+o'), fn: () => $<HTMLInputElement>('#file').click() },
-  { label: 'Agregar texto', icon: 'text', kbd: k('t'), fn: startTextPlacement },
-  { label: 'Agregar forma', icon: 'shapes', submenu: (Object.keys(figures) as ShapeSpec['figure'][]).map((figure) => ({
-    label: figures[figure], fn: () => addFigure(figure),
-  })) },
-  { label: 'Pegar', icon: 'paste', kbd: k('mod+v'), fn: () => void pasteAny(), disabled: !canPaste() },
-];
+/** Las formas que se pueden agregar (botón Forma de la barra de herramientas). */
+export const shapeMenu = (): MenuItem[] => (Object.keys(figures) as ShapeSpec['figure'][]).map((figure) => ({
+  label: figures[figure], kbd: k(FIGURE_KEYS[figure]), fn: () => addFigure(figure),
+}));
 /** Las capas bloqueadas bajo el puntero se ofrecen de delante hacia atrás. */
 export function unlockMenu(layers: Layer[]): MenuItem[] {
   if (!layers.length) return [];
@@ -201,6 +200,20 @@ export function unlockMenu(layers: Layer[]): MenuItem[] {
     },
   }));
   return [items.length === 1 ? items[0]! : { label: 'Desbloquear objeto', icon: 'lockOpen', submenu: items }, '-'];
+}
+
+/** Acceso directo a una capa tapada o anidada, en el mismo orden que la lista de Capas. */
+export function pickLayerMenu(layers: Layer[]): MenuItem[] {
+  if (!layers.length || (layers.length === 1 && !layers[0]!.gpath.length)) return [];
+  const names = layers.map(l => [...l.gpath.map(g => g.name), l.name].join(' › '));
+  const counts = new Map<string, number>();
+  for (const name of names) counts.set(name, (counts.get(name) ?? 0) + 1);
+  const items: ActionItem[] = layers.map((l, i) => ({
+    label: counts.get(names[i]!) === 1 ? names[i]! : `${names[i]} · ${i + 1}`,
+    icon: st.sel === l ? 'check' : undefined,
+    fn: () => { if (!l.locked && !l.hidden && st.layers.includes(l)) select(l); },
+  }));
+  return [{ label: 'Seleccionar capa', icon: 'selectBox', submenu: items }, '-'];
 }
 
 /** Menú del lienzo vacío. at: dónde se tocó (mm), para «Agregar texto aquí». */
@@ -219,6 +232,10 @@ export function emptyMenu(at?: Pt): MenuItem[] {
     {
       label: st.scaleRef ? 'Quitar la persona de 1,70 m' : 'Persona de 1,70 m al lado', icon: 'person',
       fn: () => toggleScaleRef(), disabled: !sheetsVisible(),
+    },
+    {
+      label: st.showOverlap ? 'Ocultar el solape' : 'Mostrar el solape', icon: 'overlap',
+      fn: () => toggleOverlap(), disabled: !canToggleOverlap(),
     },
     '-',
     { label: 'Atajos y gestos', icon: 'keyboard', kbd: k('?'), fn: openShortcuts },

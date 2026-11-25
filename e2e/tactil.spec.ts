@@ -34,7 +34,7 @@ test('una pulsación prolongada permite desbloquear un objeto deseleccionado des
   await page.touchscreen.tap(outside.x, outside.y);
   await f.hold(c, 800);
   await page.getByRole('menuitem', { name: 'Desbloquear «foto»' }).tap();
-  await expect(page.locator('#ctxbar [data-act=crop]')).toBeVisible();
+  await expect(page.locator('#toolbar [data-tool=crop]')).toBeEnabled(); // desbloqueada: ya se puede recortar
 });
 
 test('mantener pulsado el fondo abre el menú del póster', async ({ page }) => {
@@ -62,9 +62,10 @@ test('deslizar un dedo por el fondo mueve la vista y deselecciona (sin recuadro 
   const f = await fingers(page);
   await f.swipe(outside, { x: outside.x + 80, y: outside.y - 60 });
   expect(await listNames(page)).toEqual(['foto']);
-  // sin selección, la barra fija ofrece agregar (y no las acciones de la imagen)
-  await expect(page.locator('#ctxbar [data-act=add]')).toBeVisible();
-  await expect(page.locator('#ctxbar [data-act=crop]')).toHaveCount(0);
+  // sin selección: Texto sigue a mano, las herramientas de la imagen se apagan y no hay opciones
+  await expect(page.locator('#toolbar [data-tool=text]')).toBeEnabled();
+  await expect(page.locator('#toolbar [data-tool=crop]')).toBeDisabled();
+  await expect(page.locator('#ctxbar')).toBeHidden();
 });
 
 test('doble toque sobre la imagen entra en el recorte', async ({ page }) => {

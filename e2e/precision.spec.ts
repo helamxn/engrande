@@ -2,9 +2,8 @@ import { expect, test, type Page } from '@playwright/test';
 import { closeCards, drag, openApp, openTab, saved, savedBox, screenMap, type SavedBox } from './helpers';
 
 async function addFigure(page: Page) {
-  await page.locator('#ctxbar [data-act=add]').click();
-  await page.getByRole('menuitem', { name: 'Agregar forma' }).click();
-  await page.getByRole('menuitem', { name: 'Rectángulo', exact: true }).click();
+  await page.locator('#toolbar [data-tool=shape]').click();
+  await page.getByRole('menuitem', { name: /^Rectángulo/ }).click();
   await expect(page.locator('#selectionTitle')).toHaveText('Forma');
 }
 async function blur(page: Page) {
@@ -31,7 +30,7 @@ test('los campos aceptan operaciones y arrastrar su nombre cambia el valor en un
   await addFigure(page);
   await openTab(page, 'sel');
   const w = page.locator('#pW');
-  await w.fill('21/2');
+  await w.fill('210/2 mm');
   await w.press('Enter');
   await savedBox(page, (b) => near(b.w, 105));
   await expect(w).toHaveValue('10,5'); // el campo muestra el resultado, no la operación

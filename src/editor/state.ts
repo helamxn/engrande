@@ -3,6 +3,8 @@ import { getPref, savedMargin } from './prefs';
 import { geo, type Box, type Dash, type Gap, type GuideSeg } from './geometry';
 import type { GroupRef } from './groups';
 import type { Layer, LayoutGuide, LayoutSettings, Pt, Settings, TextDraft } from './types';
+import type { MaskOp } from './pixels';
+import type { WandSelection } from './wand';
 
 /** Ajustes de un póster nuevo (los que se guardan y se restablecen con "Nuevo póster"). */
 export const DEFAULT_LAYOUT: LayoutSettings = { paper: 'A4', orient: 'portrait', cols: 1, rows: 1, margin: 6, overlap: 10, posterSize: null };
@@ -17,6 +19,8 @@ export const S: Settings = {
 };
 
 export const st = {
+  alignToPoster: false,
+  cropSession: null as { layer: Layer; before: Pick<Layer, 'cx' | 'cy' | 'w' | 'h' | 'crop' | 'fit'> } | null,
   layoutGuides: [] as LayoutGuide[],
   guideDraft: null as (LayoutGuide & { original: LayoutGuide | null }) | null,
   rulers: getPref('rulers') !== 'false',
@@ -48,6 +52,8 @@ export const st = {
   hoverBand: false,
   /** Persona de 1,70 m junto al póster, para ver su tamaño real (ver scaleref.ts). */
   scaleRef: false,
+  /** Franjas de solape y líneas discontinuas entre hojas a la vista (ver overlap.ts). */
+  showOverlap: true,
   /** Se está ajustando el margen o el solape: se dibuja el papel entero de cada hoja. */
   showPaper: false,
   /** Recuadro de selección mientras se arrastra (px de pantalla). */
@@ -58,6 +64,15 @@ export const st = {
   /** Grupos en los que estaba lo copiado (sin los copiados enteros): al pegar, se pega dentro si aún existen. */
   clipScope: [] as GroupRef[],
   clipN: 0,
+  /**
+   * Ajustando el pincel del borrador o la tolerancia de la varita con Alt + clic derecho y arrastrar (como en
+   * Photoshop): dónde se pulsó (px de pantalla; el círculo se queda ahí) y qué se ajusta. Ver input/pointer.ts.
+   */
+  adjust: null as { at: Pt; what: 'brush' | 'tol' } | null,
+  /** Lo elegido con la varita (sin borrar todavía); ver wand.ts. */
+  wandSel: null as WandSelection | null,
+  /** Qué hace un clic de la varita sin Shift ni Alt: zona nueva, sumar o restar (botones de la barra, para táctil). */
+  wandOp: 'new' as MaskOp,
   /** Posición del puntero (círculo del pincel). */
   hover: null as Pt | null,
   /** Imagen bajo el ratón (se resalta). */
@@ -86,6 +101,8 @@ export const view = { dpr: 1, CW: 0, CH: 0, ins: { t: 0, r: 0, b: 0, l: 0 }, fit
 export const C: Record<string, string> = {};
 
 export const posterGeo = () => geo(S);
+/** El lienzo muestra el recorte en curso. Historial y guardado leen el último marco confirmado. */
+export const committedFrame = (l: Layer) => st.cropSession?.layer === l ? st.cropSession.before : l;
 /**
  * El póster está como uno nuevo: sin imágenes, sin hojas elegidas y con los ajustes iniciales. Entonces «Nuevo
  * póster» no tiene nada que hacer (el botón se desactiva).

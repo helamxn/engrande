@@ -11,8 +11,22 @@ const field = 'flex flex-col gap-2';
   <p class="sel-note !block" id="selEmpty">Nada seleccionado. Elige una capa en el lienzo o en la pestaña Capas para ver aquí sus propiedades.</p>
   <div id="selectionHead" class="selection-head" hidden>
     <h2 id="selectionTitle" class="m-0 min-w-0 flex-1 truncate text-[.72rem] font-bold tracking-[.07em] text-muted uppercase">Selección</h2>
+    <!-- ocultar y bloquear (como en la fila de Capas): sus iconos cambian con el estado (selectioncard.ts) -->
+    <button type="button" id="selHide" class="selection-close" aria-label="Ocultar" title="Ocultar (Ctrl + Mayús + H)"><Icon name="eye" /></button>
+    <button type="button" id="selLock" class="selection-close" aria-label="Bloquear" title="Bloquear (Ctrl + Mayús + L)" aria-pressed="false"><Icon name="lockOpen" /></button>
     <button type="button" id="zoomSelection" class="selection-close" aria-label="Encuadrar selección" title="Encuadrar selección (Mayús + 2)"><Icon name="fitAll" /></button>
     <button type="button" id="selectionClose" class="selection-close" aria-label="Deseleccionar" title="Deseleccionar (Esc)"><Icon name="x" /></button>
+  </div>
+  <!-- órdenes de lo seleccionado: el orden de capas (al frente … al fondo) y duplicar, agrupar y eliminar -->
+  <div id="selectionActions" class="selection-actions tgroup full" role="toolbar" aria-label="Acciones de la selección" hidden>
+    <button type="button" id="selFront" aria-label="Traer al frente" title="Traer al frente (Ctrl + Mayús + ])"><Icon name="toFront" /></button>
+    <button type="button" id="selUp" aria-label="Subir un nivel" title="Subir un nivel (Ctrl + ])"><Icon name="up" /></button>
+    <button type="button" id="selDown" aria-label="Bajar un nivel" title="Bajar un nivel (Ctrl + [)"><Icon name="down" /></button>
+    <button type="button" id="selBack" aria-label="Enviar al fondo" title="Enviar al fondo (Ctrl + Mayús + [)"><Icon name="toBack" /></button>
+    <span class="sep" aria-hidden="true"></span>
+    <button type="button" id="selDup" aria-label="Duplicar" title="Duplicar (Ctrl + D)"><Icon name="dup" /></button>
+    <button type="button" id="selGroup" aria-label="Agrupar" title="Agrupar (Ctrl + G)" hidden><Icon name="group" /></button>
+    <button type="button" id="selDelete" class="danger" aria-label="Eliminar" title="Eliminar (Supr)"><Icon name="del" /></button>
   </div>
   <div class="selection-body">
     <!-- aviso con la imagen bloqueada: sus medidas no se pueden cambiar hasta desbloquearla -->
@@ -22,7 +36,7 @@ const field = 'flex flex-col gap-2';
       <!-- solo con un grupo entero seleccionado (no con varias sueltas) -->
       <label class="pf" id="gNameField"><span>Nombre del grupo</span><span class="unit"><input id="gName" type="text" maxlength="80" autocomplete="off" spellcheck="false" placeholder="Grupo" class="!font-ui" /></span></label>
       <div class="flex flex-col gap-2">
-        <label class="lbl" for="gOpacity">Opacidad de las seleccionadas <output id="gOpacityOut">100 %</output></label>
+        <label class="lbl" for="gOpacity">Opacidad <output id="gOpacityOut">100 %</output></label>
         <input id="gOpacity" type="range" min="5" max="100" step="1" value="100" />
       </div>
       <!-- el marco común: medidas y giro de todo a la vez, como el de una imagen sola -->
@@ -43,6 +57,9 @@ const field = 'flex flex-col gap-2';
       </div>
       <div class="flex flex-col gap-2">
         <div class="lbl" id="lblGAlign">Alinear entre sí</div>
+        <label class="pf" id="gAlignTargetField"><span class="sr-only">Referencia de alineación</span><span class="unit">
+          <select id="gAlignTarget" class="tsel"><option value="selection">Entre elementos</option><option value="poster">Conjunto con el póster</option></select>
+        </span></label>
         <div class="seg full" role="group" aria-labelledby="lblGAlign" id="gAlign">
           <button type="button" data-e="left" title="A la izquierda" aria-label="Alinear a la izquierda"><Icon name="alignLeft" /></button>
           <button type="button" data-e="hcenter" title="Al centro (horizontal)" aria-label="Alinear al centro en horizontal"><Icon name="alignHCenter" /></button>
@@ -52,18 +69,14 @@ const field = 'flex flex-col gap-2';
           <button type="button" data-e="bottom" title="Abajo" aria-label="Alinear abajo"><Icon name="alignBottom" /></button>
         </div>
       </div>
-      <div class="flex flex-col gap-2">
-        <div class="lbl" id="lblGDist">Repartir <span class="val" id="gDistNote"></span></div>
+      <div class="flex flex-col gap-2" id="gDistField">
+        <div class="lbl" id="lblGDist">Repartir</div>
         <div class="seg full" role="group" aria-labelledby="lblGDist" id="gDist">
           <button type="button" data-a="x" title="Misma separación en horizontal"><Icon name="distributeH" />Horizontal</button>
           <button type="button" data-a="y" title="Misma separación en vertical"><Icon name="distributeV" />Vertical</button>
         </div>
       </div>
-      <!-- agrupar, duplicar y quitar son órdenes: están en la barra de abajo -->
-      <div class="flex flex-wrap gap-2 [&>.btn]:flex-auto">
-        <button type="button" class="btn" id="gHide"><Icon name="eyeOff" />Ocultar</button>
-        <button type="button" class="btn" id="gLock"><Icon name="lock" />Bloquear</button>
-      </div>
+      <!-- agrupar, duplicar y eliminar, arriba (fila de acciones); ocultar y bloquear, en la cabecera -->
     </div>
     <!-- texto seleccionado: fuente, tamaño de letra, color, alineación y espaciado (ver textpanel.ts) -->
     <div class:list={[field, 'needs-sel', 'needs-text', 'edit-sel', 'gap-3']}>
