@@ -128,6 +128,33 @@ exportación) pueden agotar su tiempo en este equipo. Con `--workers 3` pasan la
     es un paso de deshacer y solo vuelven al deshacer o rehacer «Nuevo póster», que es lo que los restablece
     (`restoreExport`).
 
+### Ronda 6: rendimiento al cargar y al recuperar — **hecha**
+
+Medido con 16 PNG de 2400 × 1600 px en Edge, con la compilación de producción, sin limitar la CPU y limitándola ×4 en
+las herramientas del navegador (como un equipo modesto). Lo interactivo ya iba a 60 fps en los dos casos: mover la vista,
+zoom, arrastrar una o todas, borrador, deshacer y guardar no tenían tareas largas, y no cambian. Lo lento era cargar
+imágenes y recuperar el póster al abrir:
+
+| | Antes | Después |
+|---|---|---|
+| Cargar las 16 (CPU normal) | 1,5 s, 957 ms con la página congelada (tarea más larga: 74 ms) | 0,8 s, sin tareas largas |
+| Cargar las 16 (CPU ×4) | 6,6 s, 6,1 s congelada (348 ms) | 2,3 s, 0,9 s congelada (123 ms) |
+| Recuperar al abrir (CPU normal) | 608 ms congelada (228 ms) | sin tareas largas |
+| Recuperar al abrir (CPU ×4) | listo a los 6,4 s, 3,6 s congelada (942 ms) | listo a los 2,4 s, 0,3 s congelada (158 ms) |
+
+23. **Decodificar fuera del hilo principal** (`bitmapAt`, `imageCanvas` en `io/load.ts`): `createImageBitmap` con el
+    tamaño de trabajo, en vez de dibujar la `<img>` (que decodifica y reduce en el hilo principal). Con una foto de
+    4000 × 3000, 11 ms en vez de 65. `img.decode()` no ayudaba. Se comprueba que sale del tamaño de la `<img>`, ya
+    orientada; si no, se dibuja la `<img>` como antes (las orientaciones EXIF 3, 6 y 8 dan lo mismo en Edge). También
+    al recuperar y en la alta resolución del PDF.
+24. **Varias a la vez**: se abren hasta 3 archivos en paralelo y se agregan en el orden elegido.
+25. **Copias reducidas y miniaturas en memoria** (`willReadFrequently`): reducirlas en la tarjeta gráfica obligaba al
+    navegador a subir la imagen entera primero (unos 13 ms por imagen y 200 ms seguidos para las 16 miniaturas). Dibujar
+    las copias en cada fotograma cuesta lo mismo que antes (~6 µs por imagen, medido moviendo la vista y con zoom).
+26. **Repartido entre fotogramas**: como mucho 4 copias reducidas y 4 miniaturas nuevas por fotograma. Mientras, se ve
+    la copia anterior (si solo cambió el tamaño) o la imagen aparece unos fotogramas después. Cada dibujo de un archivo
+    en su lienzo se hace en su turno: el navegador los juntaba todos en el siguiente fotograma.
+
 ## 4. Descartado por ahora (y por qué)
 
 - **Pluma y curvas Bézier, operaciones booleanas, modos de fusión, efectos, componentes, varias mesas de trabajo**:

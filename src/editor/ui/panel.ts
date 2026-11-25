@@ -411,6 +411,27 @@ const canvasId = (c: HTMLCanvasElement) => {
   if (!id) { id = nextCanvasId++; canvasIds.set(c, id); }
   return id;
 };
+/**
+ * Miniaturas que se dibujan como mucho en un fotograma. Cada una reduce la imagen de trabajo entera (unos 3,5 ms con
+ * una de 2400 × 1600, cuatro veces más con un procesador lento): al recuperar un póster de 16 fotos se juntaban todas
+ * en una sola tarea. Las demás se dibujan en los fotogramas siguientes; mientras, queda la que había (o el cuadriculado).
+ */
+const THUMBS_PER_FRAME = 4;
+let thumbsDrawn = 0, thumbsWaiting = false;
+function thumbTurn() {
+  if (thumbsDrawn === 0) {
+    requestAnimationFrame(() => {
+      thumbsDrawn = 0;
+      if (thumbsWaiting) { thumbsWaiting = false; for (const l of st.layers) thumbFor(l); }
+    });
+  }
+  if (thumbsDrawn >= THUMBS_PER_FRAME) { thumbsWaiting = true; return false; }
+  thumbsDrawn++;
+  return true;
+}
+const checker = (x: CanvasRenderingContext2D) => {
+  for (let i = 0; i < 8; i++) for (let j = 0; j < 8; j++) { x.fillStyle = (i + j) % 2 ? C.chk2! : C.chk1!; x.fillRect(i * 11, j * 11, 11, 11); }
+};
 function thumbFor(l: Layer) {
   const k = l.crop;
   const key = [canvasId(l.img), canvasRevision(l.img), k.x0, k.y0, k.x1, k.y1, l.w, l.h, l.rot, l.flipX, l.flipY, C.chk1, C.chk2].join('|');
@@ -422,8 +443,14 @@ function thumbFor(l: Layer) {
     thumbs.set(l, t);
   }
   if (t.key !== key) {
-    const x = t.c.getContext('2d')!;
-    for (let i = 0; i < 8; i++) for (let j = 0; j < 8; j++) { x.fillStyle = (i + j) % 2 ? C.chk2! : C.chk1!; x.fillRect(i * 11, j * 11, 11, 11); }
+    // en memoria, como la imagen de trabajo: en la tarjeta gráfica, el navegador la reducía al pintar la miniatura y
+    // con 16 fotos de 2400 × 1600 eran 200 ms seguidos al recuperar el póster
+    const x = t.c.getContext('2d', { willReadFrequently: true })!;
+    if (!thumbTurn()) {
+      if (!t.key) { checker(x); t.key = 'pending'; }
+      return t.c;
+    }
+    checker(x);
     // la miniatura muestra la zona visible tal como se ve en el póster: con su giro y su espejo, encajada en 84 px
     const sw = (k.x1 - k.x0) * l.img.width, sh = (k.y1 - k.y0) * l.img.height, dw = visW(l), dh = visH(l);
     const a = (l.rot * Math.PI) / 180, cos = Math.abs(Math.cos(a)), sin = Math.abs(Math.sin(a));

@@ -12,7 +12,7 @@ import { canvasRevision } from './persist';
 import { syncExportButtons } from '../ui/panel';
 import { PAPERS } from '../constants';
 import { posterGeo, S, st } from '../state';
-import { loadImg } from './load';
+import { bitmapAt, loadImg } from './load';
 import { renderPdfPage } from './pdf';
 import { textCanvas } from '../text/raster';
 import { figureCanvas } from '../figures';
@@ -172,13 +172,19 @@ async function hiSources(dpi: number): Promise<HiMap> {
       if (src.kind === 'text') base = textCanvas(src.spec, tw, th); // contornos: nítidos a cualquier tamaño
       else if (src.kind === 'shape') base = figureCanvas(src.spec, tw, th);
       else if (src.kind === 'pdf') base = await renderPdfPage(l.pdf!, l.page, Math.max(tw, th), Infinity, false);
-      else { url = URL.createObjectURL(src.blob); base = await loadImg(url); }
+      else {
+        url = URL.createObjectURL(src.blob);
+        const im = await loadImg(url);
+        // decodificada y reducida fuera del hilo principal si se puede (ver bitmapAt)
+        base = (src.kind === 'img' && await bitmapAt(src.blob, im, tw, Math.round((tw * im.naturalHeight) / im.naturalWidth))) || im;
+      }
       const c = document.createElement('canvas');
       c.width = tw; c.height = th;
       const x = c.getContext('2d')!;
       x.imageSmoothingEnabled = true; x.imageSmoothingQuality = 'high';
       x.drawImage(base, 0, 0, tw, th);
       if (base instanceof HTMLCanvasElement) freeCanvas(base); // la página del PDF a alta resolución ya no hace falta
+      else if (typeof ImageBitmap !== 'undefined' && base instanceof ImageBitmap) base.close();
       if (url) URL.revokeObjectURL(url);
       if (img !== l.orig) {
         const mask = editMask(img, l.orig);

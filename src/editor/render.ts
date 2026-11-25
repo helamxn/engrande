@@ -123,9 +123,24 @@ interface DisplayCopy {
   patched?: boolean;
 }
 const copies = new WeakMap<HTMLCanvasElement, DisplayCopy>(); // por lienzo: los duplicados la comparten
+/**
+ * Las copias se hacen en memoria, como la imagen de trabajo de la que salen. Reducirla en la tarjeta gráfica obligaba
+ * a subirla entera primero: unos 13 ms por imagen, todos en el primer fotograma tras cargar o recuperar el póster
+ * (16 fotos de 2400 × 1600: 211 ms de hilo principal, frente a 65 así). Dibujarlas luego en cada fotograma cuesta lo
+ * mismo que antes (medido moviendo la vista y con zoom: ~6 µs por imagen).
+ */
+const COPY_CTX: CanvasRenderingContext2DSettings = { willReadFrequently: true };
 /** Fotograma actual (lo cuenta render): para saber qué tamaño pidieron todas las capas que comparten una copia. */
 let frameNo = 0;
-export function displaySource(l: Layer): CanvasImageSource {
+/**
+ * Copias que se hacen como mucho en un fotograma. Al recuperar el póster se piden todas de golpe: con 16 fotos y un
+ * procesador lento (×4 en las herramientas del navegador) eran 270 ms con la página congelada. Las que no caben se
+ * hacen en los fotogramas siguientes (ver displaySource).
+ */
+const COPIES_PER_FRAME = 4;
+let copiesThisFrame = 0, copiesLeft = false;
+/** Lo que se dibuja de l en pantalla: su copia reducida, la imagen de trabajo, o null si su copia llega en otro fotograma. */
+export function displaySource(l: Layer): CanvasImageSource | null {
   if (st.textColorPreview?.layer === l) return st.textColorPreview.canvas;
   const img = l.img, long = Math.max(img.width, img.height);
   // con el borrador la imagen cambia en cada movimiento: la copia no se rehace, se pone al día solo lo pintado
@@ -141,12 +156,16 @@ export function displaySource(l: Layer): CanvasImageSource {
   // que pidió en el fotograma anterior cualquier duplicado que la comparte, para no rehacerla una y otra vez.
   const shrink = !!d && d.side >= 2 * Math.max(side, d.wantPrev);
   if (!d || d.rev !== rev || d.side < side || shrink) {
+    // sin sitio en este fotograma: si solo cambió el tamaño se ve la copia que había (algo menos nítida un momento); si
+    // aún no tiene ninguna, aparece unos fotogramas después. Si cambió el contenido se rehace ya: no se ve lo de antes
+    if (copiesThisFrame >= COPIES_PER_FRAME && (!d || d.rev === rev)) { copiesLeft = true; return d?.c ?? null; }
+    copiesThisFrame++;
     // el lado que pidió la más grande de las que la comparten en este fotograma
     const size = Math.max(side, d && d.rev === rev ? d.want : 0);
     const c = d?.c ?? document.createElement('canvas'), s = size / long;
     c.width = Math.max(1, Math.round(img.width * s));
     c.height = Math.max(1, Math.round(img.height * s));
-    const x = c.getContext('2d')!;
+    const x = c.getContext('2d', COPY_CTX)!;
     x.imageSmoothingEnabled = true; x.imageSmoothingQuality = 'high';
     x.drawImage(img, 0, 0, c.width, c.height);
     d = { c, rev, side: size, frame: frameNo, want: size, wantPrev: d?.wantPrev ?? 0 };
@@ -179,7 +198,7 @@ export function patchDisplay(img: HTMLCanvasElement, r: { x0: number; y0: number
   if (patchScratch.width < iw) patchScratch.width = iw;
   if (patchScratch.height < ih) patchScratch.height = ih;
   patchScratch.getContext('2d')!.putImageData(data, 0, 0);
-  const x = d.c.getContext('2d')!;
+  const x = d.c.getContext('2d', COPY_CTX)!;
   x.imageSmoothingEnabled = true; x.imageSmoothingQuality = 'high';
   x.clearRect(X0, Y0, X1 - X0, Y1 - Y0);
   x.drawImage(patchScratch, X0 / sx - ix0, Y0 / sy - iy0, (X1 - X0) / sx, (Y1 - Y0) / sy, X0, Y0, X1 - X0, Y1 - Y0);
@@ -201,7 +220,7 @@ export function inheritDisplay(from: HTMLCanvasElement, to: HTMLCanvasElement) {
   if (!d || d.rev !== canvasRevision(from) || copies.has(to)) return;
   const c = document.createElement('canvas');
   c.width = d.c.width; c.height = d.c.height;
-  c.getContext('2d')!.drawImage(d.c, 0, 0);
+  c.getContext('2d', COPY_CTX)!.drawImage(d.c, 0, 0);
   copies.set(to, { ...d, c, rev: canvasRevision(to), patched: false });
 }
 
@@ -427,6 +446,7 @@ function drawReferences() {
 export function render() {
   frameNo++;
   dirtyFlag = false;
+  copiesThisFrame = 0; copiesLeft = false;
   sizeRect = null;
   const g = posterGeo(), { dpr } = view, sel = st.sel;
   const editing = S.mode === 'erase' || S.mode === 'wand', cropping = S.mode === 'crop' && !!sel;
@@ -465,13 +485,15 @@ export function render() {
       const box = bboxMM(layer), preview = cropping && layer === sel;
       if (!preview && (box.x1 < x0 || box.x0 > x1 || box.y1 < y0 || box.y0 > y1)) continue;
       const source = displaySource(layer);
+      if (!source) continue; // su copia reducida llega en otro fotograma
       if (!editing && !boxInside(box, page)) {
         ctx.globalAlpha = 0.25; drawLayer(ctx, layer, true, source);
       }
       if (preview || (box.x1 >= 0 && box.x0 <= g.W && box.y1 >= 0 && box.y0 <= g.H)) visible.push({ layer, source });
     }
     if (!editing) {
-      if (cropping) { ctx.globalAlpha = 0.35; drawLayer(ctx, sel, false, displaySource(sel)); }
+      const src = cropping && displaySource(sel);
+      if (src) { ctx.globalAlpha = 0.35; drawLayer(ctx, sel, false, src); }
       ctx.globalAlpha = 1;
     }
     ctx.save(); ctx.beginPath(); ctx.rect(0, 0, g.W, g.H); ctx.clip();
@@ -591,6 +613,7 @@ export function render() {
   drawAdjustTip();
   positionBar();
   positionTextEditor();
+  if (copiesLeft) dirty(); // quedan copias reducidas por hacer: en el siguiente fotograma
 }
 
 /**

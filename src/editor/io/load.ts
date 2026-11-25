@@ -1,6 +1,6 @@
 /** Carga de imágenes y PDF: selector de archivos, arrastrar y soltar en toda la página y pegar. */
 import { addLayer, applyCrop, makeCanvas, newLayer } from '../actions';
-import { MAX_FILE_BYTES } from '../constants';
+import { MAX_FILE_BYTES, MAX_SIDE } from '../constants';
 import { LIMITS } from '../platform';
 import { $, hideToast, toast } from '../dom';
 import { snap } from '../history';
@@ -26,7 +26,50 @@ async function fileToImage(f: Blob) {
   try { return await loadImg(url); } finally { setTimeout(() => URL.revokeObjectURL(url), 1000); }
 }
 
+/**
+ * El archivo decodificado a w × h px, fuera del hilo principal (createImageBitmap), o null si no se puede. Dibujar la
+ * <img> en un lienzo la decodifica y la reduce en el hilo principal: con una foto de 4000 × 3000 eran unos 65 ms con la
+ * página congelada, y 11 así (un PNG de 2400 × 1600, 43 frente a 8). im es la misma imagen ya cargada: da el tamaño
+ * orientado como lo muestra el navegador. Si el mapa de bits no sale de ese tamaño (p. ej. no aplicó el giro del EXIF),
+ * se descarta y quien llama dibuja la <img>, como antes. Los SVG no se admiten: devuelve null.
+ */
+export async function bitmapAt(blob: Blob, im: HTMLImageElement, w: number, h: number): Promise<ImageBitmap | null> {
+  if (typeof createImageBitmap !== 'function') return null;
+  try {
+    // solo el ancho: el alto sale de la proporción de la imagen ya orientada, y así se nota si no se orientó
+    const resize: ImageBitmapOptions = w !== im.naturalWidth ? { resizeWidth: w, resizeQuality: 'high' } : {};
+    const bm = await createImageBitmap(blob, { imageOrientation: 'from-image', ...resize });
+    if (Math.abs(bm.width - w) <= 1 && Math.abs(bm.height - h) <= 1) return bm;
+    bm.close();
+  } catch { /* formato u opción que el navegador no admite aquí: se dibuja la <img> */ }
+  return null;
+}
+
+/**
+ * Lienzo de trabajo de un archivo de imagen (no SVG): como mucho de max px de lado, como makeCanvas, pero decodificado
+ * fuera del hilo principal cuando se puede (ver bitmapAt).
+ */
+export async function imageCanvas(blob: Blob, im: HTMLImageElement, max = MAX_SIDE) {
+  const sw = im.naturalWidth, sh = im.naturalHeight, sc = Math.min(1, max / Math.max(sw, sh));
+  const w = Math.max(1, Math.round(sw * sc)), h = Math.max(1, Math.round(sh * sc));
+  const bm = await bitmapAt(blob, im, w, h);
+  if (!bm) return makeCanvas(im, sw, sh, false, max);
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const x = c.getContext('2d', { willReadFrequently: true })!;
+  x.imageSmoothingQuality = 'high';
+  x.drawImage(bm, 0, 0, w, h);
+  // el navegador deja el dibujo pendiente hasta el siguiente fotograma: al recuperar el póster se juntaban todos en una
+  // sola tarea (16 fotos, 180 ms con un procesador lento) y retenía cada mapa de bits hasta entonces. Leer un píxel lo
+  // obliga a hacerlo ya, cada uno en su turno
+  x.getImageData(0, 0, 1, 1);
+  bm.close();
+  return c;
+}
+
 const MB = (b: number) => Math.round(b / 1024 / 1024);
+/** Archivos que se abren a la vez al cargar varios: aprovecha más núcleos sin juntar en memoria todos los originales. */
+const LOAD_AHEAD = 3;
 class LoadError extends Error {}
 
 async function fileToLayer(f: File): Promise<Layer | null> {
@@ -58,7 +101,7 @@ async function fileToLayer(f: File): Promise<Layer | null> {
     throw new LoadError(`«${fname}» tiene ${Math.round(px / 1e6)} megapíxeles. En este equipo el máximo es ${LIMITS.maxImagePixels / 1e6}.`);
   }
   // se guarda el archivo original: el lienzo de trabajo es como máximo de MAX_SIDE, pero al exportar se usa la resolución completa
-  return newLayer(makeCanvas(im, im.naturalWidth, im.naturalHeight), name, { src: { kind: 'img', blob: f, w: im.naturalWidth, h: im.naturalHeight } });
+  return newLayer(await imageCanvas(f, im), name, { src: { kind: 'img', blob: f, w: im.naturalWidth, h: im.naturalHeight } });
 }
 
 export async function loadFiles(list: Iterable<File | null> | ArrayLike<File | null>) {
@@ -71,9 +114,18 @@ export async function loadFiles(list: Iterable<File | null> | ArrayLike<File | n
   toast(files.length > 1 ? `Cargando ${files.length} archivos…` : 'Cargando…', 0);
   let added = 0;
   const failed: string[] = [];
-  for (const f of files) {
+  // se decodifican varios a la vez (fuera del hilo principal, ver bitmapAt) y se agregan en el orden elegido
+  const jobs: (Promise<Layer | null> | undefined)[] = [];
+  const start = (i: number) => {
+    const f = files[i];
+    if (!f || jobs[i]) return;
+    const job = jobs[i] = fileToLayer(f);
+    job.catch(() => {}); // el error se trata al llegarle el turno
+  };
+  for (const [i, f] of files.entries()) {
+    for (let j = i; j < i + LOAD_AHEAD; j++) start(j); // este y los siguientes, como mucho LOAD_AHEAD a la vez
     try {
-      const l = await fileToLayer(f);
+      const l = await jobs[i]!;
       if (!l) continue;
       snap();
       addLayer(l, st.layers.length === 0 ? {} : { factor: 0.5, offset: added * 12 });

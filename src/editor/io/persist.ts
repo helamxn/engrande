@@ -11,7 +11,7 @@ import { makeCanvas, newLayer } from '../actions';
 import { toast } from '../dom';
 import { committedFrame, S, st } from '../state';
 import { clonePath, nextGroupName, normalizeGroups, type GroupRef, type Groupable } from '../groups';
-import { loadImg } from './load';
+import { imageCanvas, loadImg } from './load';
 import { openPdf, renderPdfPage } from './pdf';
 import type { Crop, Fit, Layer, LayoutGuide, LayoutSettings, TextSpec, TextDraft } from '../types';
 import { readSpec, readDraft } from '../text/spec';
@@ -300,7 +300,7 @@ async function readProject(): Promise<{ failed: string[] } | null> {
         if (!b) {
           const blob = await getBlob(r.src.key), im = await decode(blob);
           const svg = r.src.kind === 'svg', w = im.naturalWidth || 1200, h = im.naturalHeight || 1200;
-          b = { canvas: makeCanvas(im, w, h, svg), blob, w, h };
+          b = { canvas: svg ? makeCanvas(im, w, h, true) : await imageCanvas(blob, im), blob, w, h };
           bases.set(r.src.key, b);
         }
         orig = b.canvas;
@@ -313,10 +313,8 @@ async function readProject(): Promise<{ failed: string[] } | null> {
       if (r.edit) {
         let c = edits.get(r.edit);
         if (!c) {
-          const im = await decode(await getBlob(r.edit));
-          c = document.createElement('canvas');
-          c.width = im.naturalWidth; c.height = im.naturalHeight;
-          c.getContext('2d', { willReadFrequently: true })!.drawImage(im, 0, 0);
+          const blob = await getBlob(r.edit);
+          c = await imageCanvas(blob, await decode(blob), Infinity); // a su tamaño: es el lienzo de trabajo tal cual
           savedCanvas.set(c, { key: r.edit, rev: 0 });
           edits.set(r.edit, c);
         }

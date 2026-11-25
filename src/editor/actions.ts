@@ -31,8 +31,8 @@ export function cloneCanvas(src: HTMLCanvasElement) {
   return c;
 }
 /** Lienzo de trabajo (máx. MAX_SIDE). upscale: para SVG, que se puede rasterizar más grande que su tamaño nominal. */
-export function makeCanvas(src: CanvasImageSource, sw: number, sh: number, upscale = false) {
-  const sc = upscale ? MAX_SIDE / Math.max(sw, sh) : Math.min(1, MAX_SIDE / Math.max(sw, sh));
+export function makeCanvas(src: CanvasImageSource, sw: number, sh: number, upscale = false, max = MAX_SIDE) {
+  const sc = upscale ? max / Math.max(sw, sh) : Math.min(1, max / Math.max(sw, sh));
   const c = document.createElement('canvas');
   c.width = Math.max(1, Math.round(sw * sc)); c.height = Math.max(1, Math.round(sh * sc));
   const x = c.getContext('2d', { willReadFrequently: true })!;
